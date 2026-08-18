@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/TymofiiZuren/openhaus/services/api/internal/httpapi"
+	"github.com/TymofiiZuren/openhaus/services/api/internal/property"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 const (
@@ -19,9 +21,26 @@ const (
 )
 
 func main() {
+	databaseURL := os.Getenv("DATABASE_URL")
+	if databaseURL == "" {
+		log.Fatal("DATABASE_URL is required")
+	}
+
+	startupContext, cancelStartup := context.WithTimeout(context.Background(), 10*time.Second)
+	databasePool, err := pgxpool.New(startupContext, databaseURL)
+	cancelStartup()
+	if err != nil {
+		log.Fatalf("configure database pool: %v", err)
+	}
+	defer databasePool.Close()
+
+	propertyStore := property.NewStore(databasePool)
 	server := &http.Server{
-		Addr:              serverAddress,
-		Handler:           httpapi.NewRouter(),
+		Addr: serverAddress,
+		Handler: httpapi.NewRouter(httpapi.Dependencies{
+			Readiness:  databasePool,
+			Properties: propertyStore,
+		}),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      15 * time.Second,
