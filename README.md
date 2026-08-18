@@ -20,3 +20,19 @@ docs/                     Architecture and product documentation
 
 The repository is currently a scaffold. Build and development commands will be
 added with the first runnable vertical slice.
+
+## Local database
+
+Copy `.env.example` to `.env` if you want to override the development defaults,
+then start PostgreSQL/PostGIS:
+
+```sh
+docker compose -f infra/docker-compose.yml up -d
+docker compose -f infra/docker-compose.yml ps
+```
+
+Stop the service without deleting its named data volume:
+
+```sh
+docker compose -f infra/docker-compose.yml down
+```
