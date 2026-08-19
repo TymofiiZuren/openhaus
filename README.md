@@ -47,6 +47,7 @@ cp .env.example .env
 set -a
 . ./.env
 set +a
+export DATABASE_URL="postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:${POSTGRES_PORT}/${POSTGRES_DB}?sslmode=disable"
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/migrations/000001_create_properties.up.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/seeds/000001_properties.sql
 ```
