@@ -1,0 +1,37 @@
+.site-shell { max-width: 1440px; min-height: 100vh; margin: 0 auto; padding: 0 28px 80px; }
+.site-header { height: 88px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--ink); }
+.wordmark { color: var(--ink); font-family: Georgia, 'Times New Roman', serif; font-size: 1.65rem; letter-spacing: -.055em; text-decoration: none; }
+.market-label, .eyebrow, .property-location { font-size: .72rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+.intro { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(320px, 3fr); padding: 88px 0 96px; }
+.eyebrow { margin: 10px 0 0; }
+.intro h1 { max-width: 850px; margin: 0; font-family: Georgia, 'Times New Roman', serif; font-size: clamp(3.4rem, 7.2vw, 7.6rem); font-weight: 400; letter-spacing: -.065em; line-height: .9; }
+.intro-copy { grid-column: 2; max-width: 460px; margin: 38px 0 0; color: var(--muted); font-size: 1.12rem; line-height: 1.55; }
+.catalogue { border-top: 1px solid var(--ink); }
+.catalogue-heading { display: flex; align-items: baseline; justify-content: space-between; padding: 24px 0; }
+.catalogue-heading h2 { margin: 0; font-size: .78rem; letter-spacing: .12em; text-transform: uppercase; }
+.catalogue-heading p { margin: 0; color: var(--muted); font-variant-numeric: tabular-nums; }
+.property-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; background: var(--ink); border: 1px solid var(--ink); }
+.property-card { min-width: 0; background: var(--paper); }
+.property-visual { position: relative; aspect-ratio: 1.48; overflow: hidden; background: #d6d3cb; }
+.property-visual span { position: absolute; top: 18px; left: 18px; z-index: 1; font-size: .7rem; letter-spacing: .12em; }
+.property-visual svg { width: 100%; height: 100%; fill: none; stroke: currentColor; stroke-width: 2; }
+.visual-2 { background: #c5c9c1; }
+.visual-3 { background: #d5cbc1; }
+.property-body { padding: 22px 20px 24px; }
+.property-location { display: flex; flex-wrap: wrap; gap: 8px; color: var(--muted); }
+.property-card h3 { min-height: 2.5em; margin: 24px 0 8px; font-family: Georgia, 'Times New Roman', serif; font-size: clamp(1.45rem, 2.2vw, 2rem); font-weight: 400; letter-spacing: -.035em; line-height: 1.08; }
+.address { margin: 0; color: var(--muted); }
+.property-details { display: grid; grid-template-columns: 1fr auto; gap: 7px 16px; margin-top: 36px; padding-top: 16px; border-top: 1px solid var(--line); font-size: .86rem; }
+.property-details strong { grid-row: span 2; align-self: center; font-family: Georgia, 'Times New Roman', serif; font-size: 1.4rem; font-weight: 400; }
+.property-details span { color: var(--muted); text-align: right; }
+.loading-state, .message-panel { min-height: 280px; display: flex; align-items: center; justify-content: center; gap: 14px; border: 1px solid var(--line); color: var(--muted); }
+.spinner { width: 18px; height: 18px; border: 1px solid var(--line); border-top-color: var(--ink); border-radius: 50%; animation: spin .8s linear infinite; }
+.message-panel { flex-direction: column; text-align: center; }
+.message-panel p { max-width: 440px; margin: 0; }
+.message-title { color: var(--ink); font-family: Georgia, 'Times New Roman', serif; font-size: 1.8rem; }
+.error-panel button { min-height: 44px; margin-top: 14px; padding: 0 24px; border: 1px solid var(--ink); background: var(--ink); color: var(--paper); font: inherit; cursor: pointer; }
+.error-panel button:hover { background: transparent; color: var(--ink); }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (max-width: 850px) { .intro { grid-template-columns: 1fr; padding: 64px 0 72px; } .eyebrow { margin: 0 0 32px; } .intro-copy { grid-column: 1; } .property-grid { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 600px) { .site-shell { padding: 0 18px 48px; } .site-header { height: 70px; } .market-label { display: none; } .intro { padding: 48px 0 56px; } .intro h1 { font-size: clamp(3.1rem, 15vw, 4.8rem); } .intro-copy { margin-top: 28px; } .property-grid { grid-template-columns: 1fr; } .property-card h3 { min-height: 0; } }
+@media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
