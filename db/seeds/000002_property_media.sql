@@ -40,4 +40,5 @@ VALUES
     ('a0000000-0000-4000-8000-000000000012', '11111111-1111-4111-8111-111111111111', 'image', '/media/properties/leeson-park/washroom.webp', 'Washroom with patterned tile details', 11),
     ('a0000000-0000-4000-8000-000000000013', '11111111-1111-4111-8111-111111111111', 'image', '/media/properties/leeson-park/childrens-room.webp', 'Children''s bedroom with built-in play area', 12),
     ('a0000000-0000-4000-8000-000000000014', '11111111-1111-4111-8111-111111111111', 'floor_plan', '/media/properties/leeson-park/floor-plan.webp', 'Measured floor plan of the property', 13),
-    ('a0000000-0000-4000-8000-000000000015', '11111111-1111-4111-8111-111111111111', 'floor_plan', '/media/properties/leeson-park/furnished-plan.webp', 'Furnished floor plan of the property', 14);
+    ('a0000000-0000-4000-8000-000000000015', '11111111-1111-4111-8111-111111111111', 'floor_plan', '/media/properties/leeson-park/furnished-plan.webp', 'Furnished floor plan of the property', 14),
+    ('a0000000-0000-4000-8000-000000000016', '11111111-1111-4111-8111-111111111111', 'video', '/media/properties/leeson-park/tour.mp4', 'Video tour of the Dublin property', 15);
