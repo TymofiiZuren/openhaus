@@ -12,4 +12,13 @@ type Property struct {
 	PropertyType string  `json:"propertyType"`
 	Longitude    float64 `json:"longitude"`
 	Latitude     float64 `json:"latitude"`
+	Media        []Media `json:"media"`
+}
+
+// Media is an ordered visual asset belonging to a property.
+type Media struct {
+	URL      string `json:"url"`
+	Kind     string `json:"kind"`
+	AltText  string `json:"altText"`
+	Position int16  `json:"position"`
 }

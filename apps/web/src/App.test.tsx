@@ -14,6 +14,26 @@ const property = {
   propertyType: 'terraced',
   longitude: -6.2527,
   latitude: 53.332,
+  media: [
+    {
+      url: '/media/properties/leeson-park/exterior-front.webp',
+      kind: 'image',
+      altText: 'Front exterior of the home',
+      position: 0,
+    },
+    {
+      url: '/media/properties/leeson-park/living-room.webp',
+      kind: 'image',
+      altText: 'Bright open-plan living room',
+      position: 1,
+    },
+    {
+      url: '/media/properties/leeson-park/floor-plan.webp',
+      kind: 'floor_plan',
+      altText: 'Measured floor plan of the property',
+      position: 2,
+    },
+  ],
 }
 
 afterEach(() => {
@@ -38,6 +58,29 @@ describe('property catalogue', () => {
     expect(screen.getByText('€895,000')).toBeVisible()
     expect(screen.getByText('4 bedrooms')).toBeVisible()
     expect(screen.getByText('Terraced')).toBeVisible()
+  })
+
+  it('lets the buyer browse all media for a property', async () => {
+    mockResponse({ properties: [property] })
+    const user = userEvent.setup()
+
+    render(<App />)
+
+    expect(await screen.findByRole('img', { name: 'Front exterior of the home' })).toBeVisible()
+    expect(screen.getByText('1 / 3')).toBeVisible()
+
+    await user.click(screen.getByRole('button', { name: 'View Bright open-plan living room' }))
+
+    expect(screen.getByRole('img', { name: 'Bright open-plan living room' })).toBeVisible()
+    expect(screen.getByText('2 / 3')).toBeVisible()
+  })
+
+  it('falls back safely when a property has no media', async () => {
+    mockResponse({ properties: [{ ...property, media: [] }] })
+
+    render(<App />)
+
+    expect(await screen.findByRole('img', { name: 'No property photograph available' })).toBeVisible()
   })
 
   it('shows an empty state when no published homes exist', async () => {

@@ -60,8 +60,8 @@ function App() {
           )}
           {state.status === 'success' && state.properties.length > 0 && (
             <div className="property-grid">
-              {state.properties.map((property, index) => (
-                <PropertyCard key={property.id} property={property} index={index} />
+              {state.properties.map((property) => (
+                <PropertyCard key={property.id} property={property} />
               ))}
             </div>
           )}
@@ -71,15 +71,10 @@ function App() {
   )
 }
 
-function PropertyCard({ property, index }: { property: Property; index: number }) {
+function PropertyCard({ property }: { property: Property }) {
   return (
     <article className="property-card">
-      <div className={`property-visual visual-${(index % 3) + 1}`} aria-hidden="true">
-        <span>{String(index + 1).padStart(2, '0')}</span>
-        <svg viewBox="0 0 480 280" role="presentation">
-          <path d="M42 226h396M93 226V117l147-73 147 73v109M141 226v-76h67v76M272 126h67v57h-67z" />
-        </svg>
-      </div>
+      <PropertyGallery property={property} />
       <div className="property-body">
         <div className="property-location"><span>{property.city}</span><span aria-hidden="true">/</span><span>Co. {property.county}</span></div>
         <h3>{property.title}</h3>
@@ -91,6 +86,55 @@ function PropertyCard({ property, index }: { property: Property; index: number }
         </div>
       </div>
     </article>
+  )
+}
+
+function PropertyGallery({ property }: { property: Property }) {
+  const [selectedIndex, setSelectedIndex] = useState(0)
+  const selected = property.media[selectedIndex]
+
+  if (!selected) {
+    return (
+      <div className="property-visual property-fallback">
+        <svg viewBox="0 0 480 280" role="img" aria-label="No property photograph available">
+          <path d="M42 226h396M93 226V117l147-73 147 73v109M141 226v-76h67v76M272 126h67v57h-67z" />
+        </svg>
+      </div>
+    )
+  }
+
+  return (
+    <div className="property-gallery">
+      <div className={`gallery-stage ${selected.kind === 'floor_plan' ? 'gallery-stage-plan' : ''}`}>
+        <img
+          key={selected.url}
+          className="gallery-image"
+          src={selected.url}
+          alt={selected.altText}
+          fetchPriority={selectedIndex === 0 ? 'high' : 'auto'}
+        />
+        <p className="gallery-count" aria-live="polite">
+          {selectedIndex + 1} / {property.media.length}
+        </p>
+        <p className="gallery-kind">{mediaLabel(selected.kind)}</p>
+      </div>
+
+      <div className="gallery-thumbnails" aria-label={`Media for ${property.title}`}>
+        {property.media.map((item, index) => (
+          <button
+            key={item.url}
+            className="gallery-thumbnail"
+            type="button"
+            aria-label={`View ${item.altText}`}
+            aria-pressed={index === selectedIndex}
+            onClick={() => setSelectedIndex(index)}
+          >
+            <img src={item.url} alt="" loading="lazy" />
+            {item.kind === 'floor_plan' && <span>Plan</span>}
+          </button>
+        ))}
+      </div>
+    </div>
   )
 }
 
@@ -109,5 +153,9 @@ function ErrorState({ onRetry }: { onRetry: () => void }) {
 }
 
 function titleCase(value: string) { return value.charAt(0).toUpperCase() + value.slice(1) }
+
+function mediaLabel(kind: Property['media'][number]['kind']) {
+  return kind === 'floor_plan' ? 'Floor plan' : kind === 'panorama' ? '360° view' : 'Photograph'
+}
 
 export default App

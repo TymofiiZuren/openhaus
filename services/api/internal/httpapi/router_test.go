@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"testing"
 
 	"github.com/TymofiiZuren/openhaus/services/api/internal/httpapi"
@@ -131,6 +132,9 @@ func TestListProperties(t *testing.T) {
 		PropertyType: "terraced",
 		Longitude:    -6.2527,
 		Latitude:     53.3320,
+		Media: []property.Media{
+			{URL: "/media/exterior.webp", Kind: "image", AltText: "Front of the home", Position: 0},
+		},
 	}
 	router := httpapi.NewRouter(httpapi.Dependencies{
 		Readiness:  readinessStub{},
@@ -152,7 +156,7 @@ func TestListProperties(t *testing.T) {
 	if len(body.Properties) != 1 {
 		t.Fatalf("property count = %d, want 1", len(body.Properties))
 	}
-	if body.Properties[0] != want {
+	if !reflect.DeepEqual(body.Properties[0], want) {
 		t.Fatalf("property = %#v, want %#v", body.Properties[0], want)
 	}
 }

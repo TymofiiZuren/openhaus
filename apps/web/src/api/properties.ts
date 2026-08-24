@@ -1,3 +1,10 @@
+export type PropertyMedia = {
+  url: string
+  kind: 'image' | 'floor_plan' | 'panorama'
+  altText: string
+  position: number
+}
+
 export type Property = {
   id: string
   title: string
@@ -9,6 +16,7 @@ export type Property = {
   propertyType: string
   longitude: number
   latitude: number
+  media: PropertyMedia[]
 }
 
 type PropertiesResponse = { properties: Property[] }

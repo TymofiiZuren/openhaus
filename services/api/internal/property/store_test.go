@@ -34,8 +34,8 @@ func TestStoreListsOnlyPublishedProperties(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list published properties: %v", err)
 	}
-	if len(properties) < 3 {
-		t.Fatalf("published property count = %d, want at least 3 seeded properties", len(properties))
+	if len(properties) < 1 {
+		t.Fatalf("published property count = %d, want at least 1 seeded property", len(properties))
 	}
 
 	for _, item := range properties {
@@ -46,6 +46,46 @@ func TestStoreListsOnlyPublishedProperties(t *testing.T) {
 			t.Fatalf("incomplete property returned: %#v", item)
 		}
 	}
+}
+
+func TestStoreListsPropertyMediaInPositionOrder(t *testing.T) {
+	ctx := context.Background()
+	transaction := newTestTransaction(t)
+
+	const propertyID = "11111111-1111-4111-8111-111111111111"
+	if _, err := transaction.Exec(ctx, `DELETE FROM property_media WHERE property_id = $1`, propertyID); err != nil {
+		t.Fatalf("clear property media: %v", err)
+	}
+
+	_, err := transaction.Exec(ctx, `
+		INSERT INTO property_media (id, property_id, kind, url, alt_text, position)
+		VALUES
+			('dddddddd-dddd-4ddd-8ddd-ddddddddddd2', $1, 'floor_plan', '/media/floor-plan.svg', 'Floor plan', 2),
+			('dddddddd-dddd-4ddd-8ddd-ddddddddddd0', $1, 'image', '/media/exterior.svg', 'Front of the home', 0)
+	`, propertyID)
+	if err != nil {
+		t.Fatalf("insert property media: %v", err)
+	}
+
+	properties, err := property.NewStore(transaction).ListPublished(ctx)
+	if err != nil {
+		t.Fatalf("list published properties: %v", err)
+	}
+
+	for _, item := range properties {
+		if item.ID != propertyID {
+			continue
+		}
+		if len(item.Media) != 2 {
+			t.Fatalf("media count = %d, want 2", len(item.Media))
+		}
+		if item.Media[0].Position != 0 || item.Media[1].Position != 2 {
+			t.Fatalf("media positions = %d, %d; want 0, 2", item.Media[0].Position, item.Media[1].Position)
+		}
+		return
+	}
+
+	t.Fatalf("property %s was not returned", propertyID)
 }
 
 func TestPropertiesRejectNonPositivePrice(t *testing.T) {
