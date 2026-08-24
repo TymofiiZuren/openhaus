@@ -92,6 +92,7 @@ function PropertyCard({ property }: { property: Property }) {
 function PropertyGallery({ property }: { property: Property }) {
   const [selectedIndex, setSelectedIndex] = useState(0)
   const selected = property.media[selectedIndex]
+  const poster = property.media.find((item) => item.kind === 'image')?.url
 
   if (!selected) {
     return (
@@ -106,13 +107,27 @@ function PropertyGallery({ property }: { property: Property }) {
   return (
     <div className="property-gallery">
       <div className={`gallery-stage ${selected.kind === 'floor_plan' ? 'gallery-stage-plan' : ''}`}>
-        <img
-          key={selected.url}
-          className="gallery-image"
-          src={selected.url}
-          alt={selected.altText}
-          fetchPriority={selectedIndex === 0 ? 'high' : 'auto'}
-        />
+        {selected.kind === 'video' ? (
+          <video
+            key={selected.url}
+            className="gallery-image"
+            controls
+            preload="metadata"
+            poster={poster}
+            aria-label={selected.altText}
+          >
+            <source src={selected.url} type="video/mp4" />
+            Your browser does not support embedded video.
+          </video>
+        ) : (
+          <img
+            key={selected.url}
+            className="gallery-image"
+            src={selected.url}
+            alt={selected.altText}
+            fetchPriority={selectedIndex === 0 ? 'high' : 'auto'}
+          />
+        )}
         <p className="gallery-count" aria-live="polite">
           {selectedIndex + 1} / {property.media.length}
         </p>
@@ -129,8 +144,9 @@ function PropertyGallery({ property }: { property: Property }) {
             aria-pressed={index === selectedIndex}
             onClick={() => setSelectedIndex(index)}
           >
-            <img src={item.url} alt="" loading="lazy" />
+            <img src={item.kind === 'video' ? poster : item.url} alt="" loading="lazy" />
             {item.kind === 'floor_plan' && <span>Plan</span>}
+            {item.kind === 'video' && <span>Video</span>}
           </button>
         ))}
       </div>
@@ -155,7 +171,10 @@ function ErrorState({ onRetry }: { onRetry: () => void }) {
 function titleCase(value: string) { return value.charAt(0).toUpperCase() + value.slice(1) }
 
 function mediaLabel(kind: Property['media'][number]['kind']) {
-  return kind === 'floor_plan' ? 'Floor plan' : kind === 'panorama' ? '360° view' : 'Photograph'
+  if (kind === 'floor_plan') return 'Floor plan'
+  if (kind === 'panorama') return '360° view'
+  if (kind === 'video') return 'Video tour'
+  return 'Photograph'
 }
 
 export default App

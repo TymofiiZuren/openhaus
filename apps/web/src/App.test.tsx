@@ -33,6 +33,12 @@ const property = {
       altText: 'Measured floor plan of the property',
       position: 2,
     },
+    {
+      url: '/media/properties/leeson-park/tour.mp4',
+      kind: 'video',
+      altText: 'Video tour of the property',
+      position: 3,
+    },
   ],
 }
 
@@ -67,12 +73,27 @@ describe('property catalogue', () => {
     render(<App />)
 
     expect(await screen.findByRole('img', { name: 'Front exterior of the home' })).toBeVisible()
-    expect(screen.getByText('1 / 3')).toBeVisible()
+    expect(screen.getByText('1 / 4')).toBeVisible()
 
     await user.click(screen.getByRole('button', { name: 'View Bright open-plan living room' }))
 
     expect(screen.getByRole('img', { name: 'Bright open-plan living room' })).toBeVisible()
-    expect(screen.getByText('2 / 3')).toBeVisible()
+    expect(screen.getByText('2 / 4')).toBeVisible()
+  })
+
+  it('shows native video controls when the buyer selects a video tour', async () => {
+    mockResponse({ properties: [property] })
+    const user = userEvent.setup()
+
+    render(<App />)
+    await screen.findByRole('img', { name: 'Front exterior of the home' })
+
+    await user.click(screen.getByRole('button', { name: 'View Video tour of the property' }))
+
+    const video = screen.getByLabelText('Video tour of the property')
+    expect(video.tagName).toBe('VIDEO')
+    expect(video).toHaveAttribute('controls')
+    expect(video.querySelector('source')).toHaveAttribute('src', '/media/properties/leeson-park/tour.mp4')
   })
 
   it('falls back safely when a property has no media', async () => {

@@ -1,6 +1,6 @@
 export type PropertyMedia = {
   url: string
-  kind: 'image' | 'floor_plan' | 'panorama'
+  kind: 'image' | 'floor_plan' | 'panorama' | 'video'
   altText: string
   position: number
 }
