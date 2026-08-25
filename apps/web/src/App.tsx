@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
 import './App.css'
+import { uploadPropertyVideo, waitForMediaJob, type MediaJob } from './api/mediaJobs'
 import { fetchProperties, type Property } from './api/properties'
 
 type CatalogueState =
@@ -31,6 +32,8 @@ function App() {
     setRequestKey((key) => key + 1)
   }, [])
 
+  const refresh = useCallback(() => setRequestKey((key) => key + 1), [])
+
   return (
     <div className="site-shell">
       <header className="site-header">
@@ -61,7 +64,7 @@ function App() {
           {state.status === 'success' && state.properties.length > 0 && (
             <div className="property-grid">
               {state.properties.map((property) => (
-                <PropertyCard key={property.id} property={property} />
+                <PropertyCard key={property.id} property={property} onMediaReady={refresh} />
               ))}
             </div>
           )}
@@ -71,7 +74,7 @@ function App() {
   )
 }
 
-function PropertyCard({ property }: { property: Property }) {
+function PropertyCard({ property, onMediaReady }: { property: Property; onMediaReady: () => void }) {
   return (
     <article className="property-card">
       <PropertyGallery property={property} />
@@ -84,8 +87,113 @@ function PropertyCard({ property }: { property: Property }) {
           <span>{property.bedrooms} bedrooms</span>
           <span>{titleCase(property.propertyType)}</span>
         </div>
+        {import.meta.env.DEV && <VideoUpload property={property} onReady={onMediaReady} />}
       </div>
     </article>
+  )
+}
+
+type UploadState =
+  | { status: 'idle' }
+  | { status: 'uploading'; filename: string }
+  | { status: 'processing'; filename: string; job: MediaJob }
+  | { status: 'ready'; filename: string }
+  | { status: 'error'; message: string }
+
+const maxVideoBytes = 2 * 1024 * 1024 * 1024
+
+function VideoUpload({ property, onReady }: { property: Property; onReady: () => void }) {
+  const [expanded, setExpanded] = useState(false)
+  const [file, setFile] = useState<File>()
+  const [state, setState] = useState<UploadState>({ status: 'idle' })
+  const controller = useRef<AbortController | undefined>(undefined)
+
+  useEffect(() => () => controller.current?.abort(), [])
+
+  function chooseFile(event: ChangeEvent<HTMLInputElement>) {
+    const selected = event.target.files?.[0]
+    setFile(undefined)
+    setState({ status: 'idle' })
+    if (!selected) return
+    const extensionAllowed = /\.(mp4|mov)$/i.test(selected.name)
+    const typeAllowed = selected.type === 'video/mp4' || selected.type === 'video/quicktime'
+    if (!extensionAllowed || (!typeAllowed && selected.type !== '')) {
+      setState({ status: 'error', message: 'Choose an MP4 or MOV video.' })
+      return
+    }
+    if (selected.size > maxVideoBytes) {
+      setState({ status: 'error', message: 'Choose a video smaller than 2 GiB.' })
+      return
+    }
+    setFile(selected)
+  }
+
+  async function submit(event: FormEvent) {
+    event.preventDefault()
+    if (!file || state.status === 'uploading' || state.status === 'processing') return
+    controller.current?.abort()
+    controller.current = new AbortController()
+    const signal = controller.current.signal
+    setState({ status: 'uploading', filename: file.name })
+    try {
+      const queued = await uploadPropertyVideo(property.id, file, signal)
+      setState({ status: 'processing', filename: file.name, job: queued })
+      const completed = await waitForMediaJob(
+        queued.id,
+        (job) => setState({ status: 'processing', filename: file.name, job }),
+        signal,
+      )
+      if (completed.status === 'failed') {
+        setState({ status: 'error', message: completed.errorMessage || 'Video processing failed. Try another file.' })
+        return
+      }
+      setState({ status: 'ready', filename: file.name })
+      onReady()
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return
+      setState({ status: 'error', message: 'The video could not be uploaded. Try again.' })
+    }
+  }
+
+  const busy = state.status === 'uploading' || state.status === 'processing'
+  return (
+    <div className="listing-tools">
+      <button
+        className="listing-tools-toggle"
+        type="button"
+        aria-expanded={expanded}
+        aria-controls={`video-upload-${property.id}`}
+        aria-label={`Add a video tour for ${property.title}`}
+        onClick={() => setExpanded((value) => !value)}
+      >
+        <span>Listing tools · Local demo</span>
+        <span aria-hidden="true">{expanded ? '−' : '+'}</span>
+      </button>
+      {expanded && (
+        <form id={`video-upload-${property.id}`} className="video-upload" onSubmit={submit}>
+          <div>
+            <p className="video-upload-title">Add a video tour</p>
+            <p className="video-upload-help">MP4 or MOV, up to 2 GiB. OpenHaus prepares a web-ready copy.</p>
+          </div>
+          <label className="file-picker">
+            <span>Choose an MP4 or MOV video</span>
+            <input type="file" accept="video/mp4,video/quicktime,.mp4,.mov" disabled={busy} onChange={chooseFile} />
+          </label>
+          {file && state.status === 'idle' && <p className="selected-file">Selected: {file.name}</p>}
+          <button className="upload-button" type="submit" disabled={!file || busy}>
+            {state.status === 'uploading' ? 'Uploading…' : 'Upload video'}
+          </button>
+          {state.status === 'uploading' && <p className="upload-status" role="status">Uploading {state.filename}…</p>}
+          {state.status === 'processing' && (
+            <p className="upload-status" role="status">
+              {state.job.status === 'pending' ? 'Video queued for processing…' : `Processing ${state.filename}…`}
+            </p>
+          )}
+          {state.status === 'ready' && <p className="upload-status upload-success" role="status">Video tour ready.</p>}
+          {state.status === 'error' && <p className="upload-status upload-error" role="alert">{state.message}</p>}
+        </form>
+      )}
+    </div>
   )
 }
 

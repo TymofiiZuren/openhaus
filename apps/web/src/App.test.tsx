@@ -96,6 +96,55 @@ describe('property catalogue', () => {
     expect(video.querySelector('source')).toHaveAttribute('src', '/media/properties/leeson-park/tour.mp4')
   })
 
+  it('uploads a video tour and reports when processing is complete', async () => {
+	const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+		const url = String(input)
+		if (url.includes('/videos') && init?.method === 'POST') {
+			return Response.json({
+				id: 'job-1', propertyId: property.id, status: 'pending', attempts: 0,
+				createdAt: '2026-08-25T00:00:00Z',
+			}, { status: 202 })
+		}
+		if (url.includes('/media-jobs/job-1')) {
+			return Response.json({
+				id: 'job-1', propertyId: property.id, status: 'ready', attempts: 1,
+				outputPath: '/media/uploads/job-1.mp4', createdAt: '2026-08-25T00:00:00Z',
+			})
+		}
+		return Response.json({ properties: [property] })
+	})
+	const user = userEvent.setup()
+
+	render(<App />)
+	await screen.findByRole('heading', { name: property.title })
+	await user.click(screen.getByRole('button', { name: `Add a video tour for ${property.title}` }))
+	const file = new File(['\x00\x00\x00\x18ftypisomvideo'], 'house-tour.mp4', { type: 'video/mp4' })
+	await user.upload(screen.getByLabelText('Choose an MP4 or MOV video'), file)
+	await user.click(screen.getByRole('button', { name: 'Upload video' }))
+
+	expect(await screen.findByRole('status')).toHaveTextContent('Video tour ready')
+	expect(fetchMock).toHaveBeenCalledWith(
+		`/api/v1/properties/${property.id}/videos`,
+		expect.objectContaining({ method: 'POST' }),
+	)
+  })
+
+	it('rejects an unsupported video before making an upload request', async () => {
+		const fetchMock = mockResponse({ properties: [property] })
+		const user = userEvent.setup({ applyAccept: false })
+
+		render(<App />)
+		await screen.findByRole('heading', { name: property.title })
+		await user.click(screen.getByRole('button', { name: `Add a video tour for ${property.title}` }))
+		await user.upload(
+			screen.getByLabelText('Choose an MP4 or MOV video'),
+			new File(['text'], 'notes.txt', { type: 'text/plain' }),
+		)
+
+		expect(screen.getByRole('alert')).toHaveTextContent('Choose an MP4 or MOV video')
+		expect(fetchMock).toHaveBeenCalledTimes(1)
+	})
+
   it('falls back safely when a property has no media', async () => {
     mockResponse({ properties: [{ ...property, media: [] }] })
 

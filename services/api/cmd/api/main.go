@@ -11,14 +11,12 @@ import (
 	"time"
 
 	"github.com/TymofiiZuren/openhaus/services/api/internal/httpapi"
+	"github.com/TymofiiZuren/openhaus/services/api/internal/mediajob"
 	"github.com/TymofiiZuren/openhaus/services/api/internal/property"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-const (
-	serverAddress  = ":8080"
-	shutdownPeriod = 10 * time.Second
-)
+const shutdownPeriod = 10 * time.Second
 
 func main() {
 	databaseURL := os.Getenv("DATABASE_URL")
@@ -35,15 +33,24 @@ func main() {
 	defer databasePool.Close()
 
 	propertyStore := property.NewStore(databasePool)
+	mediaJobStore := mediajob.NewStore(databasePool)
+	uploadRoot := os.Getenv("MEDIA_SOURCE_DIR")
+	if uploadRoot == "" {
+		uploadRoot = ".data/uploads"
+	}
+	serverAddress := os.Getenv("HTTP_ADDR")
+	if serverAddress == "" {
+		serverAddress = ":8080"
+	}
 	server := &http.Server{
 		Addr: serverAddress,
 		Handler: httpapi.NewRouter(httpapi.Dependencies{
 			Readiness:  databasePool,
 			Properties: propertyStore,
+			Videos:     mediajob.NewUploadService(uploadRoot, mediaJobStore),
+			Jobs:       mediaJobStore,
 		}),
 		ReadHeaderTimeout: 5 * time.Second,
-		ReadTimeout:       10 * time.Second,
-		WriteTimeout:      15 * time.Second,
 		IdleTimeout:       60 * time.Second,
 	}
 
