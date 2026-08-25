@@ -1,5 +1,13 @@
 package property
 
+// Bounds is a WGS84 map viewport in west, south, east, north order.
+type Bounds struct {
+	West  float64
+	South float64
+	East  float64
+	North float64
+}
+
 // Property is the public catalogue representation of a published home.
 type Property struct {
 	ID           string  `json:"id"`

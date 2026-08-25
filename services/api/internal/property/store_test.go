@@ -30,7 +30,7 @@ func TestStoreListsOnlyPublishedProperties(t *testing.T) {
 		t.Fatalf("insert draft property: %v", err)
 	}
 
-	properties, err := property.NewStore(transaction).ListPublished(ctx)
+	properties, err := property.NewStore(transaction).ListPublished(ctx, nil)
 	if err != nil {
 		t.Fatalf("list published properties: %v", err)
 	}
@@ -67,7 +67,7 @@ func TestStoreListsPropertyMediaInPositionOrder(t *testing.T) {
 		t.Fatalf("insert property media: %v", err)
 	}
 
-	properties, err := property.NewStore(transaction).ListPublished(ctx)
+	properties, err := property.NewStore(transaction).ListPublished(ctx, nil)
 	if err != nil {
 		t.Fatalf("list published properties: %v", err)
 	}
@@ -86,6 +86,26 @@ func TestStoreListsPropertyMediaInPositionOrder(t *testing.T) {
 	}
 
 	t.Fatalf("property %s was not returned", propertyID)
+}
+
+func TestStoreListsPublishedPropertiesInsideBounds(t *testing.T) {
+	ctx := context.Background()
+	transaction := newTestTransaction(t)
+
+	properties, err := property.NewStore(transaction).ListPublished(ctx, &property.Bounds{
+		West: -8.6, South: 51.8, East: -8.3, North: 52.0,
+	})
+	if err != nil {
+		t.Fatalf("list bounded properties: %v", err)
+	}
+	if len(properties) == 0 {
+		t.Fatal("bounded property count = 0, want the seeded Cork property")
+	}
+	for _, item := range properties {
+		if item.Longitude < -8.6 || item.Longitude > -8.3 || item.Latitude < 51.8 || item.Latitude > 52.0 {
+			t.Fatalf("property outside requested bounds: %#v", item)
+		}
+	}
 }
 
 func TestPropertiesRejectNonPositivePrice(t *testing.T) {

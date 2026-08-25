@@ -6,7 +6,10 @@ import (
 	"errors"
 	"io"
 	"log"
+	"math"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/TymofiiZuren/openhaus/services/api/internal/mediajob"
@@ -23,7 +26,7 @@ type ReadinessChecker interface {
 
 // PropertyLister returns homes that are visible in the public catalogue.
 type PropertyLister interface {
-	ListPublished(context.Context) ([]property.Property, error)
+	ListPublished(context.Context, *property.Bounds) ([]property.Property, error)
 }
 
 type VideoUploader interface {
@@ -141,10 +144,15 @@ func ready(checker ReadinessChecker) http.HandlerFunc {
 
 func listProperties(properties PropertyLister) http.HandlerFunc {
 	return func(response http.ResponseWriter, request *http.Request) {
+		bounds, err := parseBounds(request.URL.Query().Get("bbox"))
+		if err != nil {
+			writeError(response, http.StatusBadRequest, "invalid_bbox", "bbox must be west,south,east,north coordinates")
+			return
+		}
 		ctx, cancel := context.WithTimeout(request.Context(), dependencyTimeout)
 		defer cancel()
 
-		items, err := properties.ListPublished(ctx)
+		items, err := properties.ListPublished(ctx, bounds)
 		if err != nil {
 			log.Printf("list published properties: %v", err)
 			writeJSON(response, http.StatusInternalServerError, map[string]any{
@@ -161,6 +169,32 @@ func listProperties(properties PropertyLister) http.HandlerFunc {
 		}
 		writeJSON(response, http.StatusOK, map[string]any{"properties": items})
 	}
+}
+
+func parseBounds(value string) (*property.Bounds, error) {
+	if value == "" {
+		return nil, nil
+	}
+	parts := strings.Split(value, ",")
+	if len(parts) != 4 {
+		return nil, errors.New("bbox must contain four coordinates")
+	}
+	coordinates := make([]float64, 4)
+	for index, part := range parts {
+		coordinate, err := strconv.ParseFloat(strings.TrimSpace(part), 64)
+		if err != nil || math.IsNaN(coordinate) || math.IsInf(coordinate, 0) {
+			return nil, errors.New("bbox contains an invalid coordinate")
+		}
+		coordinates[index] = coordinate
+	}
+	bounds := &property.Bounds{
+		West: coordinates[0], South: coordinates[1], East: coordinates[2], North: coordinates[3],
+	}
+	if bounds.West < -180 || bounds.East > 180 || bounds.South < -90 || bounds.North > 90 ||
+		bounds.West >= bounds.East || bounds.South >= bounds.North {
+		return nil, errors.New("bbox coordinates are outside WGS84 or reversed")
+	}
+	return bounds, nil
 }
 
 func writeJSON(response http.ResponseWriter, status int, body any) {

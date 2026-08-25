@@ -22,8 +22,8 @@ func NewStore(database queryer) *Store {
 }
 
 // ListPublished returns the newest published homes.
-func (store *Store) ListPublished(ctx context.Context) ([]Property, error) {
-	rows, err := store.database.Query(ctx, `
+func (store *Store) ListPublished(ctx context.Context, bounds *Bounds) ([]Property, error) {
+	query := `
 		SELECT
 			id::text,
 			title,
@@ -50,8 +50,18 @@ func (store *Store) ListPublished(ctx context.Context) ([]Property, error) {
 			), '[]'::jsonb)
 		FROM properties
 		WHERE status = 'published'
-		ORDER BY created_at DESC, id DESC
-	`)
+	`
+	var arguments []any
+	if bounds != nil {
+		query += `
+			AND location && ST_MakeEnvelope($1, $2, $3, $4, 4326)::geography
+			AND ST_Intersects(location, ST_MakeEnvelope($1, $2, $3, $4, 4326)::geography)
+		`
+		arguments = []any{bounds.West, bounds.South, bounds.East, bounds.North}
+	}
+	query += ` ORDER BY created_at DESC, id DESC`
+
+	rows, err := store.database.Query(ctx, query, arguments...)
 	if err != nil {
 		return nil, err
 	}

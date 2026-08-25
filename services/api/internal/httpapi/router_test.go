@@ -24,16 +24,18 @@ func (stub readinessStub) Ping(context.Context) error {
 type propertyListerStub struct {
 	properties []property.Property
 	err        error
+	bounds     *property.Bounds
 }
 
-func (stub propertyListerStub) ListPublished(context.Context) ([]property.Property, error) {
+func (stub *propertyListerStub) ListPublished(_ context.Context, bounds *property.Bounds) ([]property.Property, error) {
+	stub.bounds = bounds
 	return stub.properties, stub.err
 }
 
 func newRouter() http.Handler {
 	return httpapi.NewRouter(httpapi.Dependencies{
 		Readiness: readinessStub{},
-		Properties: propertyListerStub{
+		Properties: &propertyListerStub{
 			properties: []property.Property{},
 		},
 	})
@@ -91,7 +93,7 @@ func TestReady(t *testing.T) {
 	response := httptest.NewRecorder()
 	router := httpapi.NewRouter(httpapi.Dependencies{
 		Readiness:  readinessStub{},
-		Properties: propertyListerStub{},
+		Properties: &propertyListerStub{},
 	})
 
 	router.ServeHTTP(response, request)
@@ -107,7 +109,7 @@ func TestReadyWhenDatabaseIsUnavailable(t *testing.T) {
 	response := httptest.NewRecorder()
 	router := httpapi.NewRouter(httpapi.Dependencies{
 		Readiness:  readinessStub{err: errors.New("connection refused")},
-		Properties: propertyListerStub{},
+		Properties: &propertyListerStub{},
 	})
 
 	router.ServeHTTP(response, request)
@@ -138,7 +140,7 @@ func TestListProperties(t *testing.T) {
 	}
 	router := httpapi.NewRouter(httpapi.Dependencies{
 		Readiness:  readinessStub{},
-		Properties: propertyListerStub{properties: []property.Property{want}},
+		Properties: &propertyListerStub{properties: []property.Property{want}},
 	})
 
 	router.ServeHTTP(response, request)
@@ -161,12 +163,58 @@ func TestListProperties(t *testing.T) {
 	}
 }
 
+func TestListPropertiesWithinBoundingBox(t *testing.T) {
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/properties?bbox=-10.8,51.3,-5.3,55.5", nil)
+	response := httptest.NewRecorder()
+	properties := &propertyListerStub{}
+	router := httpapi.NewRouter(httpapi.Dependencies{
+		Readiness:  readinessStub{},
+		Properties: properties,
+	})
+
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusOK)
+	}
+	want := &property.Bounds{West: -10.8, South: 51.3, East: -5.3, North: 55.5}
+	if !reflect.DeepEqual(properties.bounds, want) {
+		t.Fatalf("bounds = %#v, want %#v", properties.bounds, want)
+	}
+}
+
+func TestListPropertiesRejectsInvalidBoundingBox(t *testing.T) {
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/properties?bbox=-5.3,51.3,-10.8,55.5", nil)
+	response := httptest.NewRecorder()
+	router := httpapi.NewRouter(httpapi.Dependencies{
+		Readiness:  readinessStub{},
+		Properties: &propertyListerStub{},
+	})
+
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusBadRequest)
+	}
+	var body struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if body.Error.Code != "invalid_bbox" {
+		t.Fatalf("error code = %q, want invalid_bbox", body.Error.Code)
+	}
+}
+
 func TestListPropertiesWhenStoreFails(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet, "/api/v1/properties", nil)
 	response := httptest.NewRecorder()
 	router := httpapi.NewRouter(httpapi.Dependencies{
 		Readiness:  readinessStub{},
-		Properties: propertyListerStub{err: errors.New("database details")},
+		Properties: &propertyListerStub{err: errors.New("database details")},
 	})
 
 	router.ServeHTTP(response, request)
