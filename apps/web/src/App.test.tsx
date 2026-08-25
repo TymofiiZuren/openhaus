@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
@@ -42,6 +42,23 @@ const property = {
   ],
 }
 
+const corkProperty = {
+  ...property,
+  id: '22222222-2222-4222-8222-222222222222',
+  title: 'Garden-view contemporary residence',
+  addressLine1: 'Douglas',
+  city: 'Cork',
+  county: 'Cork',
+  longitude: -8.4932,
+  latitude: 51.9045,
+  media: [{
+    url: '/media/properties/douglas-cork/exterior.webp',
+    kind: 'image' as const,
+    altText: 'Exterior of the Cork property',
+    position: 0,
+  }],
+}
+
 afterEach(() => {
   vi.restoreAllMocks()
 })
@@ -64,6 +81,56 @@ describe('property catalogue', () => {
     expect(screen.getByText('€895,000')).toBeVisible()
     expect(screen.getByText('4 bedrooms')).toBeVisible()
     expect(screen.getByText('Terraced')).toBeVisible()
+    expect(fetch).toHaveBeenCalledWith(
+      '/api/v1/properties?bbox=-10.68124,51.4199,-5.99629,55.44685',
+      expect.objectContaining({ headers: { Accept: 'application/json' } }),
+    )
+  })
+
+  it('lets buyers explore listings by county and city on the Ireland map', async () => {
+    mockResponse({ properties: [property, corkProperty] })
+    const user = userEvent.setup()
+
+    render(<App />)
+
+    const map = await screen.findByRole('region', { name: 'Explore homes by location' })
+    expect(map).toBeVisible()
+    expect(within(map).queryByRole('button', { name: /on map$/ })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Cork, 1 home' }))
+
+    expect(screen.getByRole('heading', { name: 'Cork' })).toBeVisible()
+    expect(within(map).getByText('1 home')).toBeVisible()
+    expect(screen.getByRole('button', { name: 'View Cork on street map' })).toBeVisible()
+
+    await user.click(screen.getByRole('button', { name: 'View Cork on street map' }))
+    expect(await screen.findByRole('region', { name: 'Street map of Cork' })).toBeVisible()
+    expect(screen.getByText('1 property in Cork')).toBeVisible()
+    expect(await screen.findByText('The interactive map is unavailable in this browser.')).toBeVisible()
+    expect(screen.getByRole('region', { name: 'Raster street map of Cork' })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Back to Ireland' })).toBeVisible()
+    await user.click(screen.getByRole('button', { name: `View ${corkProperty.title} on street map` }))
+    const streetMap = screen.getByRole('region', { name: 'Street map of Cork' })
+    expect(within(streetMap).getByRole('heading', { name: corkProperty.title })).toBeVisible()
+    expect(within(streetMap).getByRole('link', { name: 'View property' })).toHaveAttribute(
+      'href', `#property-${corkProperty.id}`,
+    )
+  })
+
+  it('requests the new geographic bounds when the buyer zooms the map', async () => {
+    mockResponse({ properties: [property, corkProperty] })
+    const user = userEvent.setup()
+
+    render(<App />)
+    await screen.findByRole('region', { name: 'Explore homes by location' })
+    await user.click(screen.getByRole('button', { name: 'Zoom in' }))
+
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2))
+    const secondURL = vi.mocked(fetch).mock.calls[1][0]
+    expect(secondURL).toMatch(/^\/api\/v1\/properties\?bbox=/)
+    expect(secondURL).not.toBe('/api/v1/properties?bbox=-10.68124,51.4199,-5.99629,55.44685')
+    const firstOptions = vi.mocked(fetch).mock.calls[0][1]
+    expect(firstOptions?.signal).toBeInstanceOf(AbortSignal)
+    expect(firstOptions?.signal?.aborted).toBe(true)
   })
 
   it('lets the buyer browse all media for a property', async () => {
@@ -184,5 +251,5 @@ describe('property catalogue', () => {
 function mockResponse(body: unknown) {
   return vi
     .spyOn(globalThis, 'fetch')
-    .mockResolvedValue(Response.json(body, { status: 200 }))
+    .mockImplementation(() => Promise.resolve(Response.json(body, { status: 200 })))
 }

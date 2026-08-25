@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
 import './App.css'
 import { uploadPropertyVideo, waitForMediaJob, type MediaJob } from './api/mediaJobs'
-import { fetchProperties, type Property } from './api/properties'
+import { fetchProperties, type MapBounds, type Property } from './api/properties'
+import { PropertyMap } from './PropertyMap'
+import { IRELAND_MAP_BOUNDS } from './mapBounds'
 
 type CatalogueState =
   | { status: 'loading'; properties: Property[] }
@@ -15,17 +17,18 @@ const euros = new Intl.NumberFormat('en-IE', {
 function App() {
   const [state, setState] = useState<CatalogueState>({ status: 'loading', properties: [] })
   const [requestKey, setRequestKey] = useState(0)
+  const [mapBounds, setMapBounds] = useState<MapBounds>(IRELAND_MAP_BOUNDS)
 
   useEffect(() => {
     const controller = new AbortController()
-    fetchProperties(controller.signal)
+    fetchProperties(controller.signal, mapBounds)
       .then((properties) => setState({ status: 'success', properties }))
       .catch((error: unknown) => {
         if (error instanceof DOMException && error.name === 'AbortError') return
         setState({ status: 'error', properties: [] })
       })
     return () => controller.abort()
-  }, [requestKey])
+  }, [mapBounds, requestKey])
 
   const retry = useCallback(() => {
     setState({ status: 'loading', properties: [] })
@@ -33,6 +36,9 @@ function App() {
   }, [])
 
   const refresh = useCallback(() => setRequestKey((key) => key + 1), [])
+  const updateMapBounds = useCallback((bounds: MapBounds) => {
+    setMapBounds((current) => current.every((coordinate, index) => coordinate === bounds[index]) ? current : bounds)
+  }, [])
 
   return (
     <div className="site-shell">
@@ -46,6 +52,7 @@ function App() {
           <h1 id="catalogue-title">Find a place that feels like yours.</h1>
           <p className="intro-copy">A considered collection of homes for sale across Ireland.</p>
         </section>
+        {state.status === 'success' && <PropertyMap properties={state.properties} onBoundsChange={updateMapBounds} />}
         <section className="catalogue" aria-label="Homes for sale">
           <div className="catalogue-heading">
             <h2>Latest homes</h2>
@@ -76,7 +83,7 @@ function App() {
 
 function PropertyCard({ property, onMediaReady }: { property: Property; onMediaReady: () => void }) {
   return (
-    <article className="property-card">
+    <article className="property-card" id={`property-${property.id}`}>
       <PropertyGallery property={property} />
       <div className="property-body">
         <div className="property-location"><span>{property.city}</span><span aria-hidden="true">/</span><span>Co. {property.county}</span></div>

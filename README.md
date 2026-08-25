@@ -70,6 +70,28 @@ curl http://localhost:8080/readyz
 curl http://localhost:8080/api/v1/properties
 ```
 
+Limit the public catalogue to the visible WGS84 map bounds with
+`west,south,east,north` coordinates:
+
+```bash
+curl "http://localhost:8080/api/v1/properties?bbox=-11,51,-5,56"
+```
+
+The spatial query uses the GiST index on `properties.location`. Invalid,
+out-of-range, or reversed bounds return `400 invalid_bbox`.
+
+The public map derives this bounding box from its current SVG viewport. Zooming
+or dragging the map debounces a new catalogue request and aborts the previous
+request when its viewport is no longer current.
+
+Selecting a county shows its published property count. The explicit county
+view lazy-loads MapLibre GL JS and fits an OpenFreeMap/OpenStreetMap street map
+to that county's generated WGS84 bounds. Map markers cluster at wider zooms and
+open a property preview at street level. The national county map intentionally
+does not show property markers. Browsers without WebGL2 receive a raster
+OpenStreetMap street view with HTML property markers and visible listing cards.
+Neither map mode requires an API key, and attribution remains visible.
+
 ## Asynchronous video processing
 
 The upload endpoint streams MP4 or MOV bodies to local storage and returns a
