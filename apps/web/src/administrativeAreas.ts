@@ -7,7 +7,12 @@ export type AdministrativeArea = {
   paths: Coordinate[][]
 }
 
-const areas = areaData.areas as AdministrativeArea[]
+type EncodedArea = { name: string; county: string; paths: [number, number][][] }
+const areas = (areaData.areas as EncodedArea[]).map((area) => ({
+  name: area.name,
+  county: area.county,
+  paths: area.paths.map((path) => path.map(([lat, lng]) => ({ lat, lng }))),
+}))
 
 export const administrativeAreaAttribution = {
   label: areaData.attribution,

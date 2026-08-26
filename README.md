@@ -112,6 +112,30 @@ PostGIS bounding-box query remains the foundation for the later viewport-search
 API. See [`docs/MAP_IMPLEMENTATION_PLAN.md`](docs/MAP_IMPLEMENTATION_PLAN.md)
 for the production data gates and next phases.
 
+## Manager authentication
+
+Manager routes use an opaque session cookie. Passwords are bcrypt hashes and
+only SHA-256 digests of session tokens are stored in PostgreSQL. Apply migration
+`000004`, then create the first local manager without writing credentials to a
+tracked file:
+
+```bash
+cd services/api
+DATABASE_URL="$DATABASE_URL" \
+MANAGER_EMAIL="manager@example.com" \
+MANAGER_PASSWORD="use-a-long-local-password" \
+go run ./cmd/create-manager
+```
+
+Login with `POST /api/v1/manager/session`; logout with `DELETE` on the same
+route. `GET /api/v1/manager/properties` requires the returned HttpOnly cookie
+and includes draft, published, and archived listings. Set `APP_ENV=production`
+in production so the cookie is also marked `Secure`.
+
+The web manager workspace is available at `http://localhost:5173/manager/login`.
+It restores an existing cookie-backed session, lists every property status, and
+provides sign-in and sign-out without exposing the session token to JavaScript.
+
 ## Asynchronous video processing
 
 The upload endpoint streams MP4 or MOV bodies to local storage and returns a

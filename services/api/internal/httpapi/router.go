@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/TymofiiZuren/openhaus/services/api/internal/managerauth"
 	"github.com/TymofiiZuren/openhaus/services/api/internal/mediajob"
 	"github.com/TymofiiZuren/openhaus/services/api/internal/property"
 )
@@ -29,6 +30,16 @@ type PropertyLister interface {
 	ListPublished(context.Context, *property.Bounds) ([]property.Property, error)
 }
 
+type ManagerPropertyLister interface {
+	ListManaged(context.Context) ([]property.ManagedProperty, error)
+}
+
+type ManagerAuthenticator interface {
+	Login(context.Context, string, string) (managerauth.Session, error)
+	Authenticate(context.Context, string) (managerauth.User, error)
+	Logout(context.Context, string) error
+}
+
 type VideoUploader interface {
 	AcceptUpload(context.Context, string, string, io.Reader) (mediajob.Job, error)
 }
@@ -39,10 +50,13 @@ type MediaJobGetter interface {
 
 // Dependencies contains the external services used by the HTTP API.
 type Dependencies struct {
-	Readiness  ReadinessChecker
-	Properties PropertyLister
-	Videos     VideoUploader
-	Jobs       MediaJobGetter
+	Readiness         ReadinessChecker
+	Properties        PropertyLister
+	Videos            VideoUploader
+	Jobs              MediaJobGetter
+	ManagerAuth       ManagerAuthenticator
+	ManagerProperties ManagerPropertyLister
+	SecureCookies     bool
 }
 
 // NewRouter builds the API's HTTP routing table.
@@ -53,7 +67,91 @@ func NewRouter(dependencies Dependencies) http.Handler {
 	router.HandleFunc("GET /api/v1/properties", listProperties(dependencies.Properties))
 	router.HandleFunc("POST /api/v1/properties/{propertyID}/videos", uploadVideo(dependencies.Videos))
 	router.HandleFunc("GET /api/v1/media-jobs/{jobID}", getMediaJob(dependencies.Jobs))
+	router.HandleFunc("POST /api/v1/manager/session", managerLogin(dependencies.ManagerAuth, dependencies.SecureCookies))
+	router.HandleFunc("DELETE /api/v1/manager/session", managerLogout(dependencies.ManagerAuth, dependencies.SecureCookies))
+	router.Handle("GET /api/v1/manager/properties", requireManager(dependencies.ManagerAuth, listManagedProperties(dependencies.ManagerProperties)))
 	return router
+}
+
+const managerSessionCookie = "openhaus_manager_session"
+
+func managerLogin(authenticator ManagerAuthenticator, secure bool) http.HandlerFunc {
+	type credentials struct {
+		Email    string `json:"email"`
+		Password string `json:"password"`
+	}
+	return func(response http.ResponseWriter, request *http.Request) {
+		var input credentials
+		decoder := json.NewDecoder(http.MaxBytesReader(response, request.Body, 16<<10))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&input); err != nil || input.Email == "" || input.Password == "" {
+			writeError(response, http.StatusBadRequest, "invalid_request", "email and password are required")
+			return
+		}
+		session, err := authenticator.Login(request.Context(), input.Email, input.Password)
+		if errors.Is(err, managerauth.ErrInvalidCredentials) {
+			writeError(response, http.StatusUnauthorized, "invalid_credentials", "email or password is incorrect")
+			return
+		}
+		if err != nil {
+			log.Printf("manager login: %v", err)
+			writeError(response, http.StatusInternalServerError, "internal_error", "internal server error")
+			return
+		}
+		setManagerCookie(response, session.Token, session.ExpiresAt, secure)
+		writeJSON(response, http.StatusOK, map[string]any{"manager": session.User})
+	}
+}
+
+func managerLogout(authenticator ManagerAuthenticator, secure bool) http.HandlerFunc {
+	return func(response http.ResponseWriter, request *http.Request) {
+		cookie, _ := request.Cookie(managerSessionCookie)
+		if cookie != nil {
+			if err := authenticator.Logout(request.Context(), cookie.Value); err != nil {
+				log.Printf("manager logout: %v", err)
+				writeError(response, http.StatusInternalServerError, "internal_error", "internal server error")
+				return
+			}
+		}
+		setManagerCookie(response, "", time.Unix(0, 0), secure)
+		response.WriteHeader(http.StatusNoContent)
+	}
+}
+
+func requireManager(authenticator ManagerAuthenticator, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		cookie, err := request.Cookie(managerSessionCookie)
+		if err != nil {
+			writeError(response, http.StatusUnauthorized, "authentication_required", "manager authentication is required")
+			return
+		}
+		if _, err := authenticator.Authenticate(request.Context(), cookie.Value); err != nil {
+			writeError(response, http.StatusUnauthorized, "authentication_required", "manager authentication is required")
+			return
+		}
+		next.ServeHTTP(response, request)
+	})
+}
+
+func listManagedProperties(properties ManagerPropertyLister) http.HandlerFunc {
+	return func(response http.ResponseWriter, request *http.Request) {
+		items, err := properties.ListManaged(request.Context())
+		if err != nil {
+			log.Printf("list manager properties: %v", err)
+			writeError(response, http.StatusInternalServerError, "internal_error", "internal server error")
+			return
+		}
+		writeJSON(response, http.StatusOK, map[string]any{"properties": items})
+	}
+}
+
+func setManagerCookie(response http.ResponseWriter, token string, expires time.Time, secure bool) {
+	maxAge := int(time.Until(expires).Seconds())
+	if token == "" {
+		maxAge = -1
+	}
+	http.SetCookie(response, &http.Cookie{Name: managerSessionCookie, Value: token, Path: "/api/v1/manager", Expires: expires,
+		MaxAge: maxAge, HttpOnly: true, Secure: secure, SameSite: http.SameSiteLaxMode})
 }
 
 func uploadVideo(uploader VideoUploader) http.HandlerFunc {

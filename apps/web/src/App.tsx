@@ -73,24 +73,30 @@ function App() {
   const visibleProperties = effectiveSelectedCounty && selectedArea
     ? countyProperties.filter((property) => areaForCoordinate(effectiveSelectedCounty, { lat: property.latitude, lng: property.longitude })?.name === selectedArea)
     : countyProperties
+  const featuredProperty = state.status === 'success' ? state.properties[0] : undefined
+  const featuredImage = featuredProperty?.media.find((item) => item.kind === 'image')
+  const featuredFloorPlan = featuredProperty?.media.find((item) => item.kind === 'floor_plan')
   return (
     <div className="site-shell">
+      <a className="skip-link" href="#explore">Skip to property search</a>
       <header className="site-header">
         <a className="wordmark" href="/" aria-label="OpenHaus home">OpenHaus</a>
-        <span className="market-label">Homes across Ireland</span>
+        <nav className="site-navigation" aria-label="Primary navigation">
+          <a href="#homes">Buy</a>
+          <a href="#explore">Search by map</a>
+          <a href="#why-openhaus">How it works</a>
+        </nav>
+        <a className="manager-link" href="/manager/login">List a property</a>
       </header>
       <main>
-        <section className="intro" aria-labelledby="catalogue-title">
-          <p className="eyebrow">Property, clearly presented</p>
-          <h1 id="catalogue-title">Find a place that feels like yours.</h1>
-          <p className="intro-copy">A considered collection of homes for sale across Ireland.</p>
-        </section>
-        {state.status === 'success' && state.properties.length > 0 && (
-          <PropertyMap properties={state.properties} selectedCounty={effectiveSelectedCounty} selectedArea={selectedArea} onCountyChange={selectCounty} onAreaChange={setSelectedArea} />
-        )}
-        <section className="catalogue" aria-label="Homes for sale">
+        <div id="explore" className="map-first">
+          {state.status === 'success' && state.properties.length > 0 && (
+            <PropertyMap properties={state.properties} selectedCounty={effectiveSelectedCounty} selectedArea={selectedArea} onCountyChange={selectCounty} onAreaChange={setSelectedArea} />
+          )}
+        </div>
+        <section className="catalogue" id="homes" aria-label="Homes for sale">
           <div className="catalogue-heading">
-            <h2>Latest homes</h2>
+            <div><p className="eyebrow">Properties for sale</p><h2>{effectiveSelectedCounty ? `Homes in ${effectiveSelectedCounty}` : 'Recently added homes'}</h2></div>
             {state.status === 'success' && (
               <p aria-live="polite">{visibleProperties.length} {visibleProperties.length === 1 ? 'home' : 'homes'}</p>
             )}
@@ -103,6 +109,13 @@ function App() {
               <p>New properties will appear here as soon as they are published.</p>
             </div>
           )}
+          {state.status === 'success' && state.properties.length > 0 && visibleProperties.length === 0 && (
+            <div className="message-panel">
+              <p className="message-title">No homes in this area yet.</p>
+              <p>Try another local area or return to all homes across Ireland.</p>
+              <button type="button" onClick={() => selectCounty(null)}>Show all homes</button>
+            </div>
+          )}
           {state.status === 'success' && visibleProperties.length > 0 && (
             <div className="property-grid">
               {visibleProperties.map((property) => (
@@ -111,7 +124,29 @@ function App() {
             </div>
           )}
         </section>
+        <section className="property-story" id="why-openhaus" aria-labelledby="property-story-title">
+          <div className="property-story-copy">
+            <p className="eyebrow">Why OpenHaus</p>
+            <h2 id="property-story-title">Everything you need before you book a viewing.</h2>
+            <p>Compare the location, layout and complete media story in one place, with no hidden address hunting or disconnected tabs.</p>
+            <ul>
+              <li><span>01</span><div><strong>Explore the location</strong><p>Move from Ireland to a county and local area without losing context.</p></div></li>
+              <li><span>02</span><div><strong>Tour the entire home</strong><p>Browse photography, floor plans and video from the same listing.</p></div></li>
+              <li><span>03</span><div><strong>Shortlist with confidence</strong><p>See the price, property facts and setting before arranging a visit.</p></div></li>
+            </ul>
+          </div>
+          <div className="property-story-media">
+            {featuredFloorPlan ? <img src={featuredFloorPlan.url} alt={featuredFloorPlan.altText} loading="lazy" /> : <div className="story-media-placeholder" />}
+            {featuredImage && <img src={featuredImage.url} alt="" loading="lazy" />}
+            <span>Complete property context</span>
+          </div>
+        </section>
       </main>
+      <footer className="site-footer">
+        <div><a className="wordmark footer-wordmark" href="/">OpenHaus</a><p>Find home with the full picture.</p></div>
+        <nav aria-label="Footer navigation"><a href="#explore">Explore Ireland</a><a href="#homes">Homes for sale</a><a href="/manager/login">Manager workspace</a></nav>
+        <p>Independent portfolio project · Ireland</p>
+      </footer>
     </div>
   )
 }
@@ -121,13 +156,16 @@ function PropertyCard({ property, onMediaReady }: { property: Property; onMediaR
     <article className="property-card" id={`property-${property.id}`}>
       <PropertyGallery property={property} />
       <div className="property-body">
-        <div className="property-location"><span>{property.city}</span><span aria-hidden="true">/</span><span>Co. {property.county}</span></div>
+        <div className="property-card-topline">
+          <div className="property-location"><span>{property.city}</span><span aria-hidden="true">/</span><span>Co. {property.county}</span></div>
+          <strong className="property-price">{euros.format(property.priceCents / 100)}</strong>
+        </div>
         <h3>{property.title}</h3>
         <p className="address">{property.addressLine1}</p>
         <div className="property-details">
-          <strong>{euros.format(property.priceCents / 100)}</strong>
           <span>{property.bedrooms} bedrooms</span>
           <span>{titleCase(property.propertyType)}</span>
+          <a href={`#property-${property.id}`} aria-label={`View details for ${property.title}`}>View home <span aria-hidden="true">→</span></a>
         </div>
         {import.meta.env.DEV && <VideoUpload property={property} onReady={onMediaReady} />}
       </div>

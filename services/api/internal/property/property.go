@@ -23,6 +23,12 @@ type Property struct {
 	Media        []Media `json:"media"`
 }
 
+// ManagedProperty includes lifecycle state for authenticated managers.
+type ManagedProperty struct {
+	Property
+	Status string `json:"status"`
+}
+
 // Media is an ordered visual asset belonging to a property.
 type Media struct {
 	URL      string `json:"url"`

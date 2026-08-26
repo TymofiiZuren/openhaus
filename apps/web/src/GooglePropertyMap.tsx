@@ -11,6 +11,7 @@ const irelandOverviewRestriction = {
   east: -1.7,
   north: 56.6,
 }
+type MapPolygon = { name: string; kind: 'county' | 'area'; polygon: PolygonInstance; listeners: Listener[]; available: boolean }
 
 type GooglePropertyMapProps = {
   properties: Property[]
@@ -27,11 +28,12 @@ export function GooglePropertyMap({ properties, selectedPropertyID, selectedCoun
   const container = useRef<HTMLDivElement>(null)
   const map = useRef<MapInstance | undefined>(undefined)
   const markers = useRef<Array<{ id: string; marker: MarkerInstance; listener: Listener }>>([])
-  const polygons = useRef<Array<{ name: string; polygon: PolygonInstance; listeners: Listener[]; available: boolean }>>([])
+  const polygons = useRef<MapPolygon[]>([])
   const onSelect = useRef(onSelectProperty)
   const onCountySelect = useRef(onSelectCounty)
   const onAreaSelect = useRef(onSelectArea)
   const selectedCountyRef = useRef(selectedCounty)
+  const selectedAreaRef = useRef(selectedArea)
   const [status, setStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
   const [mapType, setMapType] = useState<'roadmap' | 'satellite'>('roadmap')
   const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string | undefined
@@ -41,6 +43,7 @@ export function GooglePropertyMap({ properties, selectedPropertyID, selectedCoun
   useEffect(() => { onCountySelect.current = onSelectCounty }, [onSelectCounty])
   useEffect(() => { onAreaSelect.current = onSelectArea }, [onSelectArea])
   useEffect(() => { selectedCountyRef.current = selectedCounty }, [selectedCounty])
+  useEffect(() => { selectedAreaRef.current = selectedArea }, [selectedArea])
 
   useEffect(() => {
     if (!apiKey || !container.current) return
@@ -81,17 +84,17 @@ export function GooglePropertyMap({ properties, selectedPropertyID, selectedCoun
     if (status !== 'ready' || !map.current || !window.google) return
     clearPolygons(polygons.current)
     const maps = window.google.maps
-    const visibleCountyBoundaries = selectedCounty && areas.length > 0 ? [] : boundariesForSelection(selectedCounty)
+    const visibleCountyBoundaries = boundariesForSelection(selectedCounty)
     const countyPolygons = visibleCountyBoundaries.flatMap((county) => county.paths.map((path) => {
       const available = availableCounties.some((name) => sameLocation(name, county.name))
       const polygon = new maps.Polygon({
         map: map.current,
         paths: path,
         clickable: available && !selectedCounty,
-        strokeColor: '#282824',
+        strokeColor: '#35443a',
         strokeOpacity: selectedCounty ? 1 : available ? .72 : .3,
         strokeWeight: selectedCounty ? 2.5 : 1,
-        fillColor: '#b95636',
+        fillColor: '#55705e',
         fillOpacity: selectedCounty ? .035 : 0,
         zIndex: 2,
       })
@@ -102,22 +105,22 @@ export function GooglePropertyMap({ properties, selectedPropertyID, selectedCoun
         }),
         polygon.addListener('mouseout', () => polygon.setOptions(countyStyle(county.name, selectedCountyRef.current, available))),
       ] : []
-      return { name: county.name, polygon, listeners, available }
+      return { name: county.name, kind: 'county' as const, polygon, listeners, available }
     }))
     const areaShapes = selectedCounty
       ? areas.flatMap((area) => groupPolygonRings(area.paths).map((paths) => ({ area, paths, size: polygonArea(paths[0]) })))
         .sort((left, right) => right.size - left.size)
       : []
     const areaPolygons = areaShapes.map(({ area, paths }, areaIndex) => {
-      const selected = sameLocation(area.name, selectedArea ?? '')
+      const selected = sameLocation(area.name, selectedAreaRef.current ?? '')
       const polygon = new maps.Polygon({
         map: map.current,
         paths,
         clickable: true,
-        strokeColor: '#5f5b52',
+        strokeColor: '#536459',
         strokeOpacity: .8,
         strokeWeight: selected ? 2 : 1,
-        fillColor: selected ? '#b95636' : areaIndex % 2 === 0 ? '#eee9df' : '#d8d3c9',
+        fillColor: selected ? '#55705e' : areaIndex % 2 === 0 ? '#e8eee8' : '#dce6dd',
         fillOpacity: selected ? .2 : .12,
         // Large county regions are drawn first. Compact city polygons sit above
         // them so both remain independently visible and clickable.
@@ -125,14 +128,20 @@ export function GooglePropertyMap({ properties, selectedPropertyID, selectedCoun
       })
       const listeners = [
         polygon.addListener('click', () => onAreaSelect.current(area.name)),
-        polygon.addListener('mouseover', () => polygon.setOptions({ fillOpacity: selected ? .25 : .2, strokeOpacity: 1 })),
-        polygon.addListener('mouseout', () => polygon.setOptions({ fillOpacity: selected ? .2 : .12, strokeOpacity: .8 })),
+        polygon.addListener('mouseover', () => polygon.setOptions({ fillOpacity: sameLocation(area.name, selectedAreaRef.current ?? '') ? .25 : .2, strokeOpacity: 1 })),
+        polygon.addListener('mouseout', () => polygon.setOptions(areaStyle(area.name, selectedAreaRef.current))),
       ]
-      return { name: area.name, polygon, listeners, available: true }
+      return { name: area.name, kind: 'area' as const, polygon, listeners, available: true }
     })
     polygons.current = [...countyPolygons, ...areaPolygons]
     return () => clearPolygons(polygons.current)
-  }, [areas, availableCounties, selectedArea, selectedCounty, status])
+  }, [areas, availableCounties, selectedCounty, status])
+
+  useEffect(() => {
+    for (const item of polygons.current) {
+      if (item.kind === 'area') item.polygon.setOptions(areaStyle(item.name, selectedArea))
+    }
+  }, [selectedArea])
 
   useEffect(() => {
     if (!selectedCounty) for (const item of polygons.current) item.polygon.setOptions(countyStyle(item.name, selectedCounty, item.available))
@@ -214,12 +223,23 @@ function clearPolygons(items: Array<{ polygon: PolygonInstance; listeners: Liste
 function countyStyle(name: string, selectedCounty: string | null | undefined, available: boolean) {
   const selected = !!selectedCounty && sameLocation(name, selectedCounty)
   return {
-    strokeColor: '#282824',
+    strokeColor: '#35443a',
     strokeOpacity: selected ? 1 : available ? .72 : .34,
     strokeWeight: selected ? 2.5 : 1,
-    fillColor: '#b95636',
+    fillColor: '#55705e',
     fillOpacity: selected ? .09 : 0,
     zIndex: selected ? 4 : 2,
+  }
+}
+
+function areaStyle(name: string, selectedArea: string | undefined) {
+  const selected = sameLocation(name, selectedArea ?? '')
+  return {
+    strokeColor: '#536459',
+    strokeOpacity: .8,
+    strokeWeight: selected ? 2 : 1,
+    fillColor: selected ? '#55705e' : '#e8eee8',
+    fillOpacity: selected ? .2 : .12,
   }
 }
 
@@ -234,14 +254,13 @@ function applyCamera(map: MapInstance, selectedCounty: string | null | undefined
       minZoom: compact ? 5 : 7.25,
       restriction: { latLngBounds: irelandOverviewRestriction, strictBounds: true },
     })
-    map.setCenter({ lat: 53.42, lng: -8.05 })
-    map.setZoom(compact ? 5 : 7.25)
+    moveCamera(map, { lat: 53.42, lng: -8.05 }, compact ? 5 : 7.25)
     return
   }
-  map.setCenter({
+  const center = {
     lat: (viewport.bounds.south + viewport.bounds.north) / 2,
     lng: (viewport.bounds.west + viewport.bounds.east) / 2,
-  })
+  }
   const span = Math.max(viewport.bounds.east - viewport.bounds.west, viewport.bounds.north - viewport.bounds.south)
   const desktopZoom = span > 2 ? 8 : span > 1 ? 9 : span > .5 ? 10 : 11
   const countyZoom = compact ? desktopZoom - 1 : desktopZoom
@@ -249,11 +268,20 @@ function applyCamera(map: MapInstance, selectedCounty: string | null | undefined
     minZoom: Math.max(6, countyZoom - 1),
     restriction: { latLngBounds: viewport.restriction, strictBounds: false },
   })
-  map.setZoom(countyZoom)
+  moveCamera(map, center, countyZoom)
+}
+
+function moveCamera(map: MapInstance, center: { lat: number; lng: number }, zoom: number) {
+  if (map.moveCamera) {
+    map.moveCamera({ center, zoom })
+    return
+  }
+  map.setCenter(center)
+  map.setZoom(zoom)
 }
 
 function markerIcon(selected: boolean, label: string) {
-  const fill = selected ? '#b95636' : '#171715'
+  const fill = selected ? '#55705e' : '#18231d'
   const width = Math.max(62, 30 + label.length * 8)
   const scaledWidth = selected ? width * 1.08 : width
   const scaledHeight = selected ? 43 : 40

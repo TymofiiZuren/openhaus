@@ -106,13 +106,17 @@ describe('property catalogue', () => {
     render(<App />)
 
     const explorer = await screen.findByRole('region', { name: 'Explore homes by location' })
+    const reservedDrilldownSlot = explorer.querySelector('.location-drilldown-slot')
+    expect(reservedDrilldownSlot).toBeInTheDocument()
     expect(explorer).toBeVisible()
     await user.click(screen.getByRole('button', { name: 'Explore Cork, 1 property' }))
 
+    expect(explorer.querySelector('.location-drilldown-slot')).toBe(reservedDrilldownSlot)
+    expect(screen.getByRole('button', { name: 'All Ireland' })).toHaveTextContent('Ireland')
     expect(screen.getByRole('heading', { name: corkProperty.title })).toBeVisible()
     expect(screen.queryByRole('heading', { name: property.title })).not.toBeInTheDocument()
     expect(within(explorer).getByText('1 home for sale')).toBeVisible()
-    expect(screen.getByRole('button', { name: 'Explore Cork City, 1 property' })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Explore Cork City North West, 1 property' })).toBeVisible()
 
     await user.click(screen.getByRole('button', { name: 'All Ireland' }))
     expect(screen.getByRole('heading', { name: property.title })).toBeVisible()
@@ -128,6 +132,15 @@ describe('property catalogue', () => {
     expect(within(explorer).getByText('Choose a county to see homes and local areas')).toBeVisible()
     expect(within(explorer).queryByText('Areas')).not.toBeInTheDocument()
     expect(within(explorer).queryByRole('button', { name: /Explore Dublin City/ })).not.toBeInTheDocument()
+  })
+
+  it('uses location search as the page-level starting point', async () => {
+    mockResponse({ properties: [property, corkProperty] })
+
+    render(<App />)
+
+    const explorer = await screen.findByRole('region', { name: 'Explore homes by location' })
+    expect(within(explorer).getByRole('heading', { level: 1, name: 'Find a place that feels like home' })).toBeVisible()
   })
 
   it('lets a buyer search available counties and towns without relying on a map', async () => {
@@ -154,14 +167,17 @@ describe('property catalogue', () => {
     expect(screen.getByRole('button', { name: 'Explore Dublin, 1 property' })).toBeVisible()
     expect(screen.getByRole('button', { name: 'Explore Cork, 2 properties' })).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByRole('button', { name: 'Show all Cork areas, 2 properties' })).toBeVisible()
-    expect(screen.getByRole('button', { name: 'Explore Cork City, 1 property' })).toBeVisible()
-    expect(screen.getByRole('button', { name: 'Explore Cork County, 1 property' })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Explore Cork City North West, 1 property' })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Explore Bandon - Kinsale, 1 property' })).toBeVisible()
 
-    await user.click(screen.getByRole('button', { name: 'Explore Cork County, 1 property' }))
+    await user.click(screen.getByRole('button', { name: 'Explore Carrigaline, 0 properties' }))
+    expect(screen.getByText('No homes in this area yet.')).toBeVisible()
 
-    expect(screen.getByRole('heading', { name: 'Homes in Cork County' })).toBeVisible()
-    expect(screen.getByRole('button', { name: 'Explore Cork County, 1 property' })).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.getByRole('button', { name: 'Explore Cork City, 1 property' })).toBeVisible()
+    await user.click(screen.getByRole('button', { name: 'Explore Bandon - Kinsale, 1 property' }))
+
+    expect(screen.getByRole('heading', { name: 'Homes in Bandon - Kinsale' })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Explore Bandon - Kinsale, 1 property' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: 'Explore Cork City North West, 1 property' })).toBeVisible()
     expect(screen.getByRole('button', { name: 'Show all Cork areas, 2 properties' })).toBeVisible()
     expect(screen.getByRole('heading', { name: kinsaleProperty.title })).toBeVisible()
     expect(screen.queryByRole('heading', { name: corkProperty.title })).not.toBeInTheDocument()

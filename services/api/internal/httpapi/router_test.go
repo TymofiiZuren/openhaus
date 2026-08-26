@@ -7,9 +7,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/TymofiiZuren/openhaus/services/api/internal/httpapi"
+	"github.com/TymofiiZuren/openhaus/services/api/internal/managerauth"
 	"github.com/TymofiiZuren/openhaus/services/api/internal/property"
 )
 
@@ -25,6 +28,28 @@ type propertyListerStub struct {
 	properties []property.Property
 	err        error
 	bounds     *property.Bounds
+}
+
+type managerAuthStub struct{ validToken string }
+
+func (stub managerAuthStub) Login(_ context.Context, email, password string) (managerauth.Session, error) {
+	if email != "manager@example.com" || password != "valid-password" {
+		return managerauth.Session{}, managerauth.ErrInvalidCredentials
+	}
+	return managerauth.Session{Token: "session-token", User: managerauth.User{ID: "manager-1", Email: email}, ExpiresAt: time.Now().Add(time.Hour)}, nil
+}
+func (stub managerAuthStub) Authenticate(_ context.Context, token string) (managerauth.User, error) {
+	if token != stub.validToken {
+		return managerauth.User{}, managerauth.ErrUnauthenticated
+	}
+	return managerauth.User{ID: "manager-1", Email: "manager@example.com"}, nil
+}
+func (stub managerAuthStub) Logout(context.Context, string) error { return nil }
+
+type managerPropertyListerStub struct{ properties []property.ManagedProperty }
+
+func (stub managerPropertyListerStub) ListManaged(context.Context) ([]property.ManagedProperty, error) {
+	return stub.properties, nil
 }
 
 func (stub *propertyListerStub) ListPublished(_ context.Context, bounds *property.Bounds) ([]property.Property, error) {
@@ -85,6 +110,45 @@ func TestUnknownRoute(t *testing.T) {
 
 	if response.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want %d", response.Code, http.StatusNotFound)
+	}
+}
+
+func TestManagerPropertiesRequireAuthentication(t *testing.T) {
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/manager/properties", nil)
+	response := httptest.NewRecorder()
+	router := httpapi.NewRouter(httpapi.Dependencies{ManagerAuth: managerAuthStub{validToken: "session-token"}, ManagerProperties: managerPropertyListerStub{}})
+
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusUnauthorized)
+	}
+}
+
+func TestManagerCanLoginAndListDrafts(t *testing.T) {
+	authenticator := managerAuthStub{validToken: "session-token"}
+	router := httpapi.NewRouter(httpapi.Dependencies{ManagerAuth: authenticator, ManagerProperties: managerPropertyListerStub{properties: []property.ManagedProperty{{Property: property.Property{ID: "draft-1", Title: "Draft home"}, Status: "draft"}}}})
+	login := httptest.NewRequest(http.MethodPost, "/api/v1/manager/session", strings.NewReader(`{"email":"manager@example.com","password":"valid-password"}`))
+	login.Header.Set("Content-Type", "application/json")
+	loginResponse := httptest.NewRecorder()
+	router.ServeHTTP(loginResponse, login)
+	if loginResponse.Code != http.StatusOK {
+		t.Fatalf("login status = %d, want %d", loginResponse.Code, http.StatusOK)
+	}
+	cookies := loginResponse.Result().Cookies()
+	if len(cookies) != 1 || !cookies[0].HttpOnly || cookies[0].SameSite != http.SameSiteLaxMode {
+		t.Fatalf("unsafe session cookie: %#v", cookies)
+	}
+
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/manager/properties", nil)
+	request.AddCookie(cookies[0])
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("list status = %d, want %d", response.Code, http.StatusOK)
+	}
+	if !strings.Contains(response.Body.String(), `"status":"draft"`) {
+		t.Fatalf("response does not include draft: %s", response.Body.String())
 	}
 }
 

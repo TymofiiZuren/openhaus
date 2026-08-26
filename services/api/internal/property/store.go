@@ -97,3 +97,28 @@ func (store *Store) ListPublished(ctx context.Context, bounds *Bounds) ([]Proper
 	}
 	return properties, nil
 }
+
+// ListManaged returns every listing, including drafts and archived homes.
+func (store *Store) ListManaged(ctx context.Context) ([]ManagedProperty, error) {
+	rows, err := store.database.Query(ctx, `
+		SELECT id::text, title, address_line1, city, county, price_cents, bedrooms,
+		       property_type, ST_X(location::geometry), ST_Y(location::geometry), status
+		FROM properties
+		ORDER BY updated_at DESC, id DESC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := make([]ManagedProperty, 0)
+	for rows.Next() {
+		var item ManagedProperty
+		item.Media = []Media{}
+		if err := rows.Scan(&item.ID, &item.Title, &item.AddressLine1, &item.City, &item.County,
+			&item.PriceCents, &item.Bedrooms, &item.PropertyType, &item.Longitude, &item.Latitude, &item.Status); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}

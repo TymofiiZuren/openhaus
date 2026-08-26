@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/TymofiiZuren/openhaus/services/api/internal/httpapi"
+	"github.com/TymofiiZuren/openhaus/services/api/internal/managerauth"
 	"github.com/TymofiiZuren/openhaus/services/api/internal/mediajob"
 	"github.com/TymofiiZuren/openhaus/services/api/internal/property"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -34,6 +35,7 @@ func main() {
 
 	propertyStore := property.NewStore(databasePool)
 	mediaJobStore := mediajob.NewStore(databasePool)
+	managerAuth := managerauth.NewService(managerauth.NewStore(databasePool))
 	uploadRoot := os.Getenv("MEDIA_SOURCE_DIR")
 	if uploadRoot == "" {
 		uploadRoot = ".data/uploads"
@@ -45,10 +47,13 @@ func main() {
 	server := &http.Server{
 		Addr: serverAddress,
 		Handler: httpapi.NewRouter(httpapi.Dependencies{
-			Readiness:  databasePool,
-			Properties: propertyStore,
-			Videos:     mediajob.NewUploadService(uploadRoot, mediaJobStore),
-			Jobs:       mediaJobStore,
+			Readiness:         databasePool,
+			Properties:        propertyStore,
+			Videos:            mediajob.NewUploadService(uploadRoot, mediaJobStore),
+			Jobs:              mediaJobStore,
+			ManagerAuth:       managerAuth,
+			ManagerProperties: propertyStore,
+			SecureCookies:     os.Getenv("APP_ENV") == "production",
 		}),
 		ReadHeaderTimeout: 5 * time.Second,
 		IdleTimeout:       60 * time.Second,

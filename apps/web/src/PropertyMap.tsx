@@ -50,35 +50,47 @@ export function PropertyMap({ properties, selectedCounty, selectedArea, onCounty
   return (
     <section className="location-explorer" aria-label="Explore homes by location">
       <header className="location-heading">
-        <div><p className="eyebrow">Explore by location</p><h2>{activeArea ? `Homes in ${activeArea}` : selectedCounty ? `Homes in ${selectedCounty}` : 'Where would you like to live?'}</h2></div>
-        <p className="location-total" aria-live="polite">{homeCount(visibleProperties.length)} for sale</p>
+        <div className="location-heading-copy">
+          <p className="eyebrow">Property for sale in Ireland</p>
+          <h1>{activeArea ? `Homes in ${activeArea}` : selectedCounty ? `Homes in ${selectedCounty}` : 'Find a place that feels like home'}</h1>
+          <p className="location-introduction">Search by county or local area, then explore every available home on the map.</p>
+          <p className="location-total" aria-live="polite">{homeCount(visibleProperties.length)} for sale</p>
+        </div>
+        <label className="location-search location-hero-search">
+          <span>Where do you want to live?</span>
+          <span className="location-search-field"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5" /><path d="m16 16 4 4" /></svg><input type="search" aria-label="Search locations" value={query} placeholder="County, town or address" onChange={(event) => setQuery(event.target.value)} /></span>
+        </label>
       </header>
 
       <div className="location-workspace">
         <div className="location-toolbar">
+          <nav className="location-context" aria-label="Map location">
+            {selectedCounty ? <button type="button" aria-label="All Ireland" onClick={() => chooseCounty(null)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14.5 6-6 6 6 6" /></svg>Ireland</button> : <strong>Ireland</strong>}
+            {selectedCounty && <><span aria-hidden="true">/</span><strong>{selectedCounty}</strong></>}
+            {activeArea && <><span aria-hidden="true">/</span><strong>{activeArea}</strong></>}
+          </nav>
           <div className="location-toolbar-primary">
             <div className="location-filter-group">
               <p>Homes by county</p>
               <div className="location-pills" aria-label="Counties with homes for sale">
-                {!normalizedQuery && <button type="button" aria-pressed={!selectedCounty} aria-label="All Ireland" onClick={() => chooseCounty(null)}>All Ireland <span>{properties.length}</span></button>}
+                {!normalizedQuery && !selectedCounty && <button type="button" aria-pressed="true" aria-label="All Ireland" onClick={() => chooseCounty(null)}>All Ireland <span>{properties.length}</span></button>}
                 {matchingGroups.map((group) => <button type="button" key={group.county} aria-pressed={sameLocation(group.county, selectedCounty ?? '')} aria-label={`Explore ${group.county}, ${propertyCount(group.properties.length)}`} onClick={() => chooseCounty(group.county)}>{group.county} <span>{group.properties.length}</span></button>)}
                 {matchingGroups.length === 0 && <span className="filter-empty">No homes match this search</span>}
               </div>
             </div>
-            <label className="location-search">
-              <span>Search locations</span>
-              <span className="location-search-field"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5" /><path d="m16 16 4 4" /></svg><input type="search" value={query} placeholder="Try Dublin or Douglas" onChange={(event) => setQuery(event.target.value)} /></span>
-            </label>
           </div>
 
-          {selectedGroup && countyAreas.length > 0 && <div className="location-filter-row city-filter-row">
-            <p>Areas</p>
-            <div className="location-pills city-pills" aria-label={`Areas in ${selectedGroup.county}`}>
-              {!normalizedQuery && <button type="button" aria-pressed={!activeArea} aria-label={`Show all ${selectedGroup.county} areas, ${propertyCount(selectedGroup.properties.length)}`} onClick={() => chooseArea(undefined)}>All {selectedGroup.county} <span>{selectedGroup.properties.length}</span></button>}
-              {matchingAreas.map((group) => <button type="button" key={group.area.name} aria-pressed={sameLocation(group.area.name, activeArea ?? '')} aria-label={`Explore ${group.area.name}, ${propertyCount(group.properties.length)}`} onClick={() => chooseArea(group.area.name)}>{group.area.name} <span>{group.properties.length}</span></button>)}
-              {matchingAreas.length === 0 && <span className="filter-empty">No areas match this search</span>}
-            </div>
-          </div>}
+          <div className={`location-drilldown-slot${selectedGroup && countyAreas.length > 0 ? ' is-active' : ''}`}>
+            {!selectedGroup && <p className="location-drilldown-empty">Select a county on the map or from the county list. Local electoral areas appear only after you enter a county.</p>}
+            {selectedGroup && countyAreas.length > 0 && <div className="location-filter-row city-filter-row">
+              <p>Areas</p>
+              <div className="location-pills city-pills" aria-label={`Areas in ${selectedGroup.county}`}>
+                {!normalizedQuery && <button type="button" aria-pressed={!activeArea} aria-label={`Show all ${selectedGroup.county} areas, ${propertyCount(selectedGroup.properties.length)}`} onClick={() => chooseArea(undefined)}>All {selectedGroup.county} <span>{selectedGroup.properties.length}</span></button>}
+                {matchingAreas.map((group) => <button type="button" key={group.area.name} aria-pressed={sameLocation(group.area.name, activeArea ?? '')} aria-label={`Explore ${group.area.name}, ${propertyCount(group.properties.length)}`} onClick={() => chooseArea(group.area.name)}>{group.area.name} <span>{group.properties.length}</span></button>)}
+                {matchingAreas.length === 0 && <span className="filter-empty">No areas match this search</span>}
+              </div>
+            </div>}
+          </div>
         </div>
 
         <div className="map-stage">

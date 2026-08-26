@@ -4,6 +4,7 @@ export type Listener = { remove(): void }
 export type MapInstance = {
   fitBounds(bounds: BoundsInstance, padding?: number): void
   getZoom(): number | undefined
+  moveCamera?(options: { center: Coordinate; zoom: number }): void
   setCenter(position: Coordinate): void
   setMapTypeId(type: 'roadmap' | 'satellite'): void
   setOptions(options: Record<string, unknown>): void
