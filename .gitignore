@@ -27,3 +27,4 @@ CMakeCache.txt
 # Local scratch files
 .scratch/
 .data/
+.gstack/

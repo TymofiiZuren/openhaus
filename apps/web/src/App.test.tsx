@@ -46,7 +46,7 @@ const corkProperty = {
   ...property,
   id: '22222222-2222-4222-8222-222222222222',
   title: 'Garden-view contemporary residence',
-  addressLine1: 'Douglas',
+  addressLine1: 'Douglas, Cork',
   city: 'Cork',
   county: 'Cork',
   longitude: -8.4932,
@@ -59,8 +59,20 @@ const corkProperty = {
   }],
 }
 
+const kinsaleProperty = {
+  ...corkProperty,
+  id: '33333333-3333-4333-8333-333333333333',
+  title: 'Harbour-edge townhouse',
+  addressLine1: 'Compass Hill',
+  city: 'Kinsale',
+  longitude: -8.5306,
+  latitude: 51.7059,
+}
+
 afterEach(() => {
   vi.restoreAllMocks()
+  vi.unstubAllEnvs()
+  window.history.replaceState({}, '', '/')
 })
 
 describe('property catalogue', () => {
@@ -82,55 +94,101 @@ describe('property catalogue', () => {
     expect(screen.getByText('4 bedrooms')).toBeVisible()
     expect(screen.getByText('Terraced')).toBeVisible()
     expect(fetch).toHaveBeenCalledWith(
-      '/api/v1/properties?bbox=-10.68124,51.4199,-5.99629,55.44685',
+      '/api/v1/properties',
       expect.objectContaining({ headers: { Accept: 'application/json' } }),
     )
   })
 
-  it('lets buyers explore listings by county and city on the Ireland map', async () => {
+  it('filters the location explorer and catalogue by county and restores all Ireland', async () => {
     mockResponse({ properties: [property, corkProperty] })
     const user = userEvent.setup()
 
     render(<App />)
 
-    const map = await screen.findByRole('region', { name: 'Explore homes by location' })
-    expect(map).toBeVisible()
-    expect(within(map).queryByRole('button', { name: /on map$/ })).not.toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Cork, 1 home' }))
+    const explorer = await screen.findByRole('region', { name: 'Explore homes by location' })
+    expect(explorer).toBeVisible()
+    await user.click(screen.getByRole('button', { name: 'Explore Cork, 1 property' }))
 
-    expect(screen.getByRole('heading', { name: 'Cork' })).toBeVisible()
-    expect(within(map).getByText('1 home')).toBeVisible()
-    expect(screen.getByRole('button', { name: 'View Cork on street map' })).toBeVisible()
+    expect(screen.getByRole('heading', { name: corkProperty.title })).toBeVisible()
+    expect(screen.queryByRole('heading', { name: property.title })).not.toBeInTheDocument()
+    expect(within(explorer).getByText('1 home for sale')).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Explore Cork City, 1 property' })).toBeVisible()
 
-    await user.click(screen.getByRole('button', { name: 'View Cork on street map' }))
-    expect(await screen.findByRole('region', { name: 'Street map of Cork' })).toBeVisible()
-    expect(screen.getByText('1 property in Cork')).toBeVisible()
-    expect(await screen.findByText('The interactive map is unavailable in this browser.')).toBeVisible()
-    expect(screen.getByRole('region', { name: 'Raster street map of Cork' })).toBeVisible()
-    expect(screen.getByRole('button', { name: 'Back to Ireland' })).toBeVisible()
-    await user.click(screen.getByRole('button', { name: `View ${corkProperty.title} on street map` }))
-    const streetMap = screen.getByRole('region', { name: 'Street map of Cork' })
-    expect(within(streetMap).getByRole('heading', { name: corkProperty.title })).toBeVisible()
-    expect(within(streetMap).getByRole('link', { name: 'View property' })).toHaveAttribute(
-      'href', `#property-${corkProperty.id}`,
-    )
+    await user.click(screen.getByRole('button', { name: 'All Ireland' }))
+    expect(screen.getByRole('heading', { name: property.title })).toBeVisible()
+    expect(screen.getByRole('heading', { name: corkProperty.title })).toBeVisible()
   })
 
-  it('requests the new geographic bounds when the buyer zooms the map', async () => {
+  it('does not expose property markers until a county is selected', async () => {
+    mockResponse({ properties: [property, corkProperty] })
+
+    render(<App />)
+
+    const explorer = await screen.findByRole('region', { name: 'Explore homes by location' })
+    expect(within(explorer).getByText('Choose a county to see homes and local areas')).toBeVisible()
+    expect(within(explorer).queryByText('Areas')).not.toBeInTheDocument()
+    expect(within(explorer).queryByRole('button', { name: /Explore Dublin City/ })).not.toBeInTheDocument()
+  })
+
+  it('lets a buyer search available counties and towns without relying on a map', async () => {
     mockResponse({ properties: [property, corkProperty] })
     const user = userEvent.setup()
 
     render(<App />)
-    await screen.findByRole('region', { name: 'Explore homes by location' })
-    await user.click(screen.getByRole('button', { name: 'Zoom in' }))
 
-    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2))
-    const secondURL = vi.mocked(fetch).mock.calls[1][0]
-    expect(secondURL).toMatch(/^\/api\/v1\/properties\?bbox=/)
-    expect(secondURL).not.toBe('/api/v1/properties?bbox=-10.68124,51.4199,-5.99629,55.44685')
-    const firstOptions = vi.mocked(fetch).mock.calls[0][1]
-    expect(firstOptions?.signal).toBeInstanceOf(AbortSignal)
-    expect(firstOptions?.signal?.aborted).toBe(true)
+    const search = await screen.findByRole('searchbox', { name: 'Search locations' })
+    await user.type(search, 'douglas')
+
+    expect(screen.getByRole('button', { name: 'Explore Cork, 1 property' })).toBeVisible()
+    expect(screen.queryByRole('button', { name: 'Explore Dublin, 1 property' })).not.toBeInTheDocument()
+  })
+
+  it('drills from a county into its administrative areas and filters the location panel', async () => {
+    vi.stubEnv('VITE_GOOGLE_MAPS_API_KEY', '')
+    mockResponse({ properties: [property, corkProperty, kinsaleProperty] })
+    const user = userEvent.setup()
+
+    render(<App />)
+
+    await user.click(await screen.findByRole('button', { name: 'Explore Cork, 2 properties' }))
+    expect(screen.getByRole('button', { name: 'Explore Dublin, 1 property' })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Explore Cork, 2 properties' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: 'Show all Cork areas, 2 properties' })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Explore Cork City, 1 property' })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Explore Cork County, 1 property' })).toBeVisible()
+
+    await user.click(screen.getByRole('button', { name: 'Explore Cork County, 1 property' }))
+
+    expect(screen.getByRole('heading', { name: 'Homes in Cork County' })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Explore Cork County, 1 property' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: 'Explore Cork City, 1 property' })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Show all Cork areas, 2 properties' })).toBeVisible()
+    expect(screen.getByRole('heading', { name: kinsaleProperty.title })).toBeVisible()
+    expect(screen.queryByRole('heading', { name: corkProperty.title })).not.toBeInTheDocument()
+  })
+
+  it('returns an unavailable county URL to the useful Ireland overview', async () => {
+    vi.stubEnv('VITE_GOOGLE_MAPS_API_KEY', '')
+    window.history.replaceState({}, '', '/?county=Galway')
+    mockResponse({ properties: [property, corkProperty] })
+
+    render(<App />)
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'All Ireland' })).toHaveAttribute('aria-pressed', 'true'))
+    expect(screen.queryByRole('button', { name: /Explore Galway/ })).not.toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: property.title })).toBeVisible()
+    expect(screen.getByRole('heading', { name: corkProperty.title })).toBeVisible()
+    await waitFor(() => expect(window.location.search).toBe(''))
+  })
+
+  it('keeps location browsing usable when Google Maps is not configured', async () => {
+    vi.stubEnv('VITE_GOOGLE_MAPS_API_KEY', '')
+    mockResponse({ properties: [property] })
+
+    render(<App />)
+
+    expect(await screen.findByText('Map view is unavailable right now.')).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Explore Dublin, 1 property' })).toBeVisible()
   })
 
   it('lets the buyer browse all media for a property', async () => {
@@ -189,7 +247,7 @@ describe('property catalogue', () => {
 	await user.upload(screen.getByLabelText('Choose an MP4 or MOV video'), file)
 	await user.click(screen.getByRole('button', { name: 'Upload video' }))
 
-	expect(await screen.findByRole('status')).toHaveTextContent('Video tour ready')
+	expect(await screen.findByText('Video tour ready.')).toBeVisible()
 	expect(fetchMock).toHaveBeenCalledWith(
 		`/api/v1/properties/${property.id}/videos`,
 		expect.objectContaining({ method: 'POST' }),

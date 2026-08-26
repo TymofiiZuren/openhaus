@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
 import './App.css'
 import { uploadPropertyVideo, waitForMediaJob, type MediaJob } from './api/mediaJobs'
-import { fetchProperties, type MapBounds, type Property } from './api/properties'
+import { fetchProperties, type Property } from './api/properties'
+import { areaForCoordinate } from './administrativeAreas'
 import { PropertyMap } from './PropertyMap'
-import { IRELAND_MAP_BOUNDS } from './mapBounds'
 
 type CatalogueState =
   | { status: 'loading'; properties: Property[] }
@@ -17,18 +17,19 @@ const euros = new Intl.NumberFormat('en-IE', {
 function App() {
   const [state, setState] = useState<CatalogueState>({ status: 'loading', properties: [] })
   const [requestKey, setRequestKey] = useState(0)
-  const [mapBounds, setMapBounds] = useState<MapBounds>(IRELAND_MAP_BOUNDS)
+  const [selectedCounty, setSelectedCounty] = useState<string | null>(() => new URLSearchParams(window.location.search).get('county'))
+  const [selectedArea, setSelectedArea] = useState<string>()
 
   useEffect(() => {
     const controller = new AbortController()
-    fetchProperties(controller.signal, mapBounds)
+    fetchProperties(controller.signal)
       .then((properties) => setState({ status: 'success', properties }))
       .catch((error: unknown) => {
         if (error instanceof DOMException && error.name === 'AbortError') return
         setState({ status: 'error', properties: [] })
       })
     return () => controller.abort()
-  }, [mapBounds, requestKey])
+  }, [requestKey])
 
   const retry = useCallback(() => {
     setState({ status: 'loading', properties: [] })
@@ -36,10 +37,42 @@ function App() {
   }, [])
 
   const refresh = useCallback(() => setRequestKey((key) => key + 1), [])
-  const updateMapBounds = useCallback((bounds: MapBounds) => {
-    setMapBounds((current) => current.every((coordinate, index) => coordinate === bounds[index]) ? current : bounds)
+  const selectCounty = useCallback((county: string | null) => {
+    setSelectedCounty(county)
+    setSelectedArea(undefined)
+    const url = new URL(window.location.href)
+    if (county) url.searchParams.set('county', county)
+    else url.searchParams.delete('county')
+    window.history.pushState({}, '', url)
   }, [])
 
+  useEffect(() => {
+    const restoreCounty = () => {
+      setSelectedCounty(new URLSearchParams(window.location.search).get('county'))
+      setSelectedArea(undefined)
+    }
+    window.addEventListener('popstate', restoreCounty)
+    return () => window.removeEventListener('popstate', restoreCounty)
+  }, [])
+
+  useEffect(() => {
+    if (state.status !== 'success' || !selectedCounty) return
+    const available = state.properties.some((property) => property.county.localeCompare(selectedCounty, undefined, { sensitivity: 'base' }) === 0)
+    if (available) return
+    const url = new URL(window.location.href)
+    url.searchParams.delete('county')
+    window.history.replaceState({}, '', url)
+  }, [selectedCounty, state])
+
+  const effectiveSelectedCounty = selectedCounty && state.properties.some((property) => property.county.localeCompare(selectedCounty, undefined, { sensitivity: 'base' }) === 0)
+    ? selectedCounty
+    : null
+  const countyProperties = effectiveSelectedCounty
+    ? state.properties.filter((property) => property.county.localeCompare(effectiveSelectedCounty, undefined, { sensitivity: 'base' }) === 0)
+    : state.properties
+  const visibleProperties = effectiveSelectedCounty && selectedArea
+    ? countyProperties.filter((property) => areaForCoordinate(effectiveSelectedCounty, { lat: property.latitude, lng: property.longitude })?.name === selectedArea)
+    : countyProperties
   return (
     <div className="site-shell">
       <header className="site-header">
@@ -52,12 +85,14 @@ function App() {
           <h1 id="catalogue-title">Find a place that feels like yours.</h1>
           <p className="intro-copy">A considered collection of homes for sale across Ireland.</p>
         </section>
-        {state.status === 'success' && <PropertyMap properties={state.properties} onBoundsChange={updateMapBounds} />}
+        {state.status === 'success' && state.properties.length > 0 && (
+          <PropertyMap properties={state.properties} selectedCounty={effectiveSelectedCounty} selectedArea={selectedArea} onCountyChange={selectCounty} onAreaChange={setSelectedArea} />
+        )}
         <section className="catalogue" aria-label="Homes for sale">
           <div className="catalogue-heading">
             <h2>Latest homes</h2>
             {state.status === 'success' && (
-              <p aria-live="polite">{state.properties.length} {state.properties.length === 1 ? 'home' : 'homes'}</p>
+              <p aria-live="polite">{visibleProperties.length} {visibleProperties.length === 1 ? 'home' : 'homes'}</p>
             )}
           </div>
           {state.status === 'loading' && <LoadingState />}
@@ -68,9 +103,9 @@ function App() {
               <p>New properties will appear here as soon as they are published.</p>
             </div>
           )}
-          {state.status === 'success' && state.properties.length > 0 && (
+          {state.status === 'success' && visibleProperties.length > 0 && (
             <div className="property-grid">
-              {state.properties.map((property) => (
+              {visibleProperties.map((property) => (
                 <PropertyCard key={property.id} property={property} onMediaReady={refresh} />
               ))}
             </div>

@@ -80,17 +80,37 @@ curl "http://localhost:8080/api/v1/properties?bbox=-11,51,-5,56"
 The spatial query uses the GiST index on `properties.location`. Invalid,
 out-of-range, or reversed bounds return `400 invalid_bbox`.
 
-The public map derives this bounding box from its current SVG viewport. Zooming
-or dragging the map debounces a new catalogue request and aborts the previous
-request when its viewport is no longer current.
+The public client has one location explorer built around buyer decisions rather
+than map controls. Buyers can search the available counties and towns, open a
+county, select a home, and keep the map and catalogue on the same selection.
+The county selection is stored in the URL and works even if the map provider is
+unavailable.
 
-Selecting a county shows its published property count. The explicit county
-view lazy-loads MapLibre GL JS and fits an OpenFreeMap/OpenStreetMap street map
-to that county's generated WGS84 bounds. Map markers cluster at wider zooms and
-open a property preview at street level. The national county map intentionally
-does not show property markers. Browsers without WebGL2 receive a raster
-OpenStreetMap street view with HTML property markers and visible listing cards.
-Neither map mode requires an API key, and attribution remains visible.
+The production renderer uses Google Maps for geographic and street data. Its
+visible experience is custom OpenHaus UI: warm neutral cartography, price
+markers, map/satellite switching, zoom/reframe controls, location search, and
+persistent property previews. Copy the web environment example and add a
+browser-restricted Maps JavaScript API key:
+
+```bash
+cp apps/web/.env.example apps/web/.env.local
+```
+
+Then set `VITE_GOOGLE_MAPS_API_KEY` in `apps/web/.env.local` and restart Vite.
+Restrict the key to the local and deployed OpenHaus origins in Google Cloud.
+The browser key is intentionally public; referrer restrictions and API
+restrictions are what protect it. Google Maps requires a billing-enabled Google
+Cloud project, so usage and budget alerts must be configured before deployment.
+
+The explorer uses a progressive Ireland → county → council-area flow. The
+national view shows county boundaries without property markers. Selecting Cork
+or Dublin centers that county, replaces the national layer with its council
+areas, and reveals only homes in the selected county. The current council-area
+GeoJSON is a small, attributed client-side MVP slice for the two published
+counties; it is not the authoritative persistence hierarchy. The existing
+PostGIS bounding-box query remains the foundation for the later viewport-search
+API. See [`docs/MAP_IMPLEMENTATION_PLAN.md`](docs/MAP_IMPLEMENTATION_PLAN.md)
+for the production data gates and next phases.
 
 ## Asynchronous video processing
 
