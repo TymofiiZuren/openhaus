@@ -2,9 +2,12 @@ export type Coordinate = { lat: number; lng: number }
 export type BoundsInstance = { extend(position: Coordinate): void }
 export type Listener = { remove(): void }
 export type MapInstance = {
+  addListener(event: 'dragstart' | 'zoom_changed' | 'idle', listener: () => void): Listener
   fitBounds(bounds: BoundsInstance, padding?: number): void
   getZoom(): number | undefined
+  getCenter(): { lat(): number; lng(): number } | undefined
   moveCamera?(options: { center: Coordinate; zoom: number }): void
+  panTo?(position: Coordinate): void
   setCenter(position: Coordinate): void
   setMapTypeId(type: 'roadmap' | 'satellite'): void
   setOptions(options: Record<string, unknown>): void
@@ -16,6 +19,11 @@ export type MarkerInstance = {
   setIcon(icon: Record<string, unknown>): void
   setZIndex(index: number): void
 }
+export type InfoWindowInstance = {
+  addListener(event: 'closeclick', listener: () => void): Listener
+  close(): void
+  open(options: { map: MapInstance; anchor: MarkerInstance }): void
+}
 export type PolygonInstance = {
   addListener(event: 'click' | 'mouseover' | 'mouseout', listener: () => void): Listener
   setMap(map: MapInstance | null): void
@@ -24,8 +32,10 @@ export type PolygonInstance = {
 export type GoogleMaps = {
   Map: new (element: HTMLElement, options: Record<string, unknown>) => MapInstance
   Marker: new (options: Record<string, unknown>) => MarkerInstance
+  InfoWindow: new (options: Record<string, unknown>) => InfoWindowInstance
   Polygon: new (options: Record<string, unknown>) => PolygonInstance
   LatLngBounds: new () => BoundsInstance
+  event?: { trigger(instance: MapInstance, event: 'resize'): void }
 }
 
 declare global {

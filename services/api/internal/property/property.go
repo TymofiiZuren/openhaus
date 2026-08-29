@@ -29,6 +29,20 @@ type ManagedProperty struct {
 	Status string `json:"status"`
 }
 
+// ManagedPropertyInput is the editable listing contract used by managers.
+type ManagedPropertyInput struct {
+	Title        string  `json:"title"`
+	AddressLine1 string  `json:"addressLine1"`
+	City         string  `json:"city"`
+	County       string  `json:"county"`
+	PriceCents   int64   `json:"priceCents"`
+	Bedrooms     int16   `json:"bedrooms"`
+	PropertyType string  `json:"propertyType"`
+	Longitude    float64 `json:"longitude"`
+	Latitude     float64 `json:"latitude"`
+	Status       string  `json:"status"`
+}
+
 // Media is an ordered visual asset belonging to a property.
 type Media struct {
 	URL      string `json:"url"`

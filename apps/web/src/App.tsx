@@ -1,6 +1,5 @@
-import { useCallback, useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
+import { useCallback, useDeferredValue, useEffect, useState } from 'react'
 import './App.css'
-import { uploadPropertyVideo, waitForMediaJob, type MediaJob } from './api/mediaJobs'
 import { fetchProperties, type Property } from './api/properties'
 import { areaForCoordinate } from './administrativeAreas'
 import { PropertyMap } from './PropertyMap'
@@ -19,6 +18,12 @@ function App() {
   const [requestKey, setRequestKey] = useState(0)
   const [selectedCounty, setSelectedCounty] = useState<string | null>(() => new URLSearchParams(window.location.search).get('county'))
   const [selectedArea, setSelectedArea] = useState<string>()
+  const [propertyQuery, setPropertyQuery] = useState('')
+  const [minimumBedrooms, setMinimumBedrooms] = useState(0)
+  const [propertyType, setPropertyType] = useState('all')
+  const [maximumPrice, setMaximumPrice] = useState(0)
+  const [sortOrder, setSortOrder] = useState('recent')
+  const deferredPropertyQuery = useDeferredValue(propertyQuery.trim().toLocaleLowerCase())
 
   useEffect(() => {
     const controller = new AbortController()
@@ -36,7 +41,6 @@ function App() {
     setRequestKey((key) => key + 1)
   }, [])
 
-  const refresh = useCallback(() => setRequestKey((key) => key + 1), [])
   const selectCounty = useCallback((county: string | null) => {
     setSelectedCounty(county)
     setSelectedArea(undefined)
@@ -67,38 +71,62 @@ function App() {
   const effectiveSelectedCounty = selectedCounty && state.properties.some((property) => property.county.localeCompare(selectedCounty, undefined, { sensitivity: 'base' }) === 0)
     ? selectedCounty
     : null
+  const filteredProperties = state.properties.filter((property) => {
+    const searchable = `${property.title} ${property.addressLine1} ${property.city} ${property.county}`.toLocaleLowerCase()
+    return (!deferredPropertyQuery || searchable.includes(deferredPropertyQuery))
+      && (!minimumBedrooms || property.bedrooms >= minimumBedrooms)
+      && (propertyType === 'all' || property.propertyType === propertyType)
+      && (!maximumPrice || property.priceCents <= maximumPrice * 100)
+  })
   const countyProperties = effectiveSelectedCounty
-    ? state.properties.filter((property) => property.county.localeCompare(effectiveSelectedCounty, undefined, { sensitivity: 'base' }) === 0)
-    : state.properties
-  const visibleProperties = effectiveSelectedCounty && selectedArea
+    ? filteredProperties.filter((property) => property.county.localeCompare(effectiveSelectedCounty, undefined, { sensitivity: 'base' }) === 0)
+    : filteredProperties
+  const locationProperties = effectiveSelectedCounty && selectedArea
     ? countyProperties.filter((property) => areaForCoordinate(effectiveSelectedCounty, { lat: property.latitude, lng: property.longitude })?.name === selectedArea)
     : countyProperties
+  const visibleProperties = [...locationProperties].sort((left, right) => {
+    if (sortOrder === 'price-low') return left.priceCents - right.priceCents
+    if (sortOrder === 'price-high') return right.priceCents - left.priceCents
+    return 0
+  })
   const featuredProperty = state.status === 'success' ? state.properties[0] : undefined
   const featuredImage = featuredProperty?.media.find((item) => item.kind === 'image')
   const featuredFloorPlan = featuredProperty?.media.find((item) => item.kind === 'floor_plan')
+  const requestedPropertyID = propertyIDFromPath(window.location.pathname)
+
+  if (requestedPropertyID) {
+    return <PropertyDetailPage property={state.properties.find((property) => property.id === requestedPropertyID)} status={state.status} onRetry={retry} />
+  }
+
   return (
     <div className="site-shell">
       <a className="skip-link" href="#explore">Skip to property search</a>
-      <header className="site-header">
-        <a className="wordmark" href="/" aria-label="OpenHaus home">OpenHaus</a>
-        <nav className="site-navigation" aria-label="Primary navigation">
-          <a href="#homes">Buy</a>
-          <a href="#explore">Search by map</a>
-          <a href="#why-openhaus">How it works</a>
-        </nav>
-        <a className="manager-link" href="/manager/login">List a property</a>
-      </header>
+      <SiteHeader />
       <main>
         <div id="explore" className="map-first">
           {state.status === 'success' && state.properties.length > 0 && (
-            <PropertyMap properties={state.properties} selectedCounty={effectiveSelectedCounty} selectedArea={selectedArea} onCountyChange={selectCounty} onAreaChange={setSelectedArea} />
+            <PropertyMap
+              properties={filteredProperties}
+              selectedCounty={effectiveSelectedCounty}
+              selectedArea={selectedArea}
+              propertyQuery={propertyQuery}
+              minimumBedrooms={minimumBedrooms}
+              propertyType={propertyType}
+              maximumPrice={maximumPrice}
+              onPropertyQueryChange={setPropertyQuery}
+              onMinimumBedroomsChange={setMinimumBedrooms}
+              onPropertyTypeChange={setPropertyType}
+              onMaximumPriceChange={setMaximumPrice}
+              onCountyChange={selectCounty}
+              onAreaChange={setSelectedArea}
+            />
           )}
         </div>
         <section className="catalogue" id="homes" aria-label="Homes for sale">
           <div className="catalogue-heading">
             <div><p className="eyebrow">Properties for sale</p><h2>{effectiveSelectedCounty ? `Homes in ${effectiveSelectedCounty}` : 'Recently added homes'}</h2></div>
             {state.status === 'success' && (
-              <p aria-live="polite">{visibleProperties.length} {visibleProperties.length === 1 ? 'home' : 'homes'}</p>
+              <div className="catalogue-actions"><button type="button">Save search</button><label>Sort by <select aria-label="Sort properties" value={sortOrder} onChange={(event) => setSortOrder(event.target.value)}><option value="recent">Most recent</option><option value="price-low">Price: low to high</option><option value="price-high">Price: high to low</option></select></label><p aria-live="polite">{visibleProperties.length} {visibleProperties.length === 1 ? 'home' : 'homes'}</p></div>
             )}
           </div>
           {state.status === 'loading' && <LoadingState />}
@@ -119,7 +147,7 @@ function App() {
           {state.status === 'success' && visibleProperties.length > 0 && (
             <div className="property-grid">
               {visibleProperties.map((property) => (
-                <PropertyCard key={property.id} property={property} onMediaReady={refresh} />
+                <PropertyCard key={property.id} property={property} />
               ))}
             </div>
           )}
@@ -151,7 +179,7 @@ function App() {
   )
 }
 
-function PropertyCard({ property, onMediaReady }: { property: Property; onMediaReady: () => void }) {
+function PropertyCard({ property }: { property: Property }) {
   return (
     <article className="property-card" id={`property-${property.id}`}>
       <PropertyGallery property={property} />
@@ -165,114 +193,52 @@ function PropertyCard({ property, onMediaReady }: { property: Property; onMediaR
         <div className="property-details">
           <span>{property.bedrooms} bedrooms</span>
           <span>{titleCase(property.propertyType)}</span>
-          <a href={`#property-${property.id}`} aria-label={`View details for ${property.title}`}>View home <span aria-hidden="true">→</span></a>
+          <span>Photography · plans · video</span>
+          <a href={`/properties/${property.id}`} aria-label={`View details for ${property.title}`}>View home <span aria-hidden="true">→</span></a>
         </div>
-        {import.meta.env.DEV && <VideoUpload property={property} onReady={onMediaReady} />}
       </div>
     </article>
   )
 }
 
-type UploadState =
-  | { status: 'idle' }
-  | { status: 'uploading'; filename: string }
-  | { status: 'processing'; filename: string; job: MediaJob }
-  | { status: 'ready'; filename: string }
-  | { status: 'error'; message: string }
-
-const maxVideoBytes = 2 * 1024 * 1024 * 1024
-
-function VideoUpload({ property, onReady }: { property: Property; onReady: () => void }) {
-  const [expanded, setExpanded] = useState(false)
-  const [file, setFile] = useState<File>()
-  const [state, setState] = useState<UploadState>({ status: 'idle' })
-  const controller = useRef<AbortController | undefined>(undefined)
-
-  useEffect(() => () => controller.current?.abort(), [])
-
-  function chooseFile(event: ChangeEvent<HTMLInputElement>) {
-    const selected = event.target.files?.[0]
-    setFile(undefined)
-    setState({ status: 'idle' })
-    if (!selected) return
-    const extensionAllowed = /\.(mp4|mov)$/i.test(selected.name)
-    const typeAllowed = selected.type === 'video/mp4' || selected.type === 'video/quicktime'
-    if (!extensionAllowed || (!typeAllowed && selected.type !== '')) {
-      setState({ status: 'error', message: 'Choose an MP4 or MOV video.' })
-      return
-    }
-    if (selected.size > maxVideoBytes) {
-      setState({ status: 'error', message: 'Choose a video smaller than 2 GiB.' })
-      return
-    }
-    setFile(selected)
-  }
-
-  async function submit(event: FormEvent) {
-    event.preventDefault()
-    if (!file || state.status === 'uploading' || state.status === 'processing') return
-    controller.current?.abort()
-    controller.current = new AbortController()
-    const signal = controller.current.signal
-    setState({ status: 'uploading', filename: file.name })
-    try {
-      const queued = await uploadPropertyVideo(property.id, file, signal)
-      setState({ status: 'processing', filename: file.name, job: queued })
-      const completed = await waitForMediaJob(
-        queued.id,
-        (job) => setState({ status: 'processing', filename: file.name, job }),
-        signal,
-      )
-      if (completed.status === 'failed') {
-        setState({ status: 'error', message: completed.errorMessage || 'Video processing failed. Try another file.' })
-        return
-      }
-      setState({ status: 'ready', filename: file.name })
-      onReady()
-    } catch (error) {
-      if (error instanceof DOMException && error.name === 'AbortError') return
-      setState({ status: 'error', message: 'The video could not be uploaded. Try again.' })
-    }
-  }
-
-  const busy = state.status === 'uploading' || state.status === 'processing'
+function SiteHeader() {
   return (
-    <div className="listing-tools">
-      <button
-        className="listing-tools-toggle"
-        type="button"
-        aria-expanded={expanded}
-        aria-controls={`video-upload-${property.id}`}
-        aria-label={`Add a video tour for ${property.title}`}
-        onClick={() => setExpanded((value) => !value)}
-      >
-        <span>Listing tools · Local demo</span>
-        <span aria-hidden="true">{expanded ? '−' : '+'}</span>
-      </button>
-      {expanded && (
-        <form id={`video-upload-${property.id}`} className="video-upload" onSubmit={submit}>
-          <div>
-            <p className="video-upload-title">Add a video tour</p>
-            <p className="video-upload-help">MP4 or MOV, up to 2 GiB. OpenHaus prepares a web-ready copy.</p>
-          </div>
-          <label className="file-picker">
-            <span>Choose an MP4 or MOV video</span>
-            <input type="file" accept="video/mp4,video/quicktime,.mp4,.mov" disabled={busy} onChange={chooseFile} />
-          </label>
-          {file && state.status === 'idle' && <p className="selected-file">Selected: {file.name}</p>}
-          <button className="upload-button" type="submit" disabled={!file || busy}>
-            {state.status === 'uploading' ? 'Uploading…' : 'Upload video'}
-          </button>
-          {state.status === 'uploading' && <p className="upload-status" role="status">Uploading {state.filename}…</p>}
-          {state.status === 'processing' && (
-            <p className="upload-status" role="status">
-              {state.job.status === 'pending' ? 'Video queued for processing…' : `Processing ${state.filename}…`}
-            </p>
-          )}
-          {state.status === 'ready' && <p className="upload-status upload-success" role="status">Video tour ready.</p>}
-          {state.status === 'error' && <p className="upload-status upload-error" role="alert">{state.message}</p>}
-        </form>
-      )}
+    <header className="site-header">
+      <a className="wordmark" href="/" aria-label="OpenHaus home">OpenHaus</a>
+      <nav className="site-navigation" aria-label="Primary navigation">
+        <a href="/#explore">Find a property</a>
+        <a href="/manager/login">Market your property</a>
+        <a href="/#why-openhaus">Why OpenHaus</a>
+        <a href="/#homes">Property journal</a>
+      </nav>
+      <a className="manager-link" href="/manager/login">List a property</a>
+    </header>
+  )
+}
+
+function PropertyDetailPage({ property, status, onRetry }: { property?: Property; status: CatalogueState['status']; onRetry: () => void }) {
+  return (
+    <div className="site-shell">
+      <a className="skip-link" href="#property-detail">Skip to property details</a>
+      <SiteHeader />
+      <main id="property-detail" className="property-page" aria-label="Property details">
+        {status === 'loading' && <LoadingState />}
+        {status === 'error' && <ErrorState onRetry={onRetry} />}
+        {status === 'success' && !property && <div className="property-page-message"><p className="eyebrow">Property unavailable</p><h1>This home could not be found.</h1><a href="/">Return to property search</a></div>}
+        {status === 'success' && property && <>
+          <div className="property-page-nav"><a href="/" aria-label="Back to property search"><span aria-hidden="true">←</span> Back to property search</a><span>{property.city} · Co. {property.county}</span></div>
+          <article className="property-page-layout">
+            <div className="property-page-hero"><PropertyGallery property={property} /></div>
+            <div className="property-page-summary">
+              <div className="property-page-identity"><p className="eyebrow">Property for sale</p><h1>{property.title}</h1><p className="property-page-address">{property.addressLine1}, Co. {property.county}</p></div>
+              <strong className="property-page-price"><span>Asking price</span>{euros.format(property.priceCents / 100)}</strong>
+              <dl><div><dt>Home</dt><dd>{titleCase(property.propertyType)}</dd></div><div><dt>Bedrooms</dt><dd>{property.bedrooms}</dd></div><div><dt>Property media</dt><dd>{property.media.length} items</dd></div></dl>
+              <aside className="property-contact-card" aria-label="Arrange a viewing"><p className="eyebrow">OpenHaus viewings</p><h2>See this home in person</h2><p>Request details or arrange a private viewing with the listing team.</p><a className="viewing-link" href={`mailto:viewings@openhaus.ie?subject=${encodeURIComponent(`Viewing request: ${property.title}`)}`}>Arrange a viewing <span aria-hidden="true">→</span></a></aside>
+            </div>
+            <div className="property-page-note"><strong>The complete picture</strong><p>Photography, floor plans and video are presented together so you can understand the home before arranging a visit.</p></div>
+          </article>
+        </>}
+      </main>
     </div>
   )
 }
@@ -281,6 +247,8 @@ function PropertyGallery({ property }: { property: Property }) {
   const [selectedIndex, setSelectedIndex] = useState(0)
   const selected = property.media[selectedIndex]
   const poster = property.media.find((item) => item.kind === 'image')?.url
+  const showPrevious = () => setSelectedIndex((index) => (index - 1 + property.media.length) % property.media.length)
+  const showNext = () => setSelectedIndex((index) => (index + 1) % property.media.length)
 
   if (!selected) {
     return (
@@ -320,6 +288,10 @@ function PropertyGallery({ property }: { property: Property }) {
           {selectedIndex + 1} / {property.media.length}
         </p>
         <p className="gallery-kind">{mediaLabel(selected.kind)}</p>
+        {property.media.length > 1 && <div className="gallery-navigation" aria-label="Property photographs">
+          <button type="button" aria-label="Previous image" onClick={showPrevious}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14.5 5-7 7 7 7"/></svg></button>
+          <button type="button" aria-label="Next image" onClick={showNext}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9.5 5 7 7-7 7"/></svg></button>
+        </div>}
       </div>
 
       <div className="gallery-thumbnails" aria-label={`Media for ${property.title}`}>
@@ -357,6 +329,10 @@ function ErrorState({ onRetry }: { onRetry: () => void }) {
 }
 
 function titleCase(value: string) { return value.charAt(0).toUpperCase() + value.slice(1) }
+
+function propertyIDFromPath(pathname: string) {
+  return pathname.match(/^\/properties\/([^/]+)\/?$/)?.[1]
+}
 
 function mediaLabel(kind: Property['media'][number]['kind']) {
   if (kind === 'floor_plan') return 'Floor plan'

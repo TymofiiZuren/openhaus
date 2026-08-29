@@ -52,6 +52,22 @@ func (stub managerPropertyListerStub) ListManaged(context.Context) ([]property.M
 	return stub.properties, nil
 }
 
+type managerPropertyWriterStub struct {
+	created   property.ManagedPropertyInput
+	updated   property.ManagedPropertyInput
+	updatedID string
+}
+
+func (stub *managerPropertyWriterStub) CreateManaged(_ context.Context, input property.ManagedPropertyInput) (property.ManagedProperty, error) {
+	stub.created = input
+	return property.ManagedProperty{Property: property.Property{ID: "new-property", Title: input.Title}, Status: "draft"}, nil
+}
+
+func (stub *managerPropertyWriterStub) UpdateManaged(_ context.Context, id string, input property.ManagedPropertyInput) (property.ManagedProperty, error) {
+	stub.updatedID, stub.updated = id, input
+	return property.ManagedProperty{Property: property.Property{ID: id, Title: input.Title}, Status: input.Status}, nil
+}
+
 func (stub *propertyListerStub) ListPublished(_ context.Context, bounds *property.Bounds) ([]property.Property, error) {
 	stub.bounds = bounds
 	return stub.properties, stub.err
@@ -149,6 +165,52 @@ func TestManagerCanLoginAndListDrafts(t *testing.T) {
 	}
 	if !strings.Contains(response.Body.String(), `"status":"draft"`) {
 		t.Fatalf("response does not include draft: %s", response.Body.String())
+	}
+}
+
+func TestManagerPropertyMutationsRequireAuthentication(t *testing.T) {
+	router := httpapi.NewRouter(httpapi.Dependencies{ManagerAuth: managerAuthStub{validToken: "session-token"}, ManagerPropertyWriter: &managerPropertyWriterStub{}})
+	for _, request := range []*http.Request{
+		httptest.NewRequest(http.MethodPost, "/api/v1/manager/properties", strings.NewReader(`{}`)),
+		httptest.NewRequest(http.MethodPut, "/api/v1/manager/properties/property-1", strings.NewReader(`{}`)),
+	} {
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, request)
+		if response.Code != http.StatusUnauthorized {
+			t.Fatalf("%s status = %d, want %d", request.Method, response.Code, http.StatusUnauthorized)
+		}
+	}
+}
+
+func TestManagerCanCreateDraftAndPublishIt(t *testing.T) {
+	writer := &managerPropertyWriterStub{}
+	router := httpapi.NewRouter(httpapi.Dependencies{ManagerAuth: managerAuthStub{validToken: "session-token"}, ManagerPropertyWriter: writer})
+	body := `{"title":"Harbour home","addressLine1":"1 Pier Road","city":"Kinsale","county":"Cork","priceCents":72500000,"bedrooms":3,"propertyType":"terraced","longitude":-8.53,"latitude":51.7,"status":"published"}`
+	create := httptest.NewRequest(http.MethodPost, "/api/v1/manager/properties", strings.NewReader(body))
+	create.AddCookie(&http.Cookie{Name: "openhaus_manager_session", Value: "session-token"})
+	createResponse := httptest.NewRecorder()
+	router.ServeHTTP(createResponse, create)
+	if createResponse.Code != http.StatusCreated || writer.created.Status != "draft" {
+		t.Fatalf("create status = %d, stored status = %q", createResponse.Code, writer.created.Status)
+	}
+
+	update := httptest.NewRequest(http.MethodPut, "/api/v1/manager/properties/new-property", strings.NewReader(body))
+	update.AddCookie(&http.Cookie{Name: "openhaus_manager_session", Value: "session-token"})
+	updateResponse := httptest.NewRecorder()
+	router.ServeHTTP(updateResponse, update)
+	if updateResponse.Code != http.StatusOK || writer.updatedID != "new-property" || writer.updated.Status != "published" {
+		t.Fatalf("update status = %d, id = %q, lifecycle = %q", updateResponse.Code, writer.updatedID, writer.updated.Status)
+	}
+}
+
+func TestManagerPropertyRejectsInvalidInput(t *testing.T) {
+	router := httpapi.NewRouter(httpapi.Dependencies{ManagerAuth: managerAuthStub{validToken: "session-token"}, ManagerPropertyWriter: &managerPropertyWriterStub{}})
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/manager/properties", strings.NewReader(`{"title":"","status":"draft"}`))
+	request.AddCookie(&http.Cookie{Name: "openhaus_manager_session", Value: "session-token"})
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), "invalid_property") {
+		t.Fatalf("response = %d %s", response.Code, response.Body.String())
 	}
 }
 

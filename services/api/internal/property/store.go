@@ -3,13 +3,17 @@ package property
 import (
 	"context"
 	"encoding/json"
+	"errors"
 
 	"github.com/jackc/pgx/v5"
 )
 
 type queryer interface {
 	Query(context.Context, string, ...any) (pgx.Rows, error)
+	QueryRow(context.Context, string, ...any) pgx.Row
 }
+
+var ErrNotFound = errors.New("property not found")
 
 // Store reads property catalogue data from PostgreSQL.
 type Store struct {
@@ -121,4 +125,41 @@ func (store *Store) ListManaged(ctx context.Context) ([]ManagedProperty, error) 
 		items = append(items, item)
 	}
 	return items, rows.Err()
+}
+
+func (store *Store) CreateManaged(ctx context.Context, input ManagedPropertyInput) (ManagedProperty, error) {
+	input.Status = "draft"
+	return store.scanManaged(store.database.QueryRow(ctx, `
+		INSERT INTO properties (title, address_line1, city, county, price_cents, bedrooms, property_type, location, status)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, ST_SetSRID(ST_MakePoint($8, $9), 4326)::geography, 'draft')
+		RETURNING id::text, title, address_line1, city, county, price_cents, bedrooms,
+		          property_type, ST_X(location::geometry), ST_Y(location::geometry), status
+	`, input.Title, input.AddressLine1, input.City, input.County, input.PriceCents, input.Bedrooms,
+		input.PropertyType, input.Longitude, input.Latitude))
+}
+
+func (store *Store) UpdateManaged(ctx context.Context, id string, input ManagedPropertyInput) (ManagedProperty, error) {
+	item, err := store.scanManaged(store.database.QueryRow(ctx, `
+		UPDATE properties
+		SET title = $2, address_line1 = $3, city = $4, county = $5, price_cents = $6,
+		    bedrooms = $7, property_type = $8,
+		    location = ST_SetSRID(ST_MakePoint($9, $10), 4326)::geography,
+		    status = $11, updated_at = now()
+		WHERE id = $1::uuid
+		RETURNING id::text, title, address_line1, city, county, price_cents, bedrooms,
+		          property_type, ST_X(location::geometry), ST_Y(location::geometry), status
+	`, id, input.Title, input.AddressLine1, input.City, input.County, input.PriceCents, input.Bedrooms,
+		input.PropertyType, input.Longitude, input.Latitude, input.Status))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ManagedProperty{}, ErrNotFound
+	}
+	return item, err
+}
+
+func (store *Store) scanManaged(row pgx.Row) (ManagedProperty, error) {
+	var item ManagedProperty
+	item.Media = []Media{}
+	err := row.Scan(&item.ID, &item.Title, &item.AddressLine1, &item.City, &item.County,
+		&item.PriceCents, &item.Bedrooms, &item.PropertyType, &item.Longitude, &item.Latitude, &item.Status)
+	return item, err
 }

@@ -34,6 +34,11 @@ type ManagerPropertyLister interface {
 	ListManaged(context.Context) ([]property.ManagedProperty, error)
 }
 
+type ManagerPropertyWriter interface {
+	CreateManaged(context.Context, property.ManagedPropertyInput) (property.ManagedProperty, error)
+	UpdateManaged(context.Context, string, property.ManagedPropertyInput) (property.ManagedProperty, error)
+}
+
 type ManagerAuthenticator interface {
 	Login(context.Context, string, string) (managerauth.Session, error)
 	Authenticate(context.Context, string) (managerauth.User, error)
@@ -50,13 +55,14 @@ type MediaJobGetter interface {
 
 // Dependencies contains the external services used by the HTTP API.
 type Dependencies struct {
-	Readiness         ReadinessChecker
-	Properties        PropertyLister
-	Videos            VideoUploader
-	Jobs              MediaJobGetter
-	ManagerAuth       ManagerAuthenticator
-	ManagerProperties ManagerPropertyLister
-	SecureCookies     bool
+	Readiness             ReadinessChecker
+	Properties            PropertyLister
+	Videos                VideoUploader
+	Jobs                  MediaJobGetter
+	ManagerAuth           ManagerAuthenticator
+	ManagerProperties     ManagerPropertyLister
+	ManagerPropertyWriter ManagerPropertyWriter
+	SecureCookies         bool
 }
 
 // NewRouter builds the API's HTTP routing table.
@@ -65,12 +71,75 @@ func NewRouter(dependencies Dependencies) http.Handler {
 	router.HandleFunc("GET /healthz", health)
 	router.HandleFunc("GET /readyz", ready(dependencies.Readiness))
 	router.HandleFunc("GET /api/v1/properties", listProperties(dependencies.Properties))
-	router.HandleFunc("POST /api/v1/properties/{propertyID}/videos", uploadVideo(dependencies.Videos))
-	router.HandleFunc("GET /api/v1/media-jobs/{jobID}", getMediaJob(dependencies.Jobs))
+	router.Handle("POST /api/v1/manager/properties/{propertyID}/videos", requireManager(dependencies.ManagerAuth, uploadVideo(dependencies.Videos)))
+	router.Handle("GET /api/v1/manager/media-jobs/{jobID}", requireManager(dependencies.ManagerAuth, getMediaJob(dependencies.Jobs)))
 	router.HandleFunc("POST /api/v1/manager/session", managerLogin(dependencies.ManagerAuth, dependencies.SecureCookies))
 	router.HandleFunc("DELETE /api/v1/manager/session", managerLogout(dependencies.ManagerAuth, dependencies.SecureCookies))
 	router.Handle("GET /api/v1/manager/properties", requireManager(dependencies.ManagerAuth, listManagedProperties(dependencies.ManagerProperties)))
+	router.Handle("POST /api/v1/manager/properties", requireManager(dependencies.ManagerAuth, createManagedProperty(dependencies.ManagerPropertyWriter)))
+	router.Handle("PUT /api/v1/manager/properties/{propertyID}", requireManager(dependencies.ManagerAuth, updateManagedProperty(dependencies.ManagerPropertyWriter)))
 	return router
+}
+
+func createManagedProperty(properties ManagerPropertyWriter) http.HandlerFunc {
+	return func(response http.ResponseWriter, request *http.Request) {
+		input, ok := decodeManagedProperty(response, request)
+		if !ok {
+			return
+		}
+		input.Status = "draft"
+		item, err := properties.CreateManaged(request.Context(), input)
+		if err != nil {
+			log.Printf("create manager property: %v", err)
+			writeError(response, http.StatusInternalServerError, "internal_error", "internal server error")
+			return
+		}
+		writeJSON(response, http.StatusCreated, item)
+	}
+}
+
+func updateManagedProperty(properties ManagerPropertyWriter) http.HandlerFunc {
+	return func(response http.ResponseWriter, request *http.Request) {
+		input, ok := decodeManagedProperty(response, request)
+		if !ok {
+			return
+		}
+		item, err := properties.UpdateManaged(request.Context(), request.PathValue("propertyID"), input)
+		if errors.Is(err, property.ErrNotFound) {
+			writeError(response, http.StatusNotFound, "not_found", "property not found")
+			return
+		}
+		if err != nil {
+			log.Printf("update manager property: %v", err)
+			writeError(response, http.StatusInternalServerError, "internal_error", "internal server error")
+			return
+		}
+		writeJSON(response, http.StatusOK, item)
+	}
+}
+
+func decodeManagedProperty(response http.ResponseWriter, request *http.Request) (property.ManagedPropertyInput, bool) {
+	var input property.ManagedPropertyInput
+	decoder := json.NewDecoder(http.MaxBytesReader(response, request.Body, 32<<10))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&input); err != nil || !validManagedProperty(input) {
+		writeError(response, http.StatusBadRequest, "invalid_property", "complete valid property details are required")
+		return property.ManagedPropertyInput{}, false
+	}
+	input.Title = strings.TrimSpace(input.Title)
+	input.AddressLine1 = strings.TrimSpace(input.AddressLine1)
+	input.City = strings.TrimSpace(input.City)
+	input.County = strings.TrimSpace(input.County)
+	return input, true
+}
+
+func validManagedProperty(input property.ManagedPropertyInput) bool {
+	validType := input.PropertyType == "detached" || input.PropertyType == "semi_detached" || input.PropertyType == "terraced" || input.PropertyType == "apartment"
+	validStatus := input.Status == "" || input.Status == "draft" || input.Status == "published" || input.Status == "archived"
+	return strings.TrimSpace(input.Title) != "" && strings.TrimSpace(input.AddressLine1) != "" &&
+		strings.TrimSpace(input.City) != "" && strings.TrimSpace(input.County) != "" && input.PriceCents > 0 &&
+		input.Bedrooms >= 0 && input.Bedrooms <= 20 && validType && validStatus &&
+		input.Longitude >= -180 && input.Longitude <= 180 && input.Latitude >= -90 && input.Latitude <= 90
 }
 
 const managerSessionCookie = "openhaus_manager_session"

@@ -10,6 +10,21 @@ describe('county boundaries', () => {
     expect(cork?.paths.flat().every(({ lat, lng }) => lat >= 51 && lat <= 56 && lng >= -11 && lng <= -5)).toBe(true)
   })
 
+  it('presents Dublin as one county outline before local areas are selected', () => {
+    const dublin = countyBoundaries.find((county) => county.name === 'Dublin')
+
+    expect(dublin?.paths).toHaveLength(1)
+    expect(dublin?.paths[0].length).toBeGreaterThan(100)
+    expect(pointInPath({ lat: 53.255, lng: -6.113 }, dublin?.paths[0] ?? [])).toBe(true)
+  })
+
+  it('presents Cork city and county as one county boundary before drill-down', () => {
+    const cork = countyBoundaries.find((county) => county.name === 'Cork')
+
+    expect(cork?.paths.length).toBeLessThan(25)
+    expect(cork?.paths.some((path) => pointInPath({ lat: 51.8985, lng: -8.4756 }, path))).toBe(true)
+  })
+
   it('isolates the chosen county and derives its viewport from the rendered geometry', () => {
     expect(boundariesForSelection(null)).toHaveLength(26)
     expect(boundariesForSelection('Cork').map((county) => county.name)).toEqual(['Cork'])
@@ -35,3 +50,14 @@ describe('county boundaries', () => {
     expect(dublin.bounds.east - dublin.bounds.west).toBeLessThan(ireland.bounds.east - ireland.bounds.west)
   })
 })
+
+function pointInPath(point: { lat: number; lng: number }, path: { lat: number; lng: number }[]) {
+  let inside = false
+  for (let index = 0, previous = path.length - 1; index < path.length; previous = index, index += 1) {
+    const currentPoint = path[index]
+    const previousPoint = path[previous]
+    if ((currentPoint.lat > point.lat) !== (previousPoint.lat > point.lat)
+      && point.lng < (previousPoint.lng - currentPoint.lng) * (point.lat - currentPoint.lat) / (previousPoint.lat - currentPoint.lat) + currentPoint.lng) inside = !inside
+  }
+  return inside
+}

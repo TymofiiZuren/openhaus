@@ -49,6 +49,9 @@ const corkProperty = {
   addressLine1: 'Douglas, Cork',
   city: 'Cork',
   county: 'Cork',
+  priceCents: 72500000,
+  bedrooms: 3,
+  propertyType: 'detached',
   longitude: -8.4932,
   latitude: 51.9045,
   media: [{
@@ -76,6 +79,45 @@ afterEach(() => {
 })
 
 describe('property catalogue', () => {
+  it('filters homes from the search workspace and keeps map results in sync', async () => {
+    mockResponse({ properties: [property, corkProperty] })
+    const user = userEvent.setup()
+
+    render(<App />)
+
+    const search = await screen.findByRole('searchbox', { name: 'Search homes' })
+    await user.type(search, 'Garden-view')
+
+    expect(screen.getByRole('heading', { name: corkProperty.title })).toBeVisible()
+    expect(screen.queryByRole('heading', { name: property.title })).not.toBeInTheDocument()
+    expect(screen.getByText('1 result')).toBeVisible()
+  })
+
+  it('sorts the catalogue by price', async () => {
+    mockResponse({ properties: [property, corkProperty] })
+    const user = userEvent.setup()
+
+    render(<App />)
+
+    await screen.findByRole('heading', { name: property.title })
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Sort properties' }), 'price-low')
+    const cards = document.querySelectorAll('.property-grid .property-card h3')
+    expect(cards[0]).toHaveTextContent(corkProperty.title)
+    expect(cards[1]).toHaveTextContent(property.title)
+  })
+
+  it('opens a property on a dedicated detail URL', async () => {
+    window.history.replaceState({}, '', `/properties/${property.id}`)
+    mockResponse({ properties: [property, corkProperty] })
+
+    render(<App />)
+
+    expect(await screen.findByRole('main', { name: 'Property details' })).toBeVisible()
+    expect(screen.getByRole('heading', { level: 1, name: property.title })).toBeVisible()
+    expect(screen.getByRole('link', { name: 'Back to property search' })).toHaveAttribute('href', '/')
+    expect(screen.queryByRole('region', { name: 'Explore homes by location' })).not.toBeInTheDocument()
+  })
+
   it('shows a loading state while properties are requested', () => {
     vi.spyOn(globalThis, 'fetch').mockReturnValue(new Promise(() => {}))
 
@@ -90,9 +132,9 @@ describe('property catalogue', () => {
     render(<App />)
 
     expect(await screen.findByRole('heading', { name: property.title })).toBeVisible()
-    expect(screen.getByText('€895,000')).toBeVisible()
+    expect(screen.getAllByText('€895,000').some((price) => price.classList.contains('property-price'))).toBe(true)
     expect(screen.getByText('4 bedrooms')).toBeVisible()
-    expect(screen.getByText('Terraced')).toBeVisible()
+    expect(screen.getAllByText('Terraced').some((type) => type.tagName === 'SPAN')).toBe(true)
     expect(fetch).toHaveBeenCalledWith(
       '/api/v1/properties',
       expect.objectContaining({ headers: { Accept: 'application/json' } }),
@@ -109,6 +151,7 @@ describe('property catalogue', () => {
     const reservedDrilldownSlot = explorer.querySelector('.location-drilldown-slot')
     expect(reservedDrilldownSlot).toBeInTheDocument()
     expect(explorer).toBeVisible()
+    await user.click(screen.getByRole('button', { name: 'Choose location' }))
     await user.click(screen.getByRole('button', { name: 'Explore Cork, 1 property' }))
 
     expect(explorer.querySelector('.location-drilldown-slot')).toBe(reservedDrilldownSlot)
@@ -134,6 +177,33 @@ describe('property catalogue', () => {
     expect(within(explorer).queryByRole('button', { name: /Explore Dublin City/ })).not.toBeInTheDocument()
   })
 
+  it('keeps a selected sidebar home active on its matching map area', async () => {
+    mockResponse({ properties: [corkProperty, kinsaleProperty] })
+    const user = userEvent.setup()
+
+    render(<App />)
+
+    await user.click(await screen.findByRole('button', { name: 'Choose location' }))
+    await user.click(await screen.findByRole('button', { name: 'Explore Cork, 2 properties' }))
+    await user.click(screen.getByRole('button', { name: `Select ${kinsaleProperty.title} on map` }))
+
+    expect(screen.getByRole('heading', { name: 'Homes in Bandon - Kinsale' })).toBeVisible()
+    expect(screen.getByRole('button', { name: `Select ${kinsaleProperty.title} on map` })).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('enters and highlights a property area when a home is selected from all Ireland', async () => {
+    mockResponse({ properties: [property, kinsaleProperty] })
+    const user = userEvent.setup()
+
+    render(<App />)
+
+    await user.click(await screen.findByRole('button', { name: `Select ${kinsaleProperty.title} on map` }))
+
+    expect(screen.getByRole('heading', { name: 'Homes in Bandon - Kinsale' })).toBeVisible()
+    expect(screen.getByRole('button', { name: `Select ${kinsaleProperty.title} on map` })).toHaveAttribute('aria-pressed', 'true')
+    expect(window.location.search).toContain('county=Cork')
+  })
+
   it('uses location search as the page-level starting point', async () => {
     mockResponse({ properties: [property, corkProperty] })
 
@@ -143,13 +213,15 @@ describe('property catalogue', () => {
     expect(within(explorer).getByRole('heading', { level: 1, name: 'Find a place that feels like home' })).toBeVisible()
   })
 
-  it('lets a buyer search available counties and towns without relying on a map', async () => {
+  it('lets a buyer search available counties and towns from the map panel', async () => {
     mockResponse({ properties: [property, corkProperty] })
     const user = userEvent.setup()
 
     render(<App />)
 
-    const search = await screen.findByRole('searchbox', { name: 'Search locations' })
+    expect(screen.queryByRole('searchbox', { name: 'Search locations' })).not.toBeInTheDocument()
+    await user.click(await screen.findByRole('button', { name: 'Choose location' }))
+    const search = await screen.findByRole('searchbox', { name: 'Search counties' })
     await user.type(search, 'douglas')
 
     expect(screen.getByRole('button', { name: 'Explore Cork, 1 property' })).toBeVisible()
@@ -163,33 +235,44 @@ describe('property catalogue', () => {
 
     render(<App />)
 
+    await user.click(await screen.findByRole('button', { name: 'Choose location' }))
     await user.click(await screen.findByRole('button', { name: 'Explore Cork, 2 properties' }))
     expect(screen.getByRole('button', { name: 'Explore Dublin, 1 property' })).toBeVisible()
     expect(screen.getByRole('button', { name: 'Explore Cork, 2 properties' })).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.getByRole('button', { name: 'Show all Cork areas, 2 properties' })).toBeVisible()
+    expect(screen.queryByRole('button', { name: 'Back to all Cork' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Explore Cork City North West, 1 property' })).toBeVisible()
     expect(screen.getByRole('button', { name: 'Explore Bandon - Kinsale, 1 property' })).toBeVisible()
 
     await user.click(screen.getByRole('button', { name: 'Explore Carrigaline, 0 properties' }))
     expect(screen.getByText('No homes in this area yet.')).toBeVisible()
 
+    await user.click(screen.getByRole('button', { name: 'Carrigaline' }))
     await user.click(screen.getByRole('button', { name: 'Explore Bandon - Kinsale, 1 property' }))
 
     expect(screen.getByRole('heading', { name: 'Homes in Bandon - Kinsale' })).toBeVisible()
+    await user.click(screen.getByRole('button', { name: 'Bandon - Kinsale' }))
     expect(screen.getByRole('button', { name: 'Explore Bandon - Kinsale, 1 property' })).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByRole('button', { name: 'Explore Cork City North West, 1 property' })).toBeVisible()
-    expect(screen.getByRole('button', { name: 'Show all Cork areas, 2 properties' })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Back to all Cork' })).toBeVisible()
     expect(screen.getByRole('heading', { name: kinsaleProperty.title })).toBeVisible()
     expect(screen.queryByRole('heading', { name: corkProperty.title })).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Back to all Cork' }))
+    expect(screen.getByRole('heading', { level: 1, name: 'Homes in Cork' })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Explore Bandon - Kinsale, 1 property' })).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.getByRole('heading', { name: corkProperty.title })).toBeVisible()
+    expect(screen.getByRole('heading', { name: kinsaleProperty.title })).toBeVisible()
   })
 
   it('returns an unavailable county URL to the useful Ireland overview', async () => {
     vi.stubEnv('VITE_GOOGLE_MAPS_API_KEY', '')
     window.history.replaceState({}, '', '/?county=Galway')
     mockResponse({ properties: [property, corkProperty] })
+    const user = userEvent.setup()
 
     render(<App />)
 
+    await user.click(await screen.findByRole('button', { name: 'Choose location' }))
     await waitFor(() => expect(screen.getByRole('button', { name: 'All Ireland' })).toHaveAttribute('aria-pressed', 'true'))
     expect(screen.queryByRole('button', { name: /Explore Galway/ })).not.toBeInTheDocument()
     expect(screen.getByRole('heading', { name: property.title })).toBeVisible()
@@ -200,10 +283,12 @@ describe('property catalogue', () => {
   it('keeps location browsing usable when Google Maps is not configured', async () => {
     vi.stubEnv('VITE_GOOGLE_MAPS_API_KEY', '')
     mockResponse({ properties: [property] })
+    const user = userEvent.setup()
 
     render(<App />)
 
     expect(await screen.findByText('Map view is unavailable right now.')).toBeVisible()
+    await user.click(screen.getByRole('button', { name: 'Choose location' }))
     expect(screen.getByRole('button', { name: 'Explore Dublin, 1 property' })).toBeVisible()
   })
 
@@ -220,6 +305,12 @@ describe('property catalogue', () => {
 
     expect(screen.getByRole('img', { name: 'Bright open-plan living room' })).toBeVisible()
     expect(screen.getByText('2 / 4')).toBeVisible()
+
+    await user.click(screen.getByRole('button', { name: 'Next image' }))
+    expect(screen.getAllByRole('img', { name: 'Measured floor plan of the property' }).some((image) => image.classList.contains('gallery-image'))).toBe(true)
+
+    await user.click(screen.getByRole('button', { name: 'Previous image' }))
+    expect(screen.getByRole('img', { name: 'Bright open-plan living room' })).toBeVisible()
   })
 
   it('shows native video controls when the buyer selects a video tour', async () => {
@@ -236,55 +327,6 @@ describe('property catalogue', () => {
     expect(video).toHaveAttribute('controls')
     expect(video.querySelector('source')).toHaveAttribute('src', '/media/properties/leeson-park/tour.mp4')
   })
-
-  it('uploads a video tour and reports when processing is complete', async () => {
-	const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
-		const url = String(input)
-		if (url.includes('/videos') && init?.method === 'POST') {
-			return Response.json({
-				id: 'job-1', propertyId: property.id, status: 'pending', attempts: 0,
-				createdAt: '2026-08-25T00:00:00Z',
-			}, { status: 202 })
-		}
-		if (url.includes('/media-jobs/job-1')) {
-			return Response.json({
-				id: 'job-1', propertyId: property.id, status: 'ready', attempts: 1,
-				outputPath: '/media/uploads/job-1.mp4', createdAt: '2026-08-25T00:00:00Z',
-			})
-		}
-		return Response.json({ properties: [property] })
-	})
-	const user = userEvent.setup()
-
-	render(<App />)
-	await screen.findByRole('heading', { name: property.title })
-	await user.click(screen.getByRole('button', { name: `Add a video tour for ${property.title}` }))
-	const file = new File(['\x00\x00\x00\x18ftypisomvideo'], 'house-tour.mp4', { type: 'video/mp4' })
-	await user.upload(screen.getByLabelText('Choose an MP4 or MOV video'), file)
-	await user.click(screen.getByRole('button', { name: 'Upload video' }))
-
-	expect(await screen.findByText('Video tour ready.')).toBeVisible()
-	expect(fetchMock).toHaveBeenCalledWith(
-		`/api/v1/properties/${property.id}/videos`,
-		expect.objectContaining({ method: 'POST' }),
-	)
-  })
-
-	it('rejects an unsupported video before making an upload request', async () => {
-		const fetchMock = mockResponse({ properties: [property] })
-		const user = userEvent.setup({ applyAccept: false })
-
-		render(<App />)
-		await screen.findByRole('heading', { name: property.title })
-		await user.click(screen.getByRole('button', { name: `Add a video tour for ${property.title}` }))
-		await user.upload(
-			screen.getByLabelText('Choose an MP4 or MOV video'),
-			new File(['text'], 'notes.txt', { type: 'text/plain' }),
-		)
-
-		expect(screen.getByRole('alert')).toHaveTextContent('Choose an MP4 or MOV video')
-		expect(fetchMock).toHaveBeenCalledTimes(1)
-	})
 
   it('falls back safely when a property has no media', async () => {
     mockResponse({ properties: [{ ...property, media: [] }] })

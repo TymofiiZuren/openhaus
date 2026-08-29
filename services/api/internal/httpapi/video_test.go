@@ -32,6 +32,30 @@ type jobGetterStub struct {
 	err error
 }
 
+func authenticatedMediaRouter(uploader *uploadStub, jobs jobGetterStub) http.Handler {
+	return httpapi.NewRouter(httpapi.Dependencies{Readiness: readinessStub{}, Properties: &propertyListerStub{}, Videos: uploader, Jobs: jobs, ManagerAuth: managerAuthStub{validToken: "session-token"}})
+}
+
+func managerRequest(method, target string, body io.Reader) *http.Request {
+	request := httptest.NewRequest(method, target, body)
+	request.AddCookie(&http.Cookie{Name: "openhaus_manager_session", Value: "session-token"})
+	return request
+}
+
+func TestMediaRoutesRequireManagerAuthentication(t *testing.T) {
+	router := authenticatedMediaRouter(&uploadStub{}, jobGetterStub{})
+	for _, request := range []*http.Request{
+		httptest.NewRequest(http.MethodPost, "/api/v1/manager/properties/property-1/videos", nil),
+		httptest.NewRequest(http.MethodGet, "/api/v1/manager/media-jobs/job-1", nil),
+	} {
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, request)
+		if response.Code != http.StatusUnauthorized {
+			t.Fatalf("%s status = %d, want %d", request.Method, response.Code, http.StatusUnauthorized)
+		}
+	}
+}
+
 func (stub jobGetterStub) Get(context.Context, string) (mediajob.Job, error) {
 	return stub.job, stub.err
 }
@@ -46,8 +70,8 @@ func TestUploadVideoReturnsAcceptedJob(t *testing.T) {
 	_, _ = part.Write([]byte("video bytes"))
 	_ = writer.Close()
 	uploader := &uploadStub{job: mediajob.Job{ID: "job-1", PropertyID: "property-1", Status: mediajob.StatusPending}}
-	router := httpapi.NewRouter(httpapi.Dependencies{Readiness: readinessStub{}, Properties: &propertyListerStub{}, Videos: uploader, Jobs: jobGetterStub{}})
-	request := httptest.NewRequest(http.MethodPost, "/api/v1/properties/property-1/videos", body)
+	router := authenticatedMediaRouter(uploader, jobGetterStub{})
+	request := managerRequest(http.MethodPost, "/api/v1/manager/properties/property-1/videos", body)
 	request.Header.Set("Content-Type", writer.FormDataContentType())
 	response := httptest.NewRecorder()
 
@@ -62,8 +86,8 @@ func TestUploadVideoReturnsAcceptedJob(t *testing.T) {
 }
 
 func TestUploadVideoRequiresVideoPart(t *testing.T) {
-	router := httpapi.NewRouter(httpapi.Dependencies{Readiness: readinessStub{}, Properties: &propertyListerStub{}, Videos: &uploadStub{}, Jobs: jobGetterStub{}})
-	request := httptest.NewRequest(http.MethodPost, "/api/v1/properties/property-1/videos", bytes.NewBufferString("missing"))
+	router := authenticatedMediaRouter(&uploadStub{}, jobGetterStub{})
+	request := managerRequest(http.MethodPost, "/api/v1/manager/properties/property-1/videos", bytes.NewBufferString("missing"))
 	request.Header.Set("Content-Type", "text/plain")
 	response := httptest.NewRecorder()
 
@@ -84,8 +108,8 @@ func TestUploadVideoRejectsOversizedBody(t *testing.T) {
 	}
 	_, _ = part.Write([]byte("too large"))
 	_ = writer.Close()
-	router := httpapi.NewRouter(httpapi.Dependencies{Readiness: readinessStub{}, Properties: &propertyListerStub{}, Videos: uploader, Jobs: jobGetterStub{}})
-	request := httptest.NewRequest(http.MethodPost, "/api/v1/properties/property-1/videos", body)
+	router := authenticatedMediaRouter(uploader, jobGetterStub{})
+	request := managerRequest(http.MethodPost, "/api/v1/manager/properties/property-1/videos", body)
 	request.Header.Set("Content-Type", writer.FormDataContentType())
 	response := httptest.NewRecorder()
 
@@ -98,8 +122,8 @@ func TestUploadVideoRejectsOversizedBody(t *testing.T) {
 
 func TestGetMediaJob(t *testing.T) {
 	want := mediajob.Job{ID: "job-1", PropertyID: "property-1", Status: mediajob.StatusProcessing, Attempts: 1}
-	router := httpapi.NewRouter(httpapi.Dependencies{Readiness: readinessStub{}, Properties: &propertyListerStub{}, Videos: &uploadStub{}, Jobs: jobGetterStub{job: want}})
-	request := httptest.NewRequest(http.MethodGet, "/api/v1/media-jobs/job-1", nil)
+	router := authenticatedMediaRouter(&uploadStub{}, jobGetterStub{job: want})
+	request := managerRequest(http.MethodGet, "/api/v1/manager/media-jobs/job-1", nil)
 	response := httptest.NewRecorder()
 
 	router.ServeHTTP(response, request)
@@ -117,8 +141,8 @@ func TestGetMediaJob(t *testing.T) {
 }
 
 func TestGetMissingMediaJobReturnsNotFound(t *testing.T) {
-	router := httpapi.NewRouter(httpapi.Dependencies{Readiness: readinessStub{}, Properties: &propertyListerStub{}, Videos: &uploadStub{}, Jobs: jobGetterStub{err: mediajob.ErrNotFound}})
-	request := httptest.NewRequest(http.MethodGet, "/api/v1/media-jobs/missing", nil)
+	router := authenticatedMediaRouter(&uploadStub{}, jobGetterStub{err: mediajob.ErrNotFound})
+	request := managerRequest(http.MethodGet, "/api/v1/manager/media-jobs/missing", nil)
 	response := httptest.NewRecorder()
 	router.ServeHTTP(response, request)
 	if response.Code != http.StatusNotFound {

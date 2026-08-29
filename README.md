@@ -133,8 +133,10 @@ and includes draft, published, and archived listings. Set `APP_ENV=production`
 in production so the cookie is also marked `Secure`.
 
 The web manager workspace is available at `http://localhost:5173/manager/login`.
-It restores an existing cookie-backed session, lists every property status, and
-provides sign-in and sign-out without exposing the session token to JavaScript.
+It restores an existing cookie-backed session and lets managers create drafts,
+edit listing details, and move listings between draft, published, and archived
+states without exposing the session token to JavaScript. Media uploads and job
+polling are also restricted to authenticated manager sessions.
 
 ## Asynchronous video processing
 
@@ -145,7 +147,7 @@ memory. From the repository root:
 ```sh
 curl -X POST \
   -F "video=@/path/to/tour.mov" \
-  http://localhost:8080/api/v1/properties/PROPERTY_ID/videos
+  http://localhost:8080/api/v1/manager/properties/PROPERTY_ID/videos
 ```
 
 The response is `202 Accepted` and includes a job ID. Run the separate worker
@@ -154,7 +156,7 @@ FFmpeg, publishes an MP4, and atomically adds it to the property gallery:
 
 ```sh
 go run ./cmd/media-worker
-curl http://localhost:8080/api/v1/media-jobs/JOB_ID
+curl http://localhost:8080/api/v1/manager/media-jobs/JOB_ID
 ```
 
 Local defaults place source uploads in `services/api/.data/uploads` and public

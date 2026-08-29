@@ -128,6 +128,31 @@ func TestPropertiesRejectNonPositivePrice(t *testing.T) {
 	}
 }
 
+func TestManagerCreatesDraftThenPublishesProperty(t *testing.T) {
+	ctx := context.Background()
+	transaction := newTestTransaction(t)
+	store := property.NewStore(transaction)
+	input := property.ManagedPropertyInput{Title: "Harbour home", AddressLine1: "1 Pier Road", City: "Kinsale", County: "Cork", PriceCents: 72500000, Bedrooms: 3, PropertyType: "terraced", Longitude: -8.53, Latitude: 51.7, Status: "published"}
+
+	created, err := store.CreateManaged(ctx, input)
+	if err != nil {
+		t.Fatalf("create managed property: %v", err)
+	}
+	if created.Status != "draft" {
+		t.Fatalf("created status = %q, want draft", created.Status)
+	}
+
+	input.Title = "Published harbour home"
+	input.Status = "published"
+	updated, err := store.UpdateManaged(ctx, created.ID, input)
+	if err != nil {
+		t.Fatalf("update managed property: %v", err)
+	}
+	if updated.Status != "published" || updated.Title != input.Title {
+		t.Fatalf("updated property = %#v", updated)
+	}
+}
+
 func newTestTransaction(t *testing.T) pgx.Tx {
 	t.Helper()
 

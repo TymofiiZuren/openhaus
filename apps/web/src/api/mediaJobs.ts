@@ -15,7 +15,7 @@ export async function uploadPropertyVideo(
 ): Promise<MediaJob> {
   const form = new FormData()
   form.append('video', file)
-  const response = await fetch(`/api/v1/properties/${propertyId}/videos`, {
+  const response = await fetch(`/api/v1/manager/properties/${propertyId}/videos`, {
     method: 'POST',
     body: form,
     signal,
@@ -30,7 +30,7 @@ export async function waitForMediaJob(
   signal?: AbortSignal,
 ): Promise<MediaJob> {
   while (!signal?.aborted) {
-    const response = await fetch(`/api/v1/media-jobs/${jobId}`, {
+    const response = await fetch(`/api/v1/manager/media-jobs/${jobId}`, {
       headers: { Accept: 'application/json' },
       signal,
     })
