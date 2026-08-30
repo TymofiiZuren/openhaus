@@ -166,13 +166,13 @@ describe('property catalogue', () => {
     expect(screen.getByRole('heading', { name: corkProperty.title })).toBeVisible()
   })
 
-  it('does not expose property markers until a county is selected', async () => {
+  it('keeps local areas hidden until a county is selected', async () => {
     mockResponse({ properties: [property, corkProperty] })
 
     render(<App />)
 
     const explorer = await screen.findByRole('region', { name: 'Explore homes by location' })
-    expect(within(explorer).getByText('Choose a county to see homes and local areas')).toBeVisible()
+    expect(within(explorer).getByText('Select a home or choose a county to explore local areas')).toBeVisible()
     expect(within(explorer).queryByText('Areas')).not.toBeInTheDocument()
     expect(within(explorer).queryByRole('button', { name: /Explore Dublin City/ })).not.toBeInTheDocument()
   })
@@ -191,17 +191,14 @@ describe('property catalogue', () => {
     expect(screen.getByRole('button', { name: `Select ${kinsaleProperty.title} on map` })).toHaveAttribute('aria-pressed', 'true')
   })
 
-  it('enters and highlights a property area when a home is selected from all Ireland', async () => {
+  it('keeps the national map focused on geography until a county is selected', async () => {
     mockResponse({ properties: [property, kinsaleProperty] })
-    const user = userEvent.setup()
 
     render(<App />)
 
-    await user.click(await screen.findByRole('button', { name: `Select ${kinsaleProperty.title} on map` }))
-
-    expect(screen.getByRole('heading', { name: 'Homes in Bandon - Kinsale' })).toBeVisible()
-    expect(screen.getByRole('button', { name: `Select ${kinsaleProperty.title} on map` })).toHaveAttribute('aria-pressed', 'true')
-    expect(window.location.search).toContain('county=Cork')
+    const explorer = await screen.findByRole('region', { name: 'Explore homes by location' })
+    expect(within(explorer).queryByRole('complementary', { name: 'Homes matching your search' })).not.toBeInTheDocument()
+    expect(within(explorer).getByText('Select a home or choose a county to explore local areas')).toBeVisible()
   })
 
   it('uses location search as the page-level starting point', async () => {
@@ -301,7 +298,7 @@ describe('property catalogue', () => {
     expect(await screen.findByRole('img', { name: 'Front exterior of the home' })).toBeVisible()
     expect(screen.getByText('1 / 4')).toBeVisible()
 
-    await user.click(screen.getByRole('button', { name: 'View Bright open-plan living room' }))
+    await user.click(screen.getByRole('button', { name: 'Next image' }))
 
     expect(screen.getByRole('img', { name: 'Bright open-plan living room' })).toBeVisible()
     expect(screen.getByText('2 / 4')).toBeVisible()
@@ -320,7 +317,10 @@ describe('property catalogue', () => {
     render(<App />)
     await screen.findByRole('img', { name: 'Front exterior of the home' })
 
-    await user.click(screen.getByRole('button', { name: 'View Video tour of the property' }))
+    const nextImage = screen.getByRole('button', { name: 'Next image' })
+    await user.click(nextImage)
+    await user.click(nextImage)
+    await user.click(nextImage)
 
     const video = screen.getByLabelText('Video tour of the property')
     expect(video.tagName).toBe('VIDEO')

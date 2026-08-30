@@ -13,6 +13,12 @@ const irelandOverviewRestriction = {
   east: -1.7,
   north: 56.6,
 }
+const irelandOverviewBounds = {
+  west: -10.75,
+  south: 51.35,
+  east: -5.35,
+  north: 55.5,
+}
 type MapPolygon = { name: string; kind: 'county' | 'area'; polygon: PolygonInstance; listeners: Listener[]; available: boolean }
 
 type GooglePropertyMapProps = {
@@ -39,6 +45,7 @@ export function GooglePropertyMap({ properties, selectedPropertyID, selectedCoun
   const onAreaSelect = useRef(onSelectArea)
   const onDismiss = useRef(onDismissProperty)
   const suppressViewportDismiss = useRef(false)
+  const suppressAutomaticCounty = useRef(false)
   const automaticCounty = useRef<string | undefined>(undefined)
   const availableCountiesRef = useRef(availableCounties)
   const [previewHost, setPreviewHost] = useState<HTMLElement>()
@@ -78,6 +85,10 @@ export function GooglePropertyMap({ properties, selectedPropertyID, selectedCoun
           if (!suppressViewportDismiss.current) onDismiss.current()
         })
         const idleListener = map.current.addListener('idle', () => {
+          if (suppressAutomaticCounty.current) {
+            suppressAutomaticCounty.current = false
+            return
+          }
           const zoom = map.current?.getZoom() ?? 0
           if (selectedCountyRef.current || automaticCounty.current || zoom < 9) return
           const center = map.current?.getCenter()
@@ -204,6 +215,7 @@ export function GooglePropertyMap({ properties, selectedPropertyID, selectedCoun
 
   useEffect(() => {
     if (status !== 'ready' || !map.current || !window.google) return
+    suppressAutomaticCounty.current = true
     applyCamera(map.current, selectedCounty, container.current?.clientWidth)
   }, [selectedCounty, status])
 
@@ -354,10 +366,13 @@ function applyCamera(map: MapInstance, selectedCounty: string | null | undefined
   // county in view so every sibling area remains directly clickable.
   if (!selectedCounty) {
     map.setOptions({
-      minZoom: compact ? 5 : 7.25,
+      minZoom: 5,
       restriction: { latLngBounds: irelandOverviewRestriction, strictBounds: true },
     })
-    moveCamera(map, { lat: 53.42, lng: -8.05 }, compact ? 5 : 7.25)
+    const bounds = new window.google.maps.LatLngBounds()
+    bounds.extend({ lat: irelandOverviewBounds.south, lng: irelandOverviewBounds.west })
+    bounds.extend({ lat: irelandOverviewBounds.north, lng: irelandOverviewBounds.east })
+    map.fitBounds(bounds, compact ? 12 : 28)
     return
   }
   const center = {
@@ -375,11 +390,6 @@ function applyCamera(map: MapInstance, selectedCounty: string | null | undefined
 }
 
 function moveCamera(map: MapInstance, center: { lat: number; lng: number }, zoom: number) {
-  if (map.panTo) {
-    map.panTo(center)
-    map.setZoom(zoom)
-    return
-  }
   if (map.moveCamera) {
     map.moveCamera({ center, zoom })
     return

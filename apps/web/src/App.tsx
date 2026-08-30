@@ -164,7 +164,9 @@ function App() {
             </ul>
           </div>
           <div className="property-story-media">
-            {featuredFloorPlan ? <img src={featuredFloorPlan.url} alt={featuredFloorPlan.altText} loading="lazy" /> : <div className="story-media-placeholder" />}
+            {featuredFloorPlan
+              ? <img src={featuredFloorPlan.url} alt={featuredFloorPlan.altText} loading="lazy" />
+              : <img src="/media/placeholders/sample-floor-plan.svg" alt="Illustrative ground-floor plan for a sample home" loading="lazy" />}
             {featuredImage && <img src={featuredImage.url} alt="" loading="lazy" />}
             <span>Complete property context</span>
           </div>
@@ -294,22 +296,6 @@ function PropertyGallery({ property }: { property: Property }) {
         </div>}
       </div>
 
-      <div className="gallery-thumbnails" aria-label={`Media for ${property.title}`}>
-        {property.media.map((item, index) => (
-          <button
-            key={item.url}
-            className="gallery-thumbnail"
-            type="button"
-            aria-label={`View ${item.altText}`}
-            aria-pressed={index === selectedIndex}
-            onClick={() => setSelectedIndex(index)}
-          >
-            <img src={item.kind === 'video' ? poster : item.url} alt="" loading="lazy" />
-            {item.kind === 'floor_plan' && <span>Plan</span>}
-            {item.kind === 'video' && <span>Video</span>}
-          </button>
-        ))}
-      </div>
     </div>
   )
 }

@@ -46,9 +46,9 @@ export function PropertyMap({ properties, selectedCounty, selectedArea, property
   const visibleProperties = activeArea
     ? areaGroups.find((group) => sameLocation(group.area.name, activeArea))?.properties ?? []
     : selectedCounty ? selectedGroup?.properties ?? [] : properties
-  // Keep the county subdivision unobstructed while the buyer chooses an area.
-  // Property markers appear only at the final level of the location drill-down.
-  const mapProperties = selectedCounty && activeArea ? visibleProperties : []
+  // Keep the map and results panel synchronized at every geography level.
+  // Selecting a county or area narrows both surfaces to the same listings.
+  const mapProperties = visibleProperties
   const selectedProperty = visibleProperties.find((property) => property.id === selectedPropertyID)
 
   function chooseCounty(county: string | null) {
@@ -95,7 +95,7 @@ export function PropertyMap({ properties, selectedCounty, selectedArea, property
         <p aria-live="polite">{visibleProperties.length} {visibleProperties.length === 1 ? 'result' : 'results'}</p>
       </div>
 
-      <div className="location-workspace">
+      <div className={`location-workspace${selectedCounty ? ' has-results' : ''}`}>
         <div className={`location-toolbar${locationPanelOpen ? ' is-open' : ''}`} aria-hidden={!locationPanelOpen}>
           <div className="location-panel-heading"><div><span>{selectedCounty ? 'Refine location' : 'Explore Ireland'}</span><strong>{activeArea ?? selectedCounty ?? 'Counties'}</strong></div><button type="button" aria-label="Close location search" onClick={() => setLocationPanelOpen(false)}>×</button></div>
           <div className="location-toolbar-primary">
@@ -131,10 +131,10 @@ export function PropertyMap({ properties, selectedCounty, selectedArea, property
             {activeArea && <button className="map-focus-button" type="button" aria-label={`Back to all ${selectedCounty}`} onClick={showWholeCounty}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14.5 6-6 6 6 6" /></svg><span>Back</span></button>}
           </div>}
           <GooglePropertyMap properties={mapProperties} selectedPropertyID={selectedProperty?.id} selectedCounty={selectedCounty} selectedArea={activeArea} cameraRequestKey={cameraRequestKey} areas={countyAreas} availableCounties={availableCounties} onSelectProperty={showPropertyOnMap} onSelectCounty={(county) => chooseCounty(county)} onSelectArea={(area) => chooseArea(area)} onDismissProperty={() => setSelectedPropertyID(undefined)} />
-          {!selectedCounty && <p className="map-drilldown-hint">Choose a county to see homes and local areas</p>}
-          {selectedCounty && !activeArea && <p className="map-drilldown-hint">Choose a city or county area to see homes</p>}
+          {!selectedCounty && <p className="map-drilldown-hint">Select a home or choose a county to explore local areas</p>}
+          {selectedCounty && !activeArea && <p className="map-drilldown-hint">Select a home or choose a local area</p>}
         </div>
-        <aside className="map-results" aria-label="Homes matching your search">
+        {selectedCounty && <aside className="map-results" aria-label="Homes matching your search">
           <div className="map-results-heading"><span>Homes</span><strong>{visibleProperties.length} available</strong></div>
           <div className="map-results-list">
             {visibleProperties.map((property) => <article className={`map-result-card${selectedPropertyID === property.id ? ' is-selected' : ''}`} key={property.id}>
@@ -146,7 +146,7 @@ export function PropertyMap({ properties, selectedCounty, selectedArea, property
             </article>)}
             {visibleProperties.length === 0 && <div className="map-results-empty"><strong>No matching homes</strong><p>Adjust the filters or choose another area.</p></div>}
           </div>
-        </aside>
+        </aside>}
       </div>
     </section>
   )
