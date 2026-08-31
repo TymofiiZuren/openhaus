@@ -1,35 +1,62 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1000" role="img" aria-labelledby="title description">
-  <title id="title">OpenHaus architectural ground-floor plan</title>
-  <desc id="description">A detailed illustrative architectural floor plan with living spaces, a study, service rooms, circulation, dimensions, furniture and a south-facing terrace.</desc>
+  <title id="title">OpenHaus illustrative architectural floor plan</title>
+  <desc id="description">A clean residential ground-floor plan showing a central entrance hall, living room, open kitchen and dining space, study, utility room, cloakroom, dimensions, windows and door swings.</desc>
   <defs>
-    <pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse"><path d="M20 0H0V20" fill="none" stroke="#d9d2c7" stroke-width="1" opacity=".24"/></pattern>
-    <style>.outer{fill:#fbf8f1;stroke:#203832;stroke-width:18}.wall{fill:none;stroke:#203832;stroke-width:10}.partition{fill:none;stroke:#203832;stroke-width:7}.fixture{fill:none;stroke:#74817c;stroke-width:4}.furniture{fill:#e8e2d8;stroke:#74817c;stroke-width:3}.door{fill:none;stroke:#d56f4b;stroke-width:5}.window{stroke:#d56f4b;stroke-width:12}.dim{fill:none;stroke:#74817c;stroke-width:2}.label{fill:#203832;font:700 25px Arial,sans-serif;letter-spacing:2px}.size{fill:#68736f;font:18px Arial,sans-serif;letter-spacing:1px}.note{fill:#68736f;font:17px Arial,sans-serif;letter-spacing:2px}.heading{fill:#203832;font:700 32px Arial,sans-serif;letter-spacing:4px}.accent{fill:#d56f4b}</style>
+    <pattern id="paper" width="24" height="24" patternUnits="userSpaceOnUse"><path d="M24 0H0V24" fill="none" stroke="#203832" stroke-width=".6" opacity=".045"/></pattern>
+    <style>
+      .cut{fill:#203832}.partition{fill:#5f6c67}.zone{fill:#f5f1e9}.wet{fill:#edf1ef}.joinery{fill:#e7e3da;stroke:#7b8581;stroke-width:3}.fitting{fill:none;stroke:#7b8581;stroke-width:3}.door{fill:none;stroke:#b75d42;stroke-width:4}.window{fill:#fff;stroke:#203832;stroke-width:3}.dim{fill:none;stroke:#7b8581;stroke-width:2}.room{fill:#203832;font:700 24px Arial,sans-serif;letter-spacing:3px}.area{fill:#66716d;font:17px Arial,sans-serif;letter-spacing:1px}.meta{fill:#66716d;font:16px Arial,sans-serif;letter-spacing:2px}.sheet{fill:#203832;font:700 31px Arial,sans-serif;letter-spacing:5px}.small{fill:#66716d;font:14px Arial,sans-serif;letter-spacing:1px}.accent{fill:#b75d42}
+    </style>
   </defs>
-  <rect width="1600" height="1000" fill="#f7f2e9"/><rect width="1600" height="1000" fill="url(#grid)"/>
-  <text x="88" y="68" class="heading">OPENHAUS · SAMPLE FLOOR PLAN</text>
-  <text x="88" y="104" class="note">GROUND FLOOR · 154 m² · SCALE 1:100 · ILLUSTRATIVE ONLY</text>
-  <path class="dim" d="M120 142v-22m0 11h1360m0-11v22M120 125l14-8m-14 8 14 8m1346-8-14-8m14 8-14 8"/><text x="800" y="121" text-anchor="middle" class="size">18 400</text>
-  <path class="dim" d="M72 175H50m11 0v665m-11 0h22M55 175l8 14m-8-14-8 14m8 651 8-14m-8 14-8-14"/><text x="42" y="508" text-anchor="middle" class="size" transform="rotate(-90 42 508)">9 200</text>
-  <path class="outer" d="M120 175H1480V840H120Z"/>
-  <path class="wall" d="M480 175V840M480 510H120M480 510H1480M925 510V840M1185 510V840M1335 510V840"/><path class="partition" d="M285 510V840M480 690H285M760 510V840"/>
-  <path class="window" d="M185 175h205M620 175h250M1030 175h270M1480 275v145M1480 610v125M1020 840h95M600 840h120M175 840h65"/>
-  <path class="door" d="M480 350h-92m92 0a92 92 0 0 0-92-92M480 665h-78m78 0a78 78 0 0 0-78-78M285 665h-72m72 0a72 72 0 0 0-72-72M760 650h-76m76 0a76 76 0 0 0-76-76M925 650h-76m76 0a76 76 0 0 0-76-76M1185 650h-72m72 0a72 72 0 0 0-72-72M1335 650h-72m72 0a72 72 0 0 0-72-72M675 840v-92m0 92a92 92 0 0 1 92-92"/>
-  <rect x="174" y="245" width="230" height="92" rx="12" class="furniture"/><rect x="205" y="386" width="162" height="66" rx="8" class="fixture"/><path class="dim" d="M235 370h104M230 418h112"/>
-  <path class="furniture" d="M535 232h318v70H535zM535 302h72v125h-72zM781 302h72v125h-72z"/><rect x="885" y="232" width="60" height="195" class="fixture"/>
-  <rect x="1034" y="252" width="278" height="116" rx="58" class="fixture"/><circle cx="1173" cy="310" r="9" class="accent"/><path class="dim" d="M1055 310h236M1173 265v90"/>
-  <rect x="163" y="574" width="84" height="164" rx="6" class="fixture"/><path class="dim" d="M178 608h54M178 640h54"/>
-  <path class="fixture" d="M326 553h112v34H326zm0 34h112v34H326zm0 34h112v34H326zm0 34h112v34H326M382 735V570m0 0-18 28m18-28 18 28"/>
-  <path class="furniture" d="M525 575h190v78H525zM548 711h155v55H548z"/><circle cx="625" cy="681" r="34" class="fixture"/><rect x="805" y="570" width="80" height="160" rx="8" class="fixture"/>
-  <rect x="966" y="570" width="166" height="64" class="fixture"/><circle cx="1008" cy="602" r="21" class="fixture"/><circle cx="1086" cy="602" r="21" class="fixture"/>
-  <path class="fixture" d="M1226 573h62v95h-62zM1242 748h32v48h-32z"/><ellipse cx="1258" cy="731" rx="29" ry="19" class="fixture"/><path class="fixture" d="M1372 570h68v180h-68z"/>
-  <text x="300" y="477" text-anchor="middle" class="label">LIVING</text><text x="300" y="501" text-anchor="middle" class="size">5.2 × 4.6 m</text>
-  <text x="714" y="467" text-anchor="middle" class="label">KITCHEN</text><text x="714" y="491" text-anchor="middle" class="size">5.8 × 4.6 m</text>
-  <text x="1172" y="467" text-anchor="middle" class="label">DINING</text><text x="1172" y="491" text-anchor="middle" class="size">5.0 × 4.6 m</text>
-  <text x="202" y="785" text-anchor="middle" class="label">STUDY</text><text x="202" y="810" text-anchor="middle" class="size">3.0 × 3.2 m</text>
-  <text x="382" y="785" text-anchor="middle" class="label">HALL</text><text x="382" y="810" text-anchor="middle" class="size">ENTRANCE</text>
-  <text x="620" y="802" text-anchor="middle" class="label">FAMILY</text><text x="842" y="802" text-anchor="middle" class="label">PANTRY</text><text x="1055" y="802" text-anchor="middle" class="label">UTILITY</text><text x="1258" y="802" text-anchor="middle" class="label">WC</text><text x="1407" y="802" text-anchor="middle" class="label">STORE</text>
-  <circle cx="1455" cy="76" r="29" fill="none" stroke="#203832" stroke-width="4"/><path d="M1455 28v96M1441 53l14-25 14 25" class="dim"/><text x="1455" y="140" text-anchor="middle" class="note">N</text>
-  <path d="M555 900H1110" class="window"/><text x="832" y="938" text-anchor="middle" class="note">SOUTH-FACING GARDEN TERRACE</text>
-  <g transform="translate(1180 875)"><rect width="300" height="82" fill="#203832"/><text x="20" y="31" fill="#fff" font-family="Arial,sans-serif" font-size="20" font-weight="700" letter-spacing="2">OPENHAUS / A-101</text><text x="20" y="59" fill="#cbd3d0" font-family="Arial,sans-serif" font-size="15" letter-spacing="1">GROUND FLOOR · REV 01</text></g>
-  <circle cx="105" cy="925" r="7" class="accent"/><circle cx="131" cy="925" r="7" class="accent"/><circle cx="157" cy="925" r="7" class="accent"/>
+  <rect width="1600" height="1000" fill="#fbfaf7"/><rect width="1600" height="1000" fill="url(#paper)"/>
+  <path d="M54 54H1546V946H54Z" fill="none" stroke="#d5d0c6" stroke-width="2"/>
+  <text x="92" y="104" class="sheet">GROUND FLOOR PLAN</text>
+  <text x="92" y="140" class="meta">OPENHAUS CONCEPT HOME · DRAWING A-101 · SCALE 1:100</text>
+  <path d="M92 162H1508" stroke="#d5d0c6" stroke-width="2"/>
+
+  <!-- plan floor zones -->
+  <path class="zone" d="M190 260H1410V800H190Z"/>
+  <path class="wet" d="M1000 570H1410V800H1000Z"/>
+
+  <!-- exterior wall mass -->
+  <path class="cut" fill-rule="evenodd" d="M170 240H1430V820H170Zm24 24V796H1406V264Z"/>
+  <!-- internal partitions -->
+  <path class="partition" d="M520 264h14v532h-14zM875 264h14v532h-14zM194 558h1212v14H194zM690 572h14v224h-14zM1000 572h14v224h-14zM1192 572h14v224h-14z"/>
+
+  <!-- openings cut back to paper -->
+  <path fill="#fbfaf7" d="M304 240h156v28H304zM642 240h150v28H642zM1070 240h214v28H1070zM170 360h28v130h-28zM1402 350h28v150h-28zM1402 650h28v100h-28zM300 792h110v28H300zM760 792h118v28H760zM1085 792h118v28H1085z"/>
+  <!-- window symbols -->
+  <path class="window" d="M304 248h156m-156 10h156M642 248h150m-150 10h150M1070 248h214m-214 10h214M178 360v130m10-130v130M1412 350v150m10-150v150M1412 650v100m10-100v100M300 802h110m-110 10h110M1085 802h118m-118 10h118"/>
+
+  <!-- door gaps and swings -->
+  <path fill="#fbfaf7" d="M516 382h22v96h-22zM516 635h22v92h-22zM871 382h22v96h-22zM871 636h22v92h-22zM996 640h22v88h-22zM1188 640h22v88h-22zM755 792h128v28H755z"/>
+  <path class="door" d="M520 474h-92m92 0a92 92 0 0 0-92-92M520 723h-88m88 0a88 88 0 0 0-88-88M875 474h-92m92 0a92 92 0 0 0-92-92M875 724h-88m88 0a88 88 0 0 0-88-88M1000 724h-84m84 0a84 84 0 0 0-84-84M1192 724h-84m84 0a84 84 0 0 0-84-84M760 796v-118m0 118a118 118 0 0 1 118-118"/>
+
+  <!-- furniture and fixed fittings -->
+  <rect x="240" y="320" width="220" height="88" rx="14" class="joinery"/><rect x="267" y="444" width="166" height="62" rx="9" class="fitting"/><path class="fitting" d="M290 430h120M290 475h120"/>
+  <path class="joinery" d="M584 306h238v62H584zM584 368h62v128h-62zM760 368h62v128h-62z"/><rect x="681" y="400" width="58" height="110" rx="28" class="fitting"/>
+  <rect x="972" y="335" width="340" height="108" rx="54" class="fitting"/><circle cx="1142" cy="389" r="8" class="accent"/><path class="fitting" d="M1000 389h284M1142 350v78"/>
+  <rect x="246" y="626" width="176" height="68" rx="8" class="joinery"/><rect x="265" y="724" width="138" height="38" class="fitting"/>
+  <path class="fitting" d="M562 610h92v34h-92zm0 34h92v34h-92zm0 34h92v34h-92zm46-100v170m0-170-18 24m18-24 18 24"/>
+  <rect x="735" y="606" width="106" height="74" rx="7" class="fitting"/><path class="fitting" d="M750 625h76M750 649h76"/>
+  <rect x="1040" y="610" width="122" height="56" class="joinery"/><circle cx="1074" cy="638" r="19" class="fitting"/><circle cx="1128" cy="638" r="19" class="fitting"/>
+  <ellipse cx="1100" cy="732" rx="26" ry="18" class="fitting"/><path class="fitting" d="M1087 748h26v34h-26M1248 612h112v48h-112zM1248 690h112v72h-112z"/>
+
+  <!-- labels -->
+  <text x="352" y="526" text-anchor="middle" class="room">LIVING</text><text x="352" y="550" text-anchor="middle" class="area">22.8 m²</text>
+  <text x="704" y="526" text-anchor="middle" class="room">KITCHEN</text><text x="704" y="550" text-anchor="middle" class="area">18.4 m²</text>
+  <text x="1148" y="526" text-anchor="middle" class="room">DINING</text><text x="1148" y="550" text-anchor="middle" class="area">24.2 m²</text>
+  <text x="350" y="752" text-anchor="middle" class="room">STUDY</text><text x="350" y="776" text-anchor="middle" class="area">10.6 m²</text>
+  <text x="610" y="756" text-anchor="middle" class="room">HALL</text><text x="610" y="780" text-anchor="middle" class="area">ENTRANCE</text>
+  <text x="790" y="742" text-anchor="middle" class="room">COATS</text><text x="790" y="766" text-anchor="middle" class="area">3.8 m²</text>
+  <text x="1100" y="770" text-anchor="middle" class="room">WC</text><text x="1303" y="770" text-anchor="middle" class="room">UTILITY</text>
+
+  <!-- dimensions and orientation -->
+  <path class="dim" d="M170 206v-20m0 10h1260m0-10v20M170 190l12-7m-12 7 12 7m1248-7-12-7m12 7-12 7"/><text x="800" y="190" text-anchor="middle" class="area">16 800</text>
+  <path class="dim" d="M1458 240h22m-11 0v580m11 0h-22M1475 240l-7 12m7-12 7 12m-7 568-7-12m7 12 7-12"/><text x="1490" y="530" text-anchor="middle" class="area" transform="rotate(-90 1490 530)">7 800</text>
+  <g transform="translate(1370 80)"><circle cx="55" cy="38" r="25" fill="none" stroke="#203832" stroke-width="3"/><path d="M55 0v78M44 20 55 0l11 20" class="dim"/><text x="55" y="94" text-anchor="middle" class="meta">N</text></g>
+
+  <!-- drawing footer -->
+  <path d="M92 872H1508" stroke="#d5d0c6" stroke-width="2"/>
+  <text x="92" y="908" class="meta">ILLUSTRATIVE RESIDENTIAL STUDY</text><text x="92" y="934" class="small">Furniture shown for scale · Dimensions in millimetres · Not for construction</text>
+  <g transform="translate(1250 886)"><rect width="258" height="48" fill="#203832"/><text x="18" y="31" fill="#fff" font-family="Arial,sans-serif" font-size="18" font-weight="700" letter-spacing="2">A-101 / REV 02</text></g>
 </svg>
