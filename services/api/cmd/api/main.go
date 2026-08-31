@@ -26,10 +26,10 @@ func main() {
 	}
 
 	startupContext, cancelStartup := context.WithTimeout(context.Background(), 10*time.Second)
-	databasePool, err := pgxpool.New(startupContext, databaseURL)
+	databasePool, err := connectDatabase(startupContext, databaseURL)
 	cancelStartup()
 	if err != nil {
-		log.Fatalf("configure database pool: %v", err)
+		log.Fatalf("connect to database: %v", err)
 	}
 	defer databasePool.Close()
 
@@ -95,4 +95,16 @@ func main() {
 	}
 
 	log.Print("API stopped")
+}
+
+func connectDatabase(ctx context.Context, databaseURL string) (*pgxpool.Pool, error) {
+	pool, err := pgxpool.New(ctx, databaseURL)
+	if err != nil {
+		return nil, err
+	}
+	if err := pool.Ping(ctx); err != nil {
+		pool.Close()
+		return nil, err
+	}
+	return pool, nil
 }

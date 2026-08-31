@@ -191,13 +191,13 @@ describe('property catalogue', () => {
     expect(screen.getByRole('button', { name: `Select ${kinsaleProperty.title} on map` })).toHaveAttribute('aria-pressed', 'true')
   })
 
-  it('keeps the national map focused on geography until a county is selected', async () => {
+  it('keeps the national listing grid available before a county is selected', async () => {
     mockResponse({ properties: [property, kinsaleProperty] })
 
     render(<App />)
 
     const explorer = await screen.findByRole('region', { name: 'Explore homes by location' })
-    expect(within(explorer).queryByRole('complementary', { name: 'Homes matching your search' })).not.toBeInTheDocument()
+    expect(within(explorer).getByRole('complementary', { name: 'Homes matching your search' })).toBeVisible()
     expect(within(explorer).getByText('Select a home or choose a county to explore local areas')).toBeVisible()
   })
 
@@ -297,8 +297,10 @@ describe('property catalogue', () => {
 
     expect(await screen.findByRole('img', { name: 'Front exterior of the home' })).toBeVisible()
     expect(screen.getByText('1 / 4')).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Earlier media thumbnails' })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Later media thumbnails' })).toBeVisible()
 
-    await user.click(screen.getByRole('button', { name: 'Next image' }))
+    await user.click(screen.getByRole('button', { name: 'View Bright open-plan living room' }))
 
     expect(screen.getByRole('img', { name: 'Bright open-plan living room' })).toBeVisible()
     expect(screen.getByText('2 / 4')).toBeVisible()
@@ -317,10 +319,7 @@ describe('property catalogue', () => {
     render(<App />)
     await screen.findByRole('img', { name: 'Front exterior of the home' })
 
-    const nextImage = screen.getByRole('button', { name: 'Next image' })
-    await user.click(nextImage)
-    await user.click(nextImage)
-    await user.click(nextImage)
+    await user.click(screen.getByRole('button', { name: 'View Video tour of the property' }))
 
     const video = screen.getByLabelText('Video tour of the property')
     expect(video.tagName).toBe('VIDEO')
@@ -333,7 +332,7 @@ describe('property catalogue', () => {
 
     render(<App />)
 
-    expect(await screen.findByRole('img', { name: 'No property photograph available' })).toBeVisible()
+    expect((await screen.findAllByRole('img', { name: /Architectural study for/ }))[0]).toBeVisible()
   })
 
   it('shows an empty state when no published homes exist', async () => {

@@ -95,7 +95,7 @@ export function PropertyMap({ properties, selectedCounty, selectedArea, property
         <p aria-live="polite">{visibleProperties.length} {visibleProperties.length === 1 ? 'result' : 'results'}</p>
       </div>
 
-      <div className={`location-workspace${selectedCounty ? ' has-results' : ''}`}>
+      <div className="location-workspace">
         <div className={`location-toolbar${locationPanelOpen ? ' is-open' : ''}`} aria-hidden={!locationPanelOpen}>
           <div className="location-panel-heading"><div><span>{selectedCounty ? 'Refine location' : 'Explore Ireland'}</span><strong>{activeArea ?? selectedCounty ?? 'Counties'}</strong></div><button type="button" aria-label="Close location search" onClick={() => setLocationPanelOpen(false)}>×</button></div>
           <div className="location-toolbar-primary">
@@ -130,11 +130,11 @@ export function PropertyMap({ properties, selectedCounty, selectedArea, property
             <button className="map-back-button" type="button" aria-label="All Ireland" onClick={() => chooseCounty(null)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14.5 6-6 6 6 6" /></svg><span>All Ireland</span></button>
             {activeArea && <button className="map-focus-button" type="button" aria-label={`Back to all ${selectedCounty}`} onClick={showWholeCounty}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14.5 6-6 6 6 6" /></svg><span>Back</span></button>}
           </div>}
-          <GooglePropertyMap properties={mapProperties} selectedPropertyID={selectedProperty?.id} selectedCounty={selectedCounty} selectedArea={activeArea} cameraRequestKey={cameraRequestKey} areas={countyAreas} availableCounties={availableCounties} onSelectProperty={showPropertyOnMap} onSelectCounty={(county) => chooseCounty(county)} onSelectArea={(area) => chooseArea(area)} onDismissProperty={() => setSelectedPropertyID(undefined)} />
+          <GooglePropertyMap properties={mapProperties} selectedPropertyID={selectedProperty?.id} selectedCounty={selectedCounty} selectedArea={activeArea} cameraRequestKey={cameraRequestKey} areas={countyAreas} availableCounties={availableCounties} onSelectCounty={(county) => chooseCounty(county)} onSelectArea={(area) => chooseArea(area)} onSelectProperty={showPropertyOnMap} onDismissProperty={() => setSelectedPropertyID(undefined)} />
           {!selectedCounty && <p className="map-drilldown-hint">Select a home or choose a county to explore local areas</p>}
           {selectedCounty && !activeArea && <p className="map-drilldown-hint">Select a home or choose a local area</p>}
         </div>
-        {selectedCounty && <aside className="map-results" aria-label="Homes matching your search">
+        <aside className="map-results" aria-label="Homes matching your search">
           <div className="map-results-heading"><span>Homes</span><strong>{visibleProperties.length} available</strong></div>
           <div className="map-results-list">
             {visibleProperties.map((property) => <article className={`map-result-card${selectedPropertyID === property.id ? ' is-selected' : ''}`} key={property.id}>
@@ -146,7 +146,7 @@ export function PropertyMap({ properties, selectedCounty, selectedArea, property
             </article>)}
             {visibleProperties.length === 0 && <div className="map-results-empty"><strong>No matching homes</strong><p>Adjust the filters or choose another area.</p></div>}
           </div>
-        </aside>}
+        </aside>
       </div>
     </section>
   )

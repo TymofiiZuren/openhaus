@@ -18,8 +18,48 @@ infra/                    Local infrastructure configuration
 docs/                     Architecture and product documentation
 ```
 
-The repository is currently a scaffold. Build and development commands will be
-added with the first runnable vertical slice.
+The repository contains a runnable React property explorer, Go API, and local
+PostgreSQL/PostGIS development stack.
+
+## Run the application
+
+From the repository root, start the database and API in one terminal:
+
+```sh
+docker compose -f infra/docker-compose.yml up -d
+set -a
+. ./.env
+set +a
+export DATABASE_URL="postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:${POSTGRES_PORT}/${POSTGRES_DB}?sslmode=disable"
+cd services/api
+go run ./cmd/api
+```
+
+In a second terminal, start the web client:
+
+```sh
+cd apps/web
+npm install # first clone, or whenever package-lock.json changes
+npm run dev
+```
+
+If port 8080 is already occupied by another API process, run the replacement API
+from `services/api` on an unused port:
+
+```sh
+HTTP_ADDR=127.0.0.1:8081 go run ./cmd/api
+```
+
+Then run Vite from `apps/web` with its proxy pointed at that API:
+
+```sh
+OPENHAUS_API_PROXY_TARGET=http://127.0.0.1:8081 npm run dev -- --port 5174
+```
+
+Open `http://localhost:5173`. Copy `apps/web/.env.example` to
+`apps/web/.env.local` and add a browser-restricted Google Maps key before
+starting Vite if the file is not configured yet. The migration and seed steps
+below are required only for a new or empty local database.
 
 ## Local database
 
@@ -87,9 +127,9 @@ The county selection is stored in the URL and works even if the map provider is
 unavailable.
 
 The production renderer uses Google Maps for geographic and street data. Its
-visible experience is custom OpenHaus UI: warm neutral cartography, price
-markers, map/satellite switching, zoom/reframe controls, location search, and
-persistent property previews. Copy the web environment example and add a
+visible experience is custom OpenHaus UI: warm neutral cartography, grouped
+home-count markers, map/satellite switching, reframe controls, location search,
+and a persistent property grid. Copy the web environment example and add a
 browser-restricted Maps JavaScript API key:
 
 ```bash
@@ -102,10 +142,11 @@ The browser key is intentionally public; referrer restrictions and API
 restrictions are what protect it. Google Maps requires a billing-enabled Google
 Cloud project, so usage and budget alerts must be configured before deployment.
 
-The explorer uses a progressive Ireland → county → council-area flow. The
-national view shows county boundaries without property markers. Selecting Cork
-or Dublin centers that county, replaces the national layer with its council
-areas, and reveals only homes in the selected county. The current council-area
+The explorer uses an explicit Ireland → county → council-area flow. The
+national view shows county boundaries and aggregated county home counts;
+zooming alone never changes the selected county. Selecting a county centers it,
+replaces the national layer with its council areas, and groups its homes by
+town. The current council-area
 GeoJSON is a small, attributed client-side MVP slice for the two published
 counties; it is not the authoritative persistence hierarchy. The existing
 PostGIS bounding-box query remains the foundation for the later viewport-search

@@ -35,11 +35,11 @@ const sharedProps = {
 }
 
 describe('property map listing visibility', () => {
-  it('shows all visible listing markers but no listing rail in the Ireland overview', () => {
+  it('shows all visible listing markers and the listing rail in the Ireland overview', () => {
     render(<PropertyMap {...sharedProps} properties={[dublinProperty, corkProperty]} selectedCounty={null} />)
 
     expect(screen.getByTestId('map-properties')).toHaveTextContent('Dublin home,Cork home')
-    expect(screen.queryByRole('complementary', { name: 'Homes matching your search' })).not.toBeInTheDocument()
+    expect(screen.getByRole('complementary', { name: 'Homes matching your search' })).toBeVisible()
   })
 
   it('shows county listing markers and the listing rail before a local area is selected', () => {

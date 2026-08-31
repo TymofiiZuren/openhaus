@@ -5,6 +5,7 @@ import { administrativeAreaAttribution, type AdministrativeArea } from './admini
 import { countyBoundaries, countyBoundaryAttribution, mapViewport } from './countyBoundaries'
 import { loadGoogleMaps } from './googleMapsLoader'
 import type { Listener, MapInstance, MarkerInstance, PolygonInstance } from './googleMapsLoader'
+import { groupPropertiesForMap } from './mapListingGroups'
 import { PropertyImageCarousel } from './PropertyImageCarousel'
 
 const irelandOverviewRestriction = {
@@ -13,13 +14,8 @@ const irelandOverviewRestriction = {
   east: -1.7,
   north: 56.6,
 }
-const irelandOverviewBounds = {
-  west: -10.75,
-  south: 51.35,
-  east: -5.35,
-  north: 55.5,
-}
 type MapPolygon = { name: string; kind: 'county' | 'area'; polygon: PolygonInstance; listeners: Listener[]; available: boolean }
+type MapMarker = { ids: string[]; count: number; marker: MarkerInstance; listeners: Listener[] }
 
 type GooglePropertyMapProps = {
   properties: Property[]
@@ -29,25 +25,22 @@ type GooglePropertyMapProps = {
   cameraRequestKey?: number
   areas: AdministrativeArea[]
   availableCounties: string[]
-  onSelectProperty: (property: Property) => void
   onSelectCounty: (county: string | null) => void
   onSelectArea: (area: string) => void
+  onSelectProperty: (property: Property) => void
   onDismissProperty: () => void
 }
-export function GooglePropertyMap({ properties, selectedPropertyID, selectedCounty, selectedArea, cameraRequestKey = 0, areas, availableCounties, onSelectProperty, onSelectCounty, onSelectArea, onDismissProperty }: GooglePropertyMapProps) {
+export function GooglePropertyMap({ properties, selectedPropertyID, selectedCounty, selectedArea, cameraRequestKey = 0, areas, availableCounties, onSelectCounty, onSelectArea, onSelectProperty, onDismissProperty }: GooglePropertyMapProps) {
   const container = useRef<HTMLDivElement>(null)
   const map = useRef<MapInstance | undefined>(undefined)
-  const markers = useRef<Array<{ id: string; marker: MarkerInstance; listener: Listener }>>([])
+  const markers = useRef<MapMarker[]>([])
   const polygons = useRef<MapPolygon[]>([])
   const mapListeners = useRef<Listener[]>([])
-  const onSelect = useRef(onSelectProperty)
   const onCountySelect = useRef(onSelectCounty)
   const onAreaSelect = useRef(onSelectArea)
+  const onPropertySelect = useRef(onSelectProperty)
   const onDismiss = useRef(onDismissProperty)
   const suppressViewportDismiss = useRef(false)
-  const suppressAutomaticCounty = useRef(false)
-  const automaticCounty = useRef<string | undefined>(undefined)
-  const availableCountiesRef = useRef(availableCounties)
   const [previewHost, setPreviewHost] = useState<HTMLElement>()
   const selectedCountyRef = useRef(selectedCounty)
   const selectedAreaRef = useRef(selectedArea)
@@ -57,13 +50,11 @@ export function GooglePropertyMap({ properties, selectedPropertyID, selectedCoun
   const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string | undefined
   const attribution = selectedCounty && areas.length > 0 ? administrativeAreaAttribution : countyBoundaryAttribution
 
-  useEffect(() => { onSelect.current = onSelectProperty }, [onSelectProperty])
   useEffect(() => { onCountySelect.current = onSelectCounty }, [onSelectCounty])
   useEffect(() => { onAreaSelect.current = onSelectArea }, [onSelectArea])
+  useEffect(() => { onPropertySelect.current = onSelectProperty }, [onSelectProperty])
   useEffect(() => { onDismiss.current = onDismissProperty }, [onDismissProperty])
-  useEffect(() => { availableCountiesRef.current = availableCounties }, [availableCounties])
   useEffect(() => { selectedCountyRef.current = selectedCounty }, [selectedCounty])
-  useEffect(() => { automaticCounty.current = undefined }, [selectedCounty])
   useEffect(() => { selectedAreaRef.current = selectedArea }, [selectedArea])
 
   useEffect(() => {
@@ -84,22 +75,7 @@ export function GooglePropertyMap({ properties, selectedPropertyID, selectedCoun
         const zoomListener = map.current.addListener('zoom_changed', () => {
           if (!suppressViewportDismiss.current) onDismiss.current()
         })
-        const idleListener = map.current.addListener('idle', () => {
-          if (suppressAutomaticCounty.current) {
-            suppressAutomaticCounty.current = false
-            return
-          }
-          const zoom = map.current?.getZoom() ?? 0
-          if (selectedCountyRef.current || automaticCounty.current || zoom < 9) return
-          const center = map.current?.getCenter()
-          if (!center) return
-          const coordinate = { lat: center.lat(), lng: center.lng() }
-          const county = countyBoundaries.find((candidate) => availableCountiesRef.current.some((name) => sameLocation(name, candidate.name)) && coordinateInBoundary(coordinate, candidate.paths))
-          if (!county) return
-          automaticCounty.current = county.name
-          onCountySelect.current(county.name)
-        })
-        mapListeners.current = [dragListener, zoomListener, idleListener]
+        mapListeners.current = [dragListener, zoomListener]
         setStatus('ready')
       })
       .catch(() => { if (!cancelled) setStatus('error') })
@@ -110,16 +86,20 @@ export function GooglePropertyMap({ properties, selectedPropertyID, selectedCoun
     if (status !== 'ready' || !map.current || !window.google) return
     clearMarkers(markers.current)
     const maps = window.google.maps
-    markers.current = properties.map((property) => {
-      const position = { lat: property.latitude, lng: property.longitude }
+    markers.current = groupPropertiesForMap(properties, selectedCounty).map((group) => {
       const marker = new maps.Marker({
-        map: map.current, position, title: `${property.title}, ${compactEuros(property.priceCents)}`,
-        icon: markerIcon(false, compactEuros(property.priceCents)), zIndex: 1,
+        map: map.current,
+        position: group.position,
+        title: `${group.properties.length} ${group.properties.length === 1 ? 'home' : 'homes'} in ${group.label}`,
+        icon: markerIcon(false, group.markerLabel),
+        zIndex: 1,
       })
-      const listener = marker.addListener('click', () => onSelect.current(property))
-      return { id: property.id, marker, listener }
+      const listeners = selectedCounty && group.properties.length === 1
+        ? [marker.addListener('click', () => onPropertySelect.current(group.properties[0]))]
+        : []
+      return { ids: group.properties.map((property) => property.id), count: group.properties.length, marker, listeners }
     })
-  }, [properties, status])
+  }, [properties, selectedCounty, status])
 
   useEffect(() => {
     if (status !== 'ready' || !map.current || !window.google) return
@@ -156,7 +136,6 @@ export function GooglePropertyMap({ properties, selectedPropertyID, selectedCoun
         .filter(({ size }) => size >= .00005)
         .sort((left, right) => right.size - left.size)
       : []
-    const revealTimers: number[] = []
     const areaPolygons = areaShapes.map(({ area, paths }, areaIndex) => {
       const selected = sameLocation(area.name, selectedAreaRef.current ?? '')
       const polygon = new maps.Polygon({
@@ -164,10 +143,10 @@ export function GooglePropertyMap({ properties, selectedPropertyID, selectedCoun
         paths,
         clickable: true,
         strokeColor: '#294039',
-        strokeOpacity: 0,
+        strokeOpacity: selected ? .95 : .62,
         strokeWeight: selected ? 1.5 : .8,
         fillColor: selected ? '#d56f4b' : areaIndex % 2 === 0 ? '#e3ebe7' : '#d6e2dc',
-        fillOpacity: 0,
+        fillOpacity: selected ? .22 : .08,
         // Large county regions are drawn first. Compact city polygons sit above
         // them so both remain independently visible and clickable.
         zIndex: 3 + areaIndex,
@@ -177,14 +156,10 @@ export function GooglePropertyMap({ properties, selectedPropertyID, selectedCoun
         polygon.addListener('mouseover', () => polygon.setOptions({ fillOpacity: sameLocation(area.name, selectedAreaRef.current ?? '') ? .22 : .14, strokeOpacity: .9 })),
         polygon.addListener('mouseout', () => polygon.setOptions(areaStyle(area.name, selectedAreaRef.current))),
       ]
-      revealTimers.push(window.setTimeout(() => {
-        polygon.setOptions(areaStyle(area.name, selectedAreaRef.current))
-      }, 45 + Math.min(areaIndex, 12) * 18))
       return { name: area.name, kind: 'area' as const, polygon, listeners, available: true }
     })
     polygons.current = [...countyPolygons, ...areaPolygons]
     return () => {
-      for (const timer of revealTimers) window.clearTimeout(timer)
       clearPolygons(polygons.current)
     }
   }, [areas, availableCounties, selectedCounty, status])
@@ -215,16 +190,14 @@ export function GooglePropertyMap({ properties, selectedPropertyID, selectedCoun
 
   useEffect(() => {
     if (status !== 'ready' || !map.current || !window.google) return
-    suppressAutomaticCounty.current = true
     applyCamera(map.current, selectedCounty, container.current?.clientWidth)
   }, [selectedCounty, status])
 
   useEffect(() => {
     for (const item of markers.current) {
-      const selected = item.id === selectedPropertyID
-      const property = properties.find((candidate) => candidate.id === item.id)
-      if (!property) continue
-      item.marker.setIcon(markerIcon(selected, compactEuros(property.priceCents)))
+      const selected = !!selectedPropertyID && item.ids.includes(selectedPropertyID)
+      const property = selectedCounty && item.ids.length === 1 ? properties.find((candidate) => candidate.id === item.ids[0]) : undefined
+      item.marker.setIcon(markerIcon(selected, property ? compactPrice(property.priceCents) : String(item.count)))
       item.marker.setZIndex(selected ? 10 : 1)
     }
     if (!selectedPropertyID || !map.current) return
@@ -236,14 +209,14 @@ export function GooglePropertyMap({ properties, selectedPropertyID, selectedCoun
       suppressViewportDismiss.current = false
       idleListener.remove()
     })
-  }, [properties, selectedPropertyID])
+  }, [properties, selectedCounty, selectedPropertyID])
 
   useEffect(() => {
     if (status !== 'ready' || !map.current || !window.google || !selectedPropertyID) {
       setPreviewHost(undefined)
       return
     }
-    const selectedMarker = markers.current.find((item) => item.id === selectedPropertyID)
+    const selectedMarker = markers.current.find((item) => item.ids.includes(selectedPropertyID))
     if (!selectedMarker) return
     const host = document.createElement('div')
     const infoWindow = new window.google.maps.InfoWindow({ content: host, disableAutoPan: true, maxWidth: 640 })
@@ -326,9 +299,14 @@ function MapPropertyPreview({ property }: { property?: Property }) {
 }
 
 function euros(priceCents: number) { return new Intl.NumberFormat('en-IE', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(priceCents / 100) }
+function compactPrice(priceCents: number) {
+  const value = priceCents / 100
+  if (value >= 1_000_000) return `€${(value / 1_000_000).toFixed(value % 1_000_000 ? 1 : 0)}m`
+  return `€${Math.round(value / 1_000)}k`
+}
 
-function clearMarkers(items: Array<{ marker: MarkerInstance; listener: Listener }>) {
-  for (const item of items) { item.listener.remove(); item.marker.setMap(null) }
+function clearMarkers(items: Array<{ marker: MarkerInstance; listeners: Listener[] }>) {
+  for (const item of items) { for (const listener of item.listeners) listener.remove(); item.marker.setMap(null) }
 }
 
 function clearPolygons(items: Array<{ polygon: PolygonInstance; listeners: Listener[] }>) {
@@ -369,10 +347,7 @@ function applyCamera(map: MapInstance, selectedCounty: string | null | undefined
       minZoom: 5,
       restriction: { latLngBounds: irelandOverviewRestriction, strictBounds: true },
     })
-    const bounds = new window.google.maps.LatLngBounds()
-    bounds.extend({ lat: irelandOverviewBounds.south, lng: irelandOverviewBounds.west })
-    bounds.extend({ lat: irelandOverviewBounds.north, lng: irelandOverviewBounds.east })
-    map.fitBounds(bounds, compact ? 12 : 28)
+    moveCamera(map, { lat: 53.35, lng: -8 }, compact ? 5 : 6)
     return
   }
   const center = {
@@ -454,15 +429,7 @@ function pointInRing(point: { lat: number; lng: number }, path: Array<{ lat: num
   return inside
 }
 
-function compactEuros(priceCents: number) {
-  return new Intl.NumberFormat('en-IE', { style: 'currency', currency: 'EUR', notation: 'compact', maximumFractionDigits: 1 }).format(priceCents / 100)
-}
-
 function sameLocation(left: string, right: string) { return left.localeCompare(right, undefined, { sensitivity: 'base' }) === 0 }
-
-function coordinateInBoundary(point: { lat: number; lng: number }, paths: Array<Array<{ lat: number; lng: number }>>) {
-  return paths.filter((path) => pointInRing(point, path)).length % 2 === 1
-}
 
 const openHausMapStyle = [
   { elementType: 'geometry', stylers: [{ color: '#dedbd3' }] },

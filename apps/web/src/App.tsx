@@ -1,4 +1,4 @@
-import { useCallback, useDeferredValue, useEffect, useState } from 'react'
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import './App.css'
 import { fetchProperties, type Property } from './api/properties'
 import { areaForCoordinate } from './administrativeAreas'
@@ -247,17 +247,38 @@ function PropertyDetailPage({ property, status, onRetry }: { property?: Property
 
 function PropertyGallery({ property }: { property: Property }) {
   const [selectedIndex, setSelectedIndex] = useState(0)
-  const selected = property.media[selectedIndex]
-  const poster = property.media.find((item) => item.kind === 'image')?.url
-  const showPrevious = () => setSelectedIndex((index) => (index - 1 + property.media.length) % property.media.length)
-  const showNext = () => setSelectedIndex((index) => (index + 1) % property.media.length)
+  const thumbnailRail = useRef<HTMLDivElement>(null)
+  const galleryMedia = useMemo(() => {
+    const media = property.media.length > 0
+      ? [...property.media].sort((left, right) => left.position - right.position)
+      : [{ url: '/media/placeholders/architectural-home.svg', kind: 'image' as const, altText: `Architectural study for ${property.title}`, position: 0 }]
+    if (!media.some((item) => item.kind === 'floor_plan')) {
+      media.push({ url: '/media/placeholders/sample-floor-plan.svg', kind: 'floor_plan', altText: `Illustrative floor plan for ${property.title}`, position: media.length })
+    }
+    return media
+  }, [property.media, property.title])
+  const selected = galleryMedia[selectedIndex]
+  const poster = galleryMedia.find((item) => item.kind === 'image')?.url
+  const showPrevious = () => setSelectedIndex((index) => (index - 1 + galleryMedia.length) % galleryMedia.length)
+  const showNext = () => setSelectedIndex((index) => (index + 1) % galleryMedia.length)
+
+  useEffect(() => {
+    if (!thumbnailRail.current) return
+    const thumbnail = thumbnailRail.current.children.item(selectedIndex) as HTMLElement | null
+    if (!thumbnail) return
+    thumbnailRail.current.scrollLeft = Math.max(0, thumbnail.offsetLeft - (thumbnailRail.current.clientWidth - thumbnail.offsetWidth) / 2)
+  }, [selectedIndex])
+
+  function moveThumbnailRail(direction: number) {
+    if (!thumbnailRail.current) return
+    thumbnailRail.current.scrollLeft += direction * Math.max(96, thumbnailRail.current.clientWidth - 96)
+  }
 
   if (!selected) {
     return (
       <div className="property-visual property-fallback">
-        <svg viewBox="0 0 480 280" role="img" aria-label="No property photograph available">
-          <path d="M42 226h396M93 226V117l147-73 147 73v109M141 226v-76h67v76M272 126h67v57h-67z" />
-        </svg>
+        <img src="/media/placeholders/sample-floor-plan.svg" alt="Illustrative sample floor plan; property photography coming soon" loading="lazy" />
+        <span>Illustrative plan</span>
       </div>
     )
   }
@@ -287,14 +308,35 @@ function PropertyGallery({ property }: { property: Property }) {
           />
         )}
         <p className="gallery-count" aria-live="polite">
-          {selectedIndex + 1} / {property.media.length}
+          {selectedIndex + 1} / {galleryMedia.length}
         </p>
         <p className="gallery-kind">{mediaLabel(selected.kind)}</p>
-        {property.media.length > 1 && <div className="gallery-navigation" aria-label="Property photographs">
+        {galleryMedia.length > 1 && <div className="gallery-navigation" aria-label="Property photographs">
           <button type="button" aria-label="Previous image" onClick={showPrevious}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14.5 5-7 7 7 7"/></svg></button>
           <button type="button" aria-label="Next image" onClick={showNext}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9.5 5 7 7-7 7"/></svg></button>
         </div>}
       </div>
+
+      {galleryMedia.length > 1 && <div className="gallery-filmstrip" aria-label={`Media for ${property.title}`}>
+        <button className="gallery-strip-button is-previous" type="button" aria-label="Earlier media thumbnails" onClick={() => moveThumbnailRail(-1)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14.5 5-7 7 7 7"/></svg></button>
+        <div className="gallery-thumbnails" ref={thumbnailRail}>
+          {galleryMedia.map((item, index) => (
+            <button
+              key={item.url}
+              className="gallery-thumbnail"
+              type="button"
+              aria-label={`View ${item.altText}`}
+              aria-pressed={index === selectedIndex}
+              onClick={() => setSelectedIndex(index)}
+            >
+              <img src={item.kind === 'video' ? poster : item.url} alt="" loading="lazy" />
+              {item.kind === 'floor_plan' && <span>Plan</span>}
+              {item.kind === 'video' && <span>Video</span>}
+            </button>
+          ))}
+        </div>
+        <button className="gallery-strip-button is-next" type="button" aria-label="Later media thumbnails" onClick={() => moveThumbnailRail(1)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9.5 5 7 7-7 7"/></svg></button>
+      </div>}
 
     </div>
   )
