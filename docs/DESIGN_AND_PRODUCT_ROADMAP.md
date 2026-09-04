@@ -2,7 +2,7 @@
 
 # OpenHaus design and product roadmap
 
-Status: living implementation plan  
+Status: living implementation plan
 Last updated: 2026-09-03
 
 ## Product position
