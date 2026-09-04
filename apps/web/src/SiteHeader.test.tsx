@@ -1,7 +1,27 @@
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { expect, it } from 'vitest'
-import { SiteHeader } from './SiteHeader'
+import { afterEach, expect, it, vi } from 'vitest'
+import { clientSessionHintKey, SiteHeader } from './SiteHeader'
+
+afterEach(() => {
+  localStorage.removeItem(clientSessionHintKey)
+  vi.restoreAllMocks()
+})
+
+it('shows the client account when an existing session is active', async () => {
+  localStorage.setItem(clientSessionHintKey, 'active')
+  vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({ client: { id: 'buyer', email: 'buyer@example.test' } }))
+
+  render(<SiteHeader pathname="/" />)
+
+  expect(await screen.findByRole('button', { name: 'Account options' })).toHaveTextContent('My account')
+  expect(screen.queryByRole('button', { name: 'Sign in options' })).not.toBeInTheDocument()
+
+  await userEvent.click(screen.getByRole('button', { name: 'Open navigation' }))
+  const drawer = screen.getByRole('dialog', { name: 'Explore OpenHaus' })
+  expect(within(drawer).getByRole('link', { name: 'Client account' })).toHaveAttribute('href', '/client/login')
+  expect(within(drawer).queryByRole('link', { name: 'Client sign in' })).not.toBeInTheDocument()
+})
 
 it('exposes information pages without opening a menu and marks the current page', () => {
   render(<SiteHeader pathname="/contact" />)

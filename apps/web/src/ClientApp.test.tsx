@@ -63,6 +63,8 @@ it('restores an existing session and keeps the account visible if sign-out fails
   api(response(200, { client: { id: 'buyer', email: 'buyer@example.test' } }), response(200, { properties: [] }), response(503))
   render(<ClientApp />)
   expect(await screen.findByRole('heading', { name: 'buyer@example.test' })).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'Account options' })).toHaveTextContent('My account')
+  expect(screen.queryByRole('button', { name: 'Sign in options' })).not.toBeInTheDocument()
   expect(screen.queryByLabelText('Password')).not.toBeInTheDocument()
   fireEvent.click(screen.getByRole('button', { name: 'Sign out' }))
   expect(await screen.findByRole('alert')).toHaveTextContent('could not confirm sign-out')

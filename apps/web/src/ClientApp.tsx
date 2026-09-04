@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
-import { SiteHeader } from './SiteHeader'
+import { clientSessionHintKey, SiteHeader, type ClientSessionStatus } from './SiteHeader'
 import { AuthFields } from './AuthFields'
 import { fetchClientSavedProperties, removeClientSavedProperty, saveClientProperty } from './api/clientSavedProperties'
 import type { Property } from './api/properties'
@@ -7,7 +7,6 @@ import './App.css'
 import './ClientApp.css'
 
 type Client = { id: string; email: string }
-type Status = 'loading' | 'anonymous' | 'authenticated' | 'disabled' | 'unavailable'
 const euros = new Intl.NumberFormat('en-IE', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 })
 async function readClient(response: Response): Promise<Client> {
   const data = await response.json()
@@ -17,7 +16,7 @@ async function readClient(response: Response): Promise<Client> {
 
 export function ClientApp({ pathname = '/client' }: { pathname?: string }) {
   const register = pathname.replace(/\/$/, '') === '/client/register'
-  const [status, setStatus] = useState<Status>('loading')
+  const [status, setStatus] = useState<ClientSessionStatus>('loading')
   const [client, setClient] = useState<Client | null>(null)
   const [attempt, setAttempt] = useState(0)
   const [busy, setBusy] = useState(false)
@@ -29,6 +28,12 @@ export function ClientApp({ pathname = '/client' }: { pathname?: string }) {
   const [password, setPassword] = useState('')
   const feedback = useRef<HTMLParagraphElement>(null)
   useEffect(() => { if (error || message) feedback.current?.focus() }, [error, message])
+  useEffect(() => {
+    try {
+      if (status === 'authenticated' && client) localStorage.setItem(clientSessionHintKey, 'active')
+      else if (status === 'anonymous' || status === 'disabled') localStorage.removeItem(clientSessionHintKey)
+    } catch { /* Account state still comes from the server when storage is unavailable. */ }
+  }, [client, status])
   useEffect(() => {
     const previous = document.title
     document.title = 'Client account — OpenHaus'
@@ -119,7 +124,7 @@ export function ClientApp({ pathname = '/client' }: { pathname?: string }) {
 
   return <div className="site-shell">
     <a className="skip-link" href="#client-content">Skip to content</a>
-    <SiteHeader pathname={pathname} />
+    <SiteHeader pathname={pathname} client={client} clientSessionStatus={status} />
     <main className="client-main" id="client-content">
       <header className="client-intro"><p className="eyebrow">OpenHaus / {register ? 'Registration' : 'Sign in'}</p><h1>{status === 'authenticated' ? 'Your client account.' : register ? 'Make room for what’s next.' : 'Welcome back.'}</h1><a href="/#explore">Continue browsing without signing in</a></header>
       <section className="client-panel" aria-label="Client account" aria-busy={status === 'loading' || busy}>
