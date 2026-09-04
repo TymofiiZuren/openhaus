@@ -62,6 +62,36 @@ it('updates the current property chapter as sections enter the reading area', as
   expect(within(nav).getByRole('link', { name: 'Property insights' })).toHaveAttribute('aria-current', 'location')
 })
 
+it('does not let a stale scroll observation undo a rapid property chapter selection', async () => {
+  let notify: IntersectionObserverCallback | undefined
+  vi.stubGlobal('IntersectionObserver', vi.fn(function (callback: IntersectionObserverCallback) {
+    notify = callback
+    return { observe: vi.fn(), unobserve: vi.fn(), disconnect: vi.fn(), takeRecords: () => [], root: null, rootMargin: '', thresholds: [] }
+  }))
+  window.history.replaceState({}, '', `/properties/${property.id}`)
+  mockResponse({ properties: [property] })
+  render(<App />)
+
+  const nav = await screen.findByRole('navigation', { name: 'Property sections' })
+  await userEvent.click(within(nav).getByRole('link', { name: 'Property insights' }))
+  expect(within(nav).getByRole('link', { name: 'Property insights' })).toHaveAttribute('aria-current', 'location')
+
+  const overview = document.getElementById('overview')!
+  const bounds = overview.getBoundingClientRect()
+  act(() => notify?.([{
+    boundingClientRect: bounds,
+    intersectionRatio: 1,
+    intersectionRect: bounds,
+    isIntersecting: true,
+    rootBounds: null,
+    target: overview,
+    time: 0,
+  }], {} as IntersectionObserver))
+
+  expect(within(nav).getByRole('link', { name: 'Property insights' })).toHaveAttribute('aria-current', 'location')
+  expect(within(nav).getByRole('link', { name: 'Overview & media' })).not.toHaveAttribute('aria-current')
+})
+
 it('offers a direct full-window tour from the property summary', async () => {
   window.history.replaceState({}, '', `/properties/${property.id}`)
   mockResponse({ properties: [{ ...property, media: [...property.media, { url: 'https://kuula.co/share/LTPpc', kind: 'panorama', altText: 'Tour', position: 4 }] }] })

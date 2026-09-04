@@ -53,3 +53,15 @@ it('keeps manager access out of an authenticated client menu', async () => {
   expect(menu).not.toHaveTextContent('Manager')
   expect(menu).not.toHaveTextContent('List a property')
 })
+
+it('closes the previous navbar dropdown immediately when another opens', async () => {
+  const user = userEvent.setup()
+  render(<><ThemeControl /><HeaderAccountLinks /></>)
+
+  await user.hover(screen.getByRole('button', { name: /Choose appearance/ }))
+  expect(screen.getByRole('group', { name: 'Appearance' })).toBeInTheDocument()
+
+  await user.hover(screen.getByRole('button', { name: 'Sign in options' }))
+  expect(screen.queryByRole('group', { name: 'Appearance' })).not.toBeInTheDocument()
+  expect(screen.getByRole('navigation', { name: 'Sign-in options' })).toBeInTheDocument()
+})

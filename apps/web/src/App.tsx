@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
-import type { ReactNode } from 'react'
+import type { MouseEvent as ReactMouseEvent, ReactNode } from 'react'
 import './App.css'
 import { SiteHeader } from './SiteHeader'
 import { ClientSignInPrompt } from './ClientSignInPrompt'
@@ -454,10 +454,27 @@ export function PropertyDetailPage({ property, status, onRetry }: { property?: P
   const [viewingOpen, setViewingOpen] = useState(false)
   const chapterIDs = useMemo(() => property?.media.some(item => item.kind === 'panorama' && item.url.startsWith('https://')) ? ['overview', 'tour', 'intelligence'] : ['overview', 'intelligence'], [property])
   const [activeChapter, setActiveChapter] = useState(() => chapterIDs.includes(window.location.hash.slice(1)) ? window.location.hash.slice(1) : 'overview')
+  const requestedChapter = useRef<string | null>(null)
+  const chapterUnlockTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+
+  function selectChapter(event: ReactMouseEvent<HTMLAnchorElement>, chapter: string) {
+    event.preventDefault()
+    clearTimeout(chapterUnlockTimer.current)
+    requestedChapter.current = chapter
+    chapterUnlockTimer.current = setTimeout(() => { requestedChapter.current = null }, 800)
+    setActiveChapter(chapter)
+    window.history.pushState({}, '', `#${chapter}`)
+    document.getElementById(chapter)?.scrollIntoView?.({
+      behavior: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+      block: 'start',
+    })
+  }
 
   useEffect(() => {
     const restoreChapter = () => {
       const chapter = window.location.hash.slice(1)
+      clearTimeout(chapterUnlockTimer.current)
+      requestedChapter.current = null
       setActiveChapter(chapterIDs.includes(chapter) ? chapter : 'overview')
     }
     restoreChapter()
@@ -466,6 +483,7 @@ export function PropertyDetailPage({ property, status, onRetry }: { property?: P
 
     if (typeof IntersectionObserver === 'undefined') {
       return () => {
+        clearTimeout(chapterUnlockTimer.current)
         window.removeEventListener('hashchange', restoreChapter)
         window.removeEventListener('popstate', restoreChapter)
       }
@@ -474,15 +492,24 @@ export function PropertyDetailPage({ property, status, onRetry }: { property?: P
     const observer = new IntersectionObserver((entries) => {
       const visible = entries.filter(entry => entry.isIntersecting)
       if (visible.length === 0) return
+      if (requestedChapter.current) {
+        const requested = visible.find(entry => entry.target.id === requestedChapter.current)
+        if (!requested) return
+        clearTimeout(chapterUnlockTimer.current)
+        requestedChapter.current = null
+        setActiveChapter(requested.target.id)
+        return
+      }
       visible.sort((a, b) => Math.abs(a.boundingClientRect.top) - Math.abs(b.boundingClientRect.top))
       setActiveChapter(visible[0].target.id)
-    }, { rootMargin: `-${getComputedStyle(document.documentElement).getPropertyValue('--public-header-height').trim() || '82px'} 0px -58%`, threshold: [0, 0.1] })
+    }, { rootMargin: `-${(Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--public-header-height')) || 82) + 76}px 0px -58%`, threshold: [0, 0.1] })
 
     chapterIDs.forEach((id) => {
       const section = document.getElementById(id)
       if (section) observer.observe(section)
     })
     return () => {
+      clearTimeout(chapterUnlockTimer.current)
       observer.disconnect()
       window.removeEventListener('hashchange', restoreChapter)
       window.removeEventListener('popstate', restoreChapter)
@@ -500,9 +527,10 @@ export function PropertyDetailPage({ property, status, onRetry }: { property?: P
         {status === 'success' && property && <>
           <div className="property-page-nav"><a href="/" aria-label="Back to property search"><span aria-hidden="true">←</span> Back to property search</a><span>{property.city} · Co. {property.county}</span></div>
           <nav className="property-chapters" aria-label="Property sections">
-            <a href="#overview" aria-current={activeChapter === 'overview' ? 'location' : undefined} onClick={() => setActiveChapter('overview')}>Overview & media</a>
-            {property.media.some(item => item.kind === 'panorama' && item.url.startsWith('https://')) && <a href="#tour" aria-current={activeChapter === 'tour' ? 'location' : undefined} onClick={() => setActiveChapter('tour')}>360° tour</a>}
-            <a href="#intelligence" aria-current={activeChapter === 'intelligence' ? 'location' : undefined} onClick={() => setActiveChapter('intelligence')}>Property insights</a>
+            <span className="property-chapters-label">On this page</span>
+            <a href="#overview" aria-current={activeChapter === 'overview' ? 'location' : undefined} onClick={(event) => selectChapter(event, 'overview')}>Overview & media</a>
+            {property.media.some(item => item.kind === 'panorama' && item.url.startsWith('https://')) && <a href="#tour" aria-current={activeChapter === 'tour' ? 'location' : undefined} onClick={(event) => selectChapter(event, 'tour')}>360° tour</a>}
+            <a href="#intelligence" aria-current={activeChapter === 'intelligence' ? 'location' : undefined} onClick={(event) => selectChapter(event, 'intelligence')}>Property insights</a>
             <a href={`/?county=${encodeURIComponent(property.county)}&property=${encodeURIComponent(property.id)}#explore`}>Show on map</a>
             <button type="button" onClick={() => setViewingOpen(true)}>Request viewing</button>
           </nav>
