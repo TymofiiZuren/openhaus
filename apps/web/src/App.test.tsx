@@ -437,9 +437,10 @@ describe('property catalogue', () => {
     render(<App />)
 
     const hero = screen.getByRole('region', { name: 'Find your next home' })
-    expect(within(hero).getByRole('heading', { level: 1, name: 'The complete picture, before the viewing.' })).toBeVisible()
+    expect(within(hero).getByRole('heading', { level: 1, name: 'Find the address. See the whole picture.' })).toBeVisible()
     expect(within(hero).getByRole('searchbox', { name: 'Search homes from the opening feature' })).toBeVisible()
-    expect(within(hero).getByRole('img', { name: 'Contemporary Irish home exterior' })).toHaveAttribute('src', '/media/properties/leeson-park/exterior-front.webp')
+    expect(within(hero).getByRole('complementary', { name: 'Live property desk' })).toBeVisible()
+    expect(hero.querySelector('img')).not.toBeInTheDocument()
     expect(hero.querySelector('video')).not.toBeInTheDocument()
 
     const explorer = await screen.findByRole('region', { name: 'Explore homes by location' })

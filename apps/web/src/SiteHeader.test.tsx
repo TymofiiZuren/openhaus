@@ -21,6 +21,8 @@ it('shows the client account when an existing session is active', async () => {
   const drawer = screen.getByRole('dialog', { name: 'Explore OpenHaus' })
   expect(within(drawer).getByRole('link', { name: 'Client account' })).toHaveAttribute('href', '/client/login')
   expect(within(drawer).queryByRole('link', { name: 'Client sign in' })).not.toBeInTheDocument()
+  expect(within(drawer).queryByRole('link', { name: 'Manager sign in' })).not.toBeInTheDocument()
+  expect(within(drawer).queryByRole('link', { name: 'List a property' })).not.toBeInTheDocument()
 })
 
 it('exposes information pages without opening a menu and marks the current page', () => {

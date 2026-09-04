@@ -25,7 +25,7 @@ export function HeaderAccountLinks({ signedIn = false, pending = false }: { sign
   }}>
     <button ref={accountTrigger} type="button" aria-label={triggerName} aria-expanded={open} aria-controls={`${id}-account`} onClick={onTriggerClick}>{triggerLabel}</button>
     {open && <nav className="header-account-menu" id={`${id}-account`} aria-label={menuName}>
-      <a href="/client/login">{signedIn ? 'Client account' : 'Client sign in'}</a><a href="/manager/login">Manager sign in / List a property</a>
+      <a href="/client/login">{signedIn ? 'Client account' : 'Client sign in'}</a>{!signedIn && <a href="/manager/login">Manager sign in / List a property</a>}
     </nav>}
   </div>
 }

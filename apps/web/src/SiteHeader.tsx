@@ -112,7 +112,7 @@ export function SiteHeader({ pathname = window.location.pathname, client, client
       <aside ref={menuPanel} className="public-side-menu" id={menuId} role="dialog" aria-modal="true" aria-labelledby={`${menuId}-title`}>
         <header><div><span>Navigation</span><h2 id={`${menuId}-title`}>Explore OpenHaus</h2></div><button ref={menuClose} type="button" aria-label="Close navigation" onClick={closeMenu}>×</button></header>
         <nav aria-label="Mobile navigation">{links.map(([label, href], index) => <a key={href} href={href} aria-current={current === href ? 'page' : undefined}><span aria-hidden="true">{String(index + 1).padStart(2, '0')}</span>{label}</a>)}</nav>
-        <div className="public-side-menu-account"><p>Your OpenHaus</p><a href="/client/login">{signedIn ? 'Client account' : 'Client sign in'}</a><a href="/manager/login">Manager sign in</a><a className="public-side-menu-listing" href="/manager/login">List a property</a></div>
+        <div className="public-side-menu-account"><p>Your OpenHaus</p><a href="/client/login">{signedIn ? 'Client account' : 'Client sign in'}</a>{!signedIn && <><a href="/manager/login">Manager sign in</a><a className="public-side-menu-listing" href="/manager/login">List a property</a></>}</div>
       </aside>
     </div>, document.body)}
   </>

@@ -40,3 +40,16 @@ it.each([HeaderAccountLinks, ThemeControl])('preserves touch toggling and keyboa
   expect(trigger).toHaveFocus()
   expect(trigger).toHaveAttribute('aria-expanded', 'false')
 })
+
+it('keeps manager access out of an authenticated client menu', async () => {
+  const user = userEvent.setup()
+  render(<HeaderAccountLinks signedIn />)
+
+  await user.hover(screen.getByRole('button', { name: 'Account options' }))
+
+  const menu = screen.getByRole('navigation', { name: 'Account options' })
+  expect(screen.getByRole('button', { name: 'Account options' })).toHaveTextContent('My account')
+  expect(menu).toHaveTextContent('Client account')
+  expect(menu).not.toHaveTextContent('Manager')
+  expect(menu).not.toHaveTextContent('List a property')
+})

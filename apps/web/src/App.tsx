@@ -30,15 +30,11 @@ function readShortlist(): string[] {
 
 function HomepageHero({ query, propertyCount, onQueryChange, onAskOpenHaus }: { query: string; propertyCount?: number; onQueryChange: (query: string) => void; onAskOpenHaus: () => void }) {
   return <section className="home-hero" aria-label="Find your next home">
-    <div className="home-hero-media">
-      <img className="home-hero-image" src="/media/properties/leeson-park/exterior-front.webp" alt="Contemporary Irish home exterior" fetchPriority="high" />
-      <p><span>Featured residence</span><strong>Dublin · Ireland</strong></p>
-    </div>
     <div className="home-hero-layout">
       <div className="home-hero-copy">
-        <p className="eyebrow">Irish homes · viewed properly</p>
-        <h1 id="home-hero-title">The complete picture, before the viewing.</h1>
-        <p>Search location, photography, measured plans and immersive tours as one connected property story.</p>
+        <p className="eyebrow">OpenHaus / Property discovery</p>
+        <h1 id="home-hero-title"><span>Find the address.</span>{' '}<span>See the whole picture.</span></h1>
+        <p>A faster way to search Irish homes, compare the facts and inspect every available photograph, plan and tour.</p>
         <form className="home-hero-search" role="search" onSubmit={(event) => { event.preventDefault(); document.getElementById('explore')?.scrollIntoView() }}>
           <label className="visually-hidden" htmlFor="home-hero-search">Search homes from the opening feature</label>
           <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg>
@@ -47,12 +43,23 @@ function HomepageHero({ query, propertyCount, onQueryChange, onAskOpenHaus }: { 
         </form>
         <nav className="home-hero-actions" aria-label="Opening shortcuts"><button type="button" onClick={onAskOpenHaus}>Ask OpenHaus</button><a href="#explore">Explore the map</a><a href="#homes">View recent homes</a></nav>
       </div>
-      <dl className="home-hero-facts">
-        <div><dt>Coverage</dt><dd>All Ireland</dd></div>
-        <div><dt>Live catalogue</dt><dd>{propertyCount === undefined ? 'Loading' : `${propertyCount} ${propertyCount === 1 ? 'home' : 'homes'}`}</dd></div>
-        <div><dt>Every listing</dt><dd>Media · plans · place</dd></div>
-      </dl>
     </div>
+    <aside className="home-hero-desk" aria-label="Live property desk">
+      <header><span>OpenHaus / Live</span><strong>IRL</strong></header>
+      <div className="home-hero-desk-heading"><p>Property intelligence</p><span>STATUS</span></div>
+      <dl>
+        <div><dt>Homes available</dt><dd>{propertyCount === undefined ? 'Loading' : propertyCount}</dd><span>LIVE</span></div>
+        <div><dt>Search coverage</dt><dd>All Ireland</dd><span>26 counties</span></div>
+        <div><dt>Listing detail</dt><dd>Media + plans</dd><span>CONNECTED</span></div>
+        <div><dt>Buyer tools</dt><dd>Compare + save</dd><span>READY</span></div>
+      </dl>
+      <a href="#homes">Open live catalogue <span aria-hidden="true">→</span></a>
+    </aside>
+    <dl className="home-hero-facts">
+      <div><dt>01 / Search</dt><dd>Address and area</dd></div>
+      <div><dt>02 / Inspect</dt><dd>Photography and plans</dd></div>
+      <div><dt>03 / Decide</dt><dd>Compare with context</dd></div>
+    </dl>
   </section>
 }
 
@@ -303,7 +310,7 @@ function App() {
       {conciergeOpen && <PropertyConcierge properties={state.properties} onApply={applyConciergeCriteria} onClose={() => setConciergeOpen(false)} />}
       <footer className="site-footer">
         <div><a className="footer-monogram" href="/" aria-label="OpenHaus home"><span>OpenHaus</span><small>/ 01</small></a><span className="footer-signature" aria-hidden="true">Yours, always</span><p>Find home with the full picture.</p></div>
-        <nav aria-label="Footer navigation"><a href="#explore">Explore Ireland</a><a href="#homes">Homes for sale</a><a href="/about">About OpenHaus</a><a href="/contact">Contact</a><a href="/help">Help</a><a href="/privacy">Privacy information</a><a href="/manager/login">Manager workspace</a></nav>
+        <nav aria-label="Footer navigation"><a href="#explore">Explore Ireland</a><a href="#homes">Homes for sale</a><a href="/about">About OpenHaus</a><a href="/contact">Contact</a><a href="/help">Help</a><a href="/privacy">Privacy information</a></nav>
         <p>Independent portfolio project · Ireland</p>
       </footer>
     </div>

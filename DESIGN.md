@@ -9,13 +9,13 @@
 
 ## Design vision
 
-OpenHaus should feel like a precise architectural instrument rather than a conventional property portal. Photography carries emotion. Fine rules, exact alignment and quiet typography carry trust. Controls are obvious without looking heavy.
+OpenHaus should feel like a precise property instrument rather than a conventional portal. The opening experience establishes speed and trust through a live discovery desk; listing photography carries emotion only after the buyer enters the catalogue. Fine rules, exact alignment and quiet typography carry trust. Controls are obvious without looking heavy.
 
 The visual system borrows two useful ideas from the user’s references: the direct product storytelling and sectional pacing of Autonomous, and the dense but predictable navigation hierarchy of BingX. It does not borrow their product-specific decoration.
 
 ### Principles
 
-1. **Image first, interface second.** Property media receives the strongest contrast and largest area.
+1. **Search first, property media in context.** The homepage opens with live discovery controls; photography becomes primary inside listings and galleries.
 2. **One structure everywhere.** Public, buyer and manager pages share the same tokens, header rhythm and interaction states.
 3. **Motion explains change.** Animate state transitions, panels and media responses only. Never animate decoration.
 4. **Fast by construction.** Avoid decorative gradients, masks, backdrop blur, scroll-jacking and autoplay media.
@@ -26,7 +26,7 @@ The visual system borrows two useful ideas from the user’s references: the dir
 - **Direction:** Dark architectural editorial.
 - **Decoration:** Minimal and structural.
 - **Layout:** Hybrid. Editorial compositions for discovery; strict grids for search, comparison and management.
-- **Geometry:** 6px controls, 14px panels, 20px feature frames. Pills are reserved for status or compact binary choices.
+- **Geometry:** Homepage navigation, search and data bands are rectangular. Listing cards may use 6px controls, 14px panels and 20px media frames. Pills are reserved for status or compact binary choices.
 - **Borders:** One-pixel mineral rules establish hierarchy. Shadows are rare and shallow.
 - **Reference sites:** https://www.autonomous.ai/computer-2 and https://bingx.com/en
 
@@ -139,3 +139,5 @@ Keep the current React 19, TypeScript and Vite frontend; Go API; PostgreSQL/Post
 | 2026-09-04 | Keep the current application stack | No evidence supports a framework or database rewrite. |
 | 2026-09-04 | Remove decorative blur, gradients and masks | They add paint cost without helping buyers understand a property. |
 | 2026-09-04 | Use restrained functional motion | Preserves responsiveness while making state changes feel intentional. |
+| 2026-09-04 | Replace the homepage residence image with a live discovery desk | Makes the opening product-led, information-rich and visually closer to the requested rigid reference. |
+| 2026-09-04 | Keep buyer and manager entry points mutually exclusive in the interface | Prevents role confusion while preserving server-side authorization on every manager route. |

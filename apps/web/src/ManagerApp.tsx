@@ -4,6 +4,7 @@ import { PropertyDetailPage } from './App'
 import { ManagerImages } from './ManagerImages'
 import { ThemeControl } from './ThemeControl'
 import { AuthFields } from './AuthFields'
+import { clientSessionHintKey, SiteHeader, type HeaderClient } from './SiteHeader'
 import { uploadPropertyVideo, waitForMediaJob, type MediaJob } from './api/mediaJobs'
 import {
   fetchManagedProperties,
@@ -22,6 +23,7 @@ type ManagerState =
   | { status: 'checking' }
   | { status: 'signed-out' }
   | { status: 'loading' }
+  | { status: 'client-active'; client: HeaderClient }
   | { status: 'ready'; properties: ManagedProperty[] }
   | { status: 'error'; message: string }
 
@@ -30,6 +32,16 @@ const SpatialMediaViewer = lazy(() => import('./SpatialMediaViewer').then((modul
 const euros = new Intl.NumberFormat('en-IE', {
   style: 'currency', currency: 'EUR', maximumFractionDigits: 0,
 })
+
+function hasActiveClientHint() {
+  try { return localStorage.getItem(clientSessionHintKey) === 'active' }
+  catch { return false }
+}
+
+function clearClientHint() {
+  try { localStorage.removeItem(clientSessionHintKey) }
+  catch { /* Server sessions remain authoritative when browser storage is unavailable. */ }
+}
 
 export function ManagerApp() {
   const [state, setState] = useState<ManagerState>({ status: 'checking' })
@@ -50,16 +62,30 @@ export function ManagerApp() {
 
   useEffect(() => {
     const controller = new AbortController()
-    fetchManagedProperties(controller.signal)
-      .then((properties) => setState({ status: 'ready', properties }))
-      .catch((error: unknown) => {
+    async function loadWorkspace() {
+      try {
+        if (hasActiveClientHint()) {
+          const response = await fetch('/api/v1/client/session', { credentials: 'same-origin', cache: 'no-store', signal: controller.signal })
+          if (response.ok) {
+            const data = await response.json()
+            if (typeof data?.client?.id === 'string' && typeof data?.client?.email === 'string') {
+              setState({ status: 'client-active', client: data.client })
+              return
+            }
+          } else if (response.status === 401 || response.status === 404) clearClientHint()
+        }
+        const properties = await fetchManagedProperties(controller.signal)
+        setState({ status: 'ready', properties })
+      } catch (error: unknown) {
         if (error instanceof DOMException && error.name === 'AbortError') return
         if (error instanceof ManagerAuthenticationError) {
           setState({ status: 'signed-out' })
           return
         }
         setState({ status: 'error', message: 'The manager workspace could not be loaded.' })
-      })
+      }
+    }
+    void loadWorkspace()
     return () => controller.abort()
   }, [])
 
@@ -88,6 +114,7 @@ export function ManagerApp() {
 
   const isSignedIn = state.status === 'ready'
   const previewID = window.location.pathname.match(/^\/manager\/preview\/([^/]+)$/)?.[1]
+  if (state.status === 'client-active') return <div className="site-shell"><SiteHeader pathname={window.location.pathname} client={state.client} clientSessionStatus="authenticated" /><main className="manager-client-guard"><p className="eyebrow">Account boundary</p><h1>Your client account is active.</h1><p>Manager tools stay separate from buyer accounts. Sign out from your client account before opening the property workspace.</p><a href="/client/login">Return to your client account <span aria-hidden="true">→</span></a></main></div>
   if (previewID && state.status === 'ready') return <ManagerPublicationPreview property={state.properties.find((property) => property.id === previewID)} />
   return (
     <div className="manager-shell">

@@ -2,6 +2,7 @@ import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ManagerApp } from './ManagerApp'
+import { clientSessionHintKey } from './SiteHeader'
 
 const managedProperty = {
   id: '11111111-1111-4111-8111-111111111111',
@@ -18,9 +19,22 @@ const managedProperty = {
   status: 'draft',
 }
 
-afterEach(() => { vi.restoreAllMocks(); window.history.replaceState({}, '', '/') })
+afterEach(() => { vi.restoreAllMocks(); localStorage.removeItem(clientSessionHintKey); window.history.replaceState({}, '', '/') })
 
 describe('manager application', () => {
+  it('does not expose manager sign in while a client account is active', async () => {
+    localStorage.setItem(clientSessionHintKey, 'active')
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(input => {
+      if (String(input) === '/api/v1/client/session') return Promise.resolve(Response.json({ client: { id: 'buyer', email: 'buyer@example.test' } }))
+      return Promise.resolve(new Response(null, { status: 401 }))
+    })
+
+    render(<ManagerApp />)
+
+    expect(await screen.findByRole('heading', { name: 'Your client account is active.' })).toBeVisible()
+    expect(screen.queryByRole('heading', { name: 'Manager sign in' })).not.toBeInTheDocument()
+    expect(fetchMock).not.toHaveBeenCalledWith('/api/v1/manager/properties', expect.anything())
+  })
   it('keeps the home logo without a redundant View website link', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({ properties: [] }))
     render(<ManagerApp />)
