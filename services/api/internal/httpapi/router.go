@@ -107,7 +107,18 @@ func NewRouter(dependencies Dependencies) http.Handler {
 	router.Handle("PUT /api/v1/manager/properties/{propertyID}", requireManager(dependencies.ManagerAuth, updateManagedProperty(dependencies.ManagerPropertyWriter)))
 	router.Handle("PUT /api/v1/manager/properties/{propertyID}/panorama", requireManager(dependencies.ManagerAuth, upsertPanorama(dependencies.SpatialTours)))
 	router.Handle("DELETE /api/v1/manager/properties/{propertyID}/panorama", requireManager(dependencies.ManagerAuth, removePanorama(dependencies.SpatialTours)))
-	return router
+	return securityHeaders(router)
+}
+
+func securityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		response.Header().Set("X-Content-Type-Options", "nosniff")
+		response.Header().Set("X-Frame-Options", "DENY")
+		response.Header().Set("Referrer-Policy", "no-referrer")
+		response.Header().Set("Cross-Origin-Resource-Policy", "same-origin")
+		response.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+		next.ServeHTTP(response, request)
+	})
 }
 
 func removePanorama(tours SpatialTourWriter) http.HandlerFunc {

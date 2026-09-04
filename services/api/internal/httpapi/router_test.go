@@ -119,6 +119,26 @@ func TestHealth(t *testing.T) {
 	}
 }
 
+func TestSecurityHeadersApplyToEveryAPIResponse(t *testing.T) {
+	request := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	response := httptest.NewRecorder()
+
+	newRouter().ServeHTTP(response, request)
+
+	want := map[string]string{
+		"X-Content-Type-Options":       "nosniff",
+		"X-Frame-Options":              "DENY",
+		"Referrer-Policy":              "no-referrer",
+		"Cross-Origin-Resource-Policy": "same-origin",
+		"Permissions-Policy":           "camera=(), microphone=(), geolocation=()",
+	}
+	for header, value := range want {
+		if got := response.Header().Get(header); got != value {
+			t.Errorf("%s = %q, want %q", header, got, value)
+		}
+	}
+}
+
 func TestHealthRejectsUnsupportedMethod(t *testing.T) {
 	request := httptest.NewRequest(http.MethodPost, "/healthz", nil)
 	response := httptest.NewRecorder()
