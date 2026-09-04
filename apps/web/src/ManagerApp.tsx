@@ -223,7 +223,6 @@ function ManagerDashboard({ properties }: { properties: ManagedProperty[] }) {
               <div className="manager-property-overview">
                 <p className="manager-panel-kicker">01 / Listing overview</p>
                 <div className="manager-listing-identity">
-                {property.media.find((media) => media.kind === 'image' && !media.url.includes('/placeholders/')) ? <img className="manager-cover" src={property.media.find((media) => media.kind === 'image' && !media.url.includes('/placeholders/'))!.url.replace('/api/v1/property-images/', '/api/v1/manager/property-images/')} alt="" loading="lazy" /> : null}
                 <div>
                 <div className="manager-property-state"><span className={`manager-status manager-status-${property.status}`}>{titleCase(property.status)}</span><span className="manager-workflow-stage">{workflowStage(property)}</span></div>
                 <h2>{property.title}</h2><p>{property.addressLine1}, {property.city}, Co. {property.county}</p>

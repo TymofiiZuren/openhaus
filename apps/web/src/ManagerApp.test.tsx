@@ -21,6 +21,16 @@ const managedProperty = {
 afterEach(() => { vi.restoreAllMocks(); window.history.replaceState({}, '', '/') })
 
 describe('manager application', () => {
+  it('keeps every listing overview text-only while retaining library photos', async () => {
+    const photographed = { ...managedProperty, id: 'photographed', title: 'Photographed home', media: [{ kind: 'image', url: '/photo.jpg', altText: 'House exterior', position: 0 }] }
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({ properties: [managedProperty, photographed] }))
+    render(<ManagerApp />)
+    await screen.findByRole('heading', { name: photographed.title })
+    for (const article of screen.getAllByRole('article')) {
+      expect(article.querySelector('.manager-property-overview img')).toBeNull()
+    }
+    expect(screen.getByAltText('House exterior')).toBeVisible()
+  })
   it('shows a quiet missing-photo status instead of a placeholder card', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({ properties: [managedProperty] }))
     render(<ManagerApp />)

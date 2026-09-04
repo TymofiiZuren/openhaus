@@ -648,15 +648,13 @@ button, a, select { transition: color 160ms ease, background-color 160ms ease, b
 .manager-view-switch button[aria-pressed="true"] { border-bottom: 2px solid var(--ink); background: transparent; color: var(--ink); }
 .manager-view-switch > span { color: var(--muted); font-size: 1rem; }
 .manager-view-switch button:focus-visible, .manager-compact-actions button:focus-visible { outline: 2px solid var(--navy); outline-offset: 3px; }
-.manager-listing-identity { display: flex; align-items: start; gap: 24px; }
+.manager-listing-identity { min-width: 0; }
 .manager-listing-identity > div:last-child { min-width: 0; }
-.manager-cover { width: 104px; height: 104px; flex: 0 0 104px; object-fit: cover; background: var(--paper); }
 .manager-photo-status { display: block; padding-block: 8px; color: var(--muted); font-size: .875rem; line-height: 1.5; }
 .manager-property-row.manager-property-compact { grid-template-columns: 1fr; }
 .manager-property-compact .manager-completeness { max-width: none; }
 .manager-compact-actions { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px; padding-top: 24px; }
 .manager-compact-actions > span { color: var(--muted); }
-@media (max-width: 520px) { .manager-listing-identity { flex-direction: column; gap: 16px; } .manager-cover { width: 80px; height: 80px; flex-basis: 80px; } }
 .manager-publication-preview { padding: 24px; min-height: 100dvh; background: var(--paper); }
 .manager-publication-preview > header { display: grid; gap: 24px; padding-bottom: 24px; }
 .manager-publication-preview h1 { font-family: var(--display-font); font-weight: 400; font-size: clamp(1.75rem,3vw,3rem); margin: 12px 0; }
@@ -919,7 +917,6 @@ button, a, select { transition: color 160ms ease, background-color 160ms ease, b
   .manager-images > form, .manager-images > .manager-image-grid { grid-column: 1; grid-row: auto; }
 }
 /* Soften floating utility surfaces; keep editorial grids and property media square. */
-.manager-cover { width: 180px; height: 128px; flex: 0 0 180px; object-fit: contain; border-radius: var(--radius-control); }
 .manager-video-upload { gap: 16px; padding-block: 24px; }
 .manager-video-upload label { gap: 10px; font-weight: 500; color: var(--ink); }
 .manager-video-upload small { color: var(--muted); font-size: .875rem; line-height: 1.5; }
@@ -932,8 +929,6 @@ button, a, select { transition: color 160ms ease, background-color 160ms ease, b
 .manager-video-upload button { min-height: 48px; border: 0; border-radius: var(--radius-control); background: var(--inverse-surface); color: var(--on-inverse); font-weight: 500; }
 .manager-video-upload button:disabled { background: var(--soft); color: var(--muted); opacity: 1; cursor: default; }
 @media (max-width: 600px) {
-  .manager-listing-identity { flex-direction: column; }
-  .manager-cover { width: 100%; height: 160px; flex-basis: auto; }
   .manager-video-upload { grid-template-columns: 1fr; }
 }
 .property-page :is(#overview,#media,#tour,#intelligence,#location,#viewing) { scroll-margin-top: 154px; }
