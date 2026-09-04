@@ -3,7 +3,7 @@
 # OpenHaus design and product roadmap
 
 Status: living implementation plan
-Last updated: 2026-09-03
+Last updated: 2026-09-04
 
 ## Product position
 
@@ -25,7 +25,7 @@ Use warm paper texture, sparse dot fields, broad clay-coloured light blooms, occ
 
 ### Layer 1 — durable navigation and context
 
-The header, location selection, active filters and buyer-workspace entry remain predictable. County and area choices become URL-addressable. Saved searches and comparisons survive navigation once accounts are introduced.
+The header, location selection, active filters and buyer-workspace entry remain predictable. County and area choices are URL-addressable. Account-saved homes survive navigation and devices; comparisons, notes and sample searches currently remain browser-local.
 
 ### Layer 2 — primary working surfaces
 
@@ -108,8 +108,10 @@ Use compact line and bullet charts. Never encode good/bad with colour alone. A t
 
 ### Phase B — buyer workspace
 
-Next account slice (planned, not implemented): keep buyer identity and sessions separate from the existing manager accounts. Buyers must never inherit listing-edit or media-upload permissions. Deliver registration/sign-in/sign-out with database-backed, expiring HttpOnly sessions, generic credential errors and rate limiting; then add account-owned saved homes, searches and private notes. Require ownership checks on every read and write. Add email verification and recovery before public account launch. Keep anonymous browsing available, and ask before importing browser-local notes into an account. Do not show a working-looking client sign-in form until its server contract is implemented and tested.
+The development account foundation keeps buyer identity and sessions separate from manager accounts. Registration, sign-in/sign-out, database-backed expiring HttpOnly sessions, generic credential responses, shared-database rate limiting and ownership-protected saved homes are implemented and tested. Buyers never inherit listing-edit or media-upload permissions. Anonymous browsing remains available, and importing the browser comparison is explicit. Email verification, recovery, expiry cleanup, account export/deletion, saved searches and private notes remain required before public account launch.
 
+- [x] Development-only buyer registration, session restoration and sign-out.
+- [x] Account-owned saved homes with explicit browser-comparison import.
 - Saved searches backed by authenticated accounts.
 - [x] Local MVP shortlist and four-home comparison tray.
 - Persist shortlist and comparison groups for authenticated accounts.
@@ -160,8 +162,8 @@ Implemented staff increment: listing readiness now expands into the eight checks
 
 ## Next implementation sequence
 
-1. Extract the saved-search overlay into a shared focus-managed overlay after the comparison or viewing overlay is introduced.
-2. Add shortlist state and a bottom comparison tray limited to four homes.
+1. [Complete] Reuse the focus-managed overlay foundation for saved search, comparison, notes and viewing flows.
+2. [Complete] Add browser-local shortlist state and a bottom comparison tray limited to four homes.
 3. [Complete] Deep-link county and area state.
 4. [Foundation complete] Define provider-neutral panorama and spatial-link contracts.
 5. Build the staff listing pipeline against those contracts.

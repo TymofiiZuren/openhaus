@@ -21,9 +21,9 @@ The appearance label reserves a fixed-width slot and the document reserves scrol
 - Location panel is content-sized with viewport-limited scrolling, inset search/options, softer selection tint and mobile control clearance. Hidden panels use visibility as well as opacity so their controls are not keyboard-focusable.
 - Selecting a sidebar home closes the location chooser and requests the camera again, including when the same home is selected after panning. Listing surfaces receive restrained corners, comfortable text padding and colour fades. Property summary and notes form use short opacity-only entrances.
 
-## Client account follow-up (not implemented)
+## Client account foundation
 
-No client profile route or client authentication exists in the current frontend. Design and build a real account flow before adding a profile navbar link: sign-in/session handling, profile data, saved homes and viewing history, loading/error/empty states and accessible focus management. Apply the same stationary fades to the completed profile; do not present local property notes as an authenticated account.
+The frontend now has `/client`, `/client/login` and `/client/register` routes backed by a development-only account service. It restores cookie-backed sessions, handles loading/disabled/error states, lists account-owned saved homes, signs out, and can explicitly import the browser comparison. Public navigation keeps client and manager entry points distinct. Email verification, recovery, retention enforcement, account-owned notes/searches and viewing history remain launch work; browser-local notes are never presented as authenticated account data.
 
 - County selection now fits its actual boundary to the map viewport (64px desktop / 48px compact padding), replacing coarse zoom thresholds and the Cork exception. Local-area selection retains its own closer fit.
 - County/area styles share the same initial and mouseout definitions. Selected counties use a 3px charcoal outline with a very light fill; selected areas use a 2px clay outline and restrained tint. Hover changes emphasis without changing border weight.
@@ -31,18 +31,20 @@ No client profile route or client authentication exists in the current frontend.
 
 - Removed the branded page-loading interstitial and its preparing message. Lazy loading and error recovery remain; loading is labelled for assistive technology.
 - Replaced the cycling appearance button with a compact, borderless chooser: Light / Warm daylight, Dark / After hours, System / Follow device. The selected mode is underlined and checked. Selection saves immediately, closes the panel and restores focus; Escape, outside click and tabbing away dismiss it. Device and cross-tab synchronization remain supported.
-- Added an 180ms opacity-only fade to the appearance panel and a 220ms icon fade. Removed the disclosure arrow. No whole-page animation or delay when switching themes.
+- Added an 180ms opacity-only fade to the appearance panel and a 220ms icon fade. Removed the disclosure arrow. Theme changes now use one 320ms document crossfade through the browser View Transition API, replacing competing per-element colour transitions. Initial rendering, reduced motion and unsupported browsers apply the theme immediately. Rapid changes skip the previous transition and apply the latest request.
 - Added 180ms underline reveals to property section links on hover and keyboard focus, keeping their text stationary.
+- Property section navigation now keeps one restrained underline on the chapter currently being read. Direct section links, scrolling and browser Back/Forward all update the same accessible current-location state without moving the navigation bar.
 - Added a short icon transition, underline hover feedback and shared button color/press feedback without shifting layout.
 - Reduced-motion preferences disable decorative transitions and animation across the application.
 
 ## Next implementation passes
 
-1. Navigation: hover/focus underline implemented. Next, add a scroll-aware active-section indicator with anchor and browser-history tests; do not animate the entire navbar.
-2. Property cards: use a mild 180ms colour or brightness hover treatment, never zoom. Keep prices and text still; provide equivalent focus feedback.
-3. Dialogs and map previews: opacity-only fade over 220ms; exit in 140ms. No translation or scale. Preserve pin anchoring, Escape dismissal, focus return and mobile clearance.
-4. Gallery and panorama: crossfade poster-to-viewer only after ready. Keep an accessible loading state, retry action and full-screen access. Never auto-spin panoramas.
-5. Manager actions: show local saving/saved/error feedback beside the triggering button. Prevent duplicate submissions; do not replace the workspace with a loader.
+Current visual refinement: the manager workspace uses a subtle theme-aware graph-paper backdrop. Expanded listings have a consistent 16:9 cover preview; missing photography uses the same frame with an honest empty state. Compact rows remain text-first. These changes still need browser visual verification in both themes.
+
+1. Property cards: use a mild 180ms colour or brightness hover treatment, never zoom. Keep prices and text still; provide equivalent focus feedback.
+2. Dialogs and map previews: opacity-only fade over 220ms; exit in 140ms. No translation or scale. Preserve pin anchoring, Escape dismissal, focus return and mobile clearance.
+3. Gallery and panorama: crossfade poster-to-viewer only after ready. Keep an accessible loading state, retry action and full-screen access. Never auto-spin panoramas.
+4. Manager actions: show local saving/saved/error feedback beside the triggering button. Prevent duplicate submissions; do not replace the workspace with a loader.
 
 ## Acceptance checks for every pass
 
@@ -54,3 +56,17 @@ No client profile route or client authentication exists in the current frontend.
 - Test existing behaviour before adding animation; do not change map or panorama state just for visual effects.
 
 Remaining passes are planned, not yet implemented or visually verified.
+
+## September refinement and client-workspace groundwork
+
+- Desktop galleries now expand their photograph row to match the details column, with a fixed-height filmstrip; this removes the unused strip below photographs. Mobile retains its single-stage layout.
+- Buyer comparisons persist locally on the same browser, capped at four unique property IDs. Invalid or unavailable storage falls back safely. This is not an authenticated client portal or cross-device synchronization.
+- The LEA generator uses six decimal places and a 0.0001-degree simplification tolerance, down from 0.005 degrees. It verifies the downloaded feature count against the source before writing. Source: Tailte Éireann 2019 local electoral areas, not property/cadastral boundaries. Coordinate precision is not a guarantee of positional accuracy. County geometry is a separate dataset and remains unchanged.
+- Boundary rings now use lossless `polyline6` delta encoding, decoded by the shared boundary codec. The generator checks every ring round-trip before writing. All 273,108 coordinates matched the preceding dataset exactly; generated JSON fell from 5.98 MB to 1.33 MB (gzip 1.83 MB to 0.95 MB). The boundary bundle remains above the build warning threshold; per-county delivery is still a follow-up. Regenerate with `node apps/web/scripts/build-administrative-areas.mjs` on Node 22.18+ (native TypeScript stripping is needed for the shared codec). Do not hand-edit the generated JSON.
+- Client sessions and ownership-protected saved homes are implemented behind the development-only launch gate. The next buyer-workspace slice is verified email/recovery plus account-owned notes, searches and viewing history.
+
+## County geometry refinement
+
+County outlines now come directly from Tailte Éireann's Counties — National Statutory Boundaries 2019 service rather than reverse-projecting simplified SVG drawing paths. The 26 county features retain 223,487 coordinates, including island and interior rings, at six decimal places with the same 0.0001-degree display tolerance as local areas. This improves display detail, not guaranteed survey accuracy; county and LEA datasets remain distinct administrative products.
+
+Regenerate with `node apps/web/scripts/build-county-boundaries.mjs` (Node 22.18+). The importer checks source count, unique names, closed rings and lossless encoding before replacing generated data. County camera bounds are calculated from the rendered coordinates once. One map polygon per county retains its rings and shared selection behavior. Detailed geometry increases the map bundle; browser rendering/performance QA and per-county delivery remain follow-ups.

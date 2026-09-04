@@ -14,8 +14,8 @@ Use **Edit description** under any saved photo or plan to correct its label with
 - `/api/v1/property-images/{name}` serves an uploaded image only while its listing is published.
 - `/api/v1/manager/property-images/{name}` serves previews behind manager authentication, including drafts.
 
-Files live under `MEDIA_SOURCE_DIR/images`, defaulting to `.data/uploads/images` relative to the API working directory. Preserve this directory across restarts and deployments; back it up alongside the database. No schema migration or new dependency is required. Do not expose this directory as a public static directory: the API enforces draft privacy.
+Files live under `MEDIA_SOURCE_DIR/images`, defaulting to `.data/uploads/images` relative to the API working directory. Preserve this directory across restarts and deployments; back it up alongside the database. No image-specific schema migration or new dependency is required. Do not expose this directory as a public static directory: the API enforces draft privacy.
 
-Remaining work: image deletion, bulk uploads, responsive image derivatives, object storage, and orphan-file cleanup after a database failure. Failed attachment can leave an unreferenced file; public image serving still requires a published database reference. Reordering and publication use existing manager permissions, not per-listing ownership.
+Remaining work: image deletion, bulk uploads, responsive image derivatives, object storage, and periodic reconciliation for files orphaned by crashes or manual database changes. If database attachment fails during a normal upload, the API removes the newly written file. Reordering and publication use existing manager permissions, not per-listing ownership.
 
-Verification covers image sanitization, authenticated upload/preview, public draft denial, persisted database ordering and duplicate-order rejection, and frontend upload/order callbacks. Browser-native file selection and visual layout still need manual QA.
+Verification covers image sanitization, authenticated upload/preview, public draft denial, cleanup after attachment failure, persisted database ordering and duplicate-order rejection, and frontend upload/order callbacks. Browser-native file selection and visual layout still need manual QA.

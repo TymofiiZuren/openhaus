@@ -47,11 +47,57 @@ invalid geometry by default; `ST_MakeValid` may be an explicit normalization
 step only when the resulting geometry type, area change, and source record are
 audited.
 
-The web MVP may draw the transformed Dublin and Cork council geometries for
-orientation. That visual layer is deliberately limited to counties with current
-demo listings, is not persisted, and must not be used as an authoritative
-property-to-area assignment. Where the historical Cork council polygons overlap,
-the UI's display-only lookup prefers Cork City before Cork County.
+The transformed Dublin and Cork council geometries were used by the first web
+spike. The current buyer map supersedes that slice with the separate 2019 county
+and LEA display snapshots below. The rejected 2015 council data remains useful
+only as recorded evidence and must not be used for property-to-area assignment.
+
+## Display snapshot: Counties 2019
+
+| Field | Value |
+| --- | --- |
+| Publisher | Tailte Éireann |
+| Dataset | Counties — National Statutory Boundaries — 2019 |
+| Catalogue | https://data.gov.ie/en_GB/dataset/counties-national-statutory-boundaries-2019 |
+| Licence | Creative Commons Attribution 4.0 |
+| Geometry role | Display-only national county selection |
+| Service output CRS | Requested from ArcGIS as WGS84, EPSG:4326 |
+| Query tolerance | Six decimal places; `maxAllowableOffset=0.0001` degrees |
+| Generated artifact | `apps/web/src/data/irelandCounties.json` |
+| Generated artifact SHA-256 | `15e56fa6776c953b581e786cfde6c802b3badca87dd847ca2b010898b9d8df15` |
+| Status | Accepted for attributed browser orientation; not authoritative persistence |
+
+The generator requires exactly 26 uniquely named features, closed polygon
+rings and a lossless encode/decode round trip before replacing the artifact.
+It preserves islands and interior rings using `polyline6` delta encoding. The
+service response checksum and import timestamp are not captured separately yet,
+so production ingestion remains blocked on a reproducible source manifest.
+
+Regenerate with `node apps/web/scripts/build-county-boundaries.mjs` on Node
+22.18 or later. Do not hand-edit the generated JSON.
+
+## Display snapshot: Local Electoral Areas 2019
+
+| Field | Value |
+| --- | --- |
+| Publisher | Tailte Éireann |
+| Dataset | Local Electoral Areas — OSi National Statutory Boundaries — 2019 |
+| Catalogue | https://data.gov.ie/dataset/local-electoral-areas-national-statutory-boundaries-2019 |
+| Licence | Creative Commons Attribution 4.0 |
+| Geometry role | Display-only county subdivision |
+| Service output CRS | Requested from ArcGIS as WGS84, EPSG:4326 |
+| Query tolerance | Six decimal places; `maxAllowableOffset=0.0001` degrees |
+| Generated artifact | `apps/web/src/data/irelandSubregions.json` |
+| Generated artifact SHA-256 | `6460d10eee1ddf499aa0ee74ad55d55e96c83fee9df117886ca2d5b8d23cb2f1` |
+| Status | Accepted for attributed browser orientation; not authoritative persistence |
+
+The generator compares the returned feature count with a separate service
+count and validates every encoded ring round trip before writing. County names
+are normalized only for display. The snapshot does not prove non-overlap,
+parentage, positional accuracy or suitability for property assignment.
+
+Regenerate with `node apps/web/scripts/build-administrative-areas.mjs` on Node
+22.18 or later. Do not hand-edit the generated JSON.
 
 ## Candidate: CSO Local Electoral Areas 2022, generalized 100m
 

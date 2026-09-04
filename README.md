@@ -92,6 +92,7 @@ migrate -path db/migrations -database "$DATABASE_URL" up
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/seeds/000001_properties.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/seeds/000002_property_media.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/seeds/000003_second_property.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/seeds/000004_property_panorama.sql
 ```
 
 Run the API from its Go module:
@@ -148,23 +149,28 @@ The browser key is intentionally public; referrer restrictions and API
 restrictions are what protect it. Google Maps requires a billing-enabled Google
 Cloud project, so usage and budget alerts must be configured before deployment.
 
-The explorer uses an explicit Ireland → county → council-area flow. The
-national view shows county boundaries and aggregated county home counts;
-zooming alone never changes the selected county. Selecting a county centers it,
-replaces the national layer with its council areas, and groups its homes by
-town. The current council-area
-GeoJSON is a small, attributed client-side MVP slice for the two published
-counties; it is not the authoritative persistence hierarchy. The existing
-PostGIS bounding-box query remains the foundation for the later viewport-search
-API. See [`docs/MAP_IMPLEMENTATION_PLAN.md`](docs/MAP_IMPLEMENTATION_PLAN.md)
-for the production data gates and next phases.
+The explorer uses an explicit Ireland → county → local-electoral-area flow. The
+national view shows all 26 county boundaries and aggregated county home counts;
+zooming alone never changes the selected county. Selecting a county fits its
+rendered boundary, replaces the national layer with its local areas, and groups
+its homes by town. The attributed county and area snapshots are display-only,
+encoded client assets generated from Tailte Éireann's 2019 services. They are
+not the authoritative persistence hierarchy. The existing PostGIS bounding-box
+query remains the foundation for the later viewport-search API. See
+[`docs/MAP_IMPLEMENTATION_PLAN.md`](docs/MAP_IMPLEMENTATION_PLAN.md) and
+[`docs/data-sources.md`](docs/data-sources.md) for provenance, production data
+gates, and the next phases.
 
 ## Hosted 360-degree tours
 
 Each listing stores its Kuula share link as `property_media.kind = panorama`.
 Managers attach, replace or remove the tour from the protected property workspace;
 the API accepts an HTTPS `/share/` URL, validates its provider and persists it
-with the listing. A `/post/` profile URL is intentionally rejected.
+with the listing. A `/post/` profile URL is intentionally rejected. Migration
+`000007` removes duplicate historical panorama rows and enforces one panorama
+per property; replacements are serialized against the listing row. Back up the
+database before applying it if duplicate tours may be meaningful: rolling the
+migration down removes the unique index but cannot restore deleted duplicates.
 
 The tour is not requested until the visitor chooses **Enter 360° tour**. The
 viewer accepts only Kuula share hosts and Matterport Showcase links, preserves
@@ -223,14 +229,41 @@ unset manager_password manager_database_url
 Passwords must contain at least 12 characters. The reset command never prints
 the password or stores its plaintext form in the database.
 
+## Development client accounts
+
+Buyer accounts are a development-only foundation and remain disabled by
+default. After applying migrations `000005` and `000006`, run the loopback
+launcher from the repository root:
+
+```sh
+bash scripts/start-client-api.sh
+```
+
+Then start Vite on the matching origin and proxy it to the isolated API:
+
+```sh
+cd apps/web
+OPENHAUS_API_PROXY_TARGET=http://127.0.0.1:8083 npm run dev -- --host 127.0.0.1 --port 5177 --strictPort
+```
+
+Open `http://127.0.0.1:5177/client/register`. Client and manager identities,
+cookies, and permissions are separate. Client sessions can save published
+homes to the account and explicitly import the browser comparison list. There
+are no shared test credentials. Email verification, recovery, retention jobs,
+and account export/deletion are required before public use. See
+[`docs/CLIENT_ACCOUNTS.md`](docs/CLIENT_ACCOUNTS.md) for the security boundary,
+API routes, and validation status.
+
 ## Asynchronous video processing
 
 The upload endpoint streams MP4 or MOV bodies to local storage and returns a
 durable PostgreSQL job immediately. It does not hold the complete video in Go
-memory. From the repository root:
+memory. After obtaining a valid manager session cookie, a direct API request
+from the repository root looks like:
 
 ```sh
 curl -X POST \
+  -b /path/to/manager-cookie-jar.txt \
   -F "video=@/path/to/tour.mov" \
   http://localhost:8080/api/v1/manager/properties/PROPERTY_ID/videos
 ```
@@ -241,7 +274,7 @@ FFmpeg, publishes an MP4, and atomically adds it to the property gallery:
 
 ```sh
 go run ./cmd/media-worker
-curl http://localhost:8080/api/v1/manager/media-jobs/JOB_ID
+curl -b /path/to/manager-cookie-jar.txt http://localhost:8080/api/v1/manager/media-jobs/JOB_ID
 ```
 
 Local defaults place source uploads in `services/api/.data/uploads` and public
@@ -250,11 +283,10 @@ outputs in `apps/web/public/media/uploads`. Override them with
 `FFMPEG_PATH`. `HTTP_ADDR` changes the API listen address when port 8080 is
 already occupied. Production storage and a CDN remain a later milestone.
 
-In local Vite development, each property card also exposes **Listing tools ·
-Local demo**. This interface selects a video, starts the upload, follows the
-processing job, and refreshes the gallery when the worker finishes. Vite omits
-this control from production builds because authentication and manager
-permissions have not been implemented yet.
+The authenticated manager workspace selects a video, starts the upload, follows
+the processing job, and refreshes the saved listing media when the worker
+finishes. Raw upload and job-status requests require the manager session cookie;
+use the manager UI for the normal local workflow.
 
 Run unit tests from `services/api`. Set `TEST_DATABASE_URL` to include the
 PostgreSQL integration tests against a migrated and seeded local database:
@@ -263,3 +295,14 @@ PostgreSQL integration tests against a migrated and seeded local database:
 go test ./...
 TEST_DATABASE_URL="$DATABASE_URL" go test -count=1 ./...
 ```
+
+## Project documentation
+
+- [Design and product roadmap](docs/DESIGN_AND_PRODUCT_ROADMAP.md)
+- [Interaction and motion plan](docs/INTERACTION_MOTION_PLAN.md)
+- [Map implementation plan](docs/MAP_IMPLEMENTATION_PLAN.md)
+- [Geographic data provenance](docs/data-sources.md)
+- [Manager images](docs/MANAGER_IMAGES.md)
+- [Private publication preview](docs/PUBLICATION_PREVIEW.md)
+- [Client accounts](docs/CLIENT_ACCOUNTS.md)
+- [Launch readiness and privacy gates](docs/LAUNCH_READINESS.md)

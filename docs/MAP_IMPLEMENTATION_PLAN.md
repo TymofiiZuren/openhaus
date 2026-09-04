@@ -48,8 +48,10 @@ the same geographic selection.
 
 ## Geographic data
 
-Use versioned source files ingested into PostGIS. The browser must not download
-or parse the national boundary dataset directly.
+The production target is versioned source data ingested into PostGIS and served
+at zoom-appropriate detail. The current buyer-facing slice uses generated,
+attributed browser assets for all 26 counties and the 2019 LEAs; those snapshots
+are display-only and are not authoritative property assignments.
 
 Recommended hierarchy:
 
@@ -200,15 +202,15 @@ criterion passed; the topology and hierarchy criteria did not.
 - Exit criterion: reload and browser back/forward reproduce the same view.
 
 Status: **buyer-facing MVP slice implemented, authoritative persistence
-hierarchy pending**. The national view renders county boundaries but deliberately
-hides property markers. Selecting a published county centers it, replaces the
-national boundary layer with that county's council areas, and reveals only its
-homes. Search remains independent of the map, the county query parameter is
-synchronized with browser history, and list items and markers open the same
-persistent property preview. Cork and Dublin council geometries are an attributed,
-client-side visual slice; they are not written to PostGIS or treated as the
-authoritative assignment model because the source has known Cork overlap and
-topology limitations.
+hierarchy pending**. The national view renders all 26 county boundaries but
+deliberately hides property markers. Selecting a published county fits its
+rendered geometry, replaces the national layer with that county's LEAs, and
+reveals only its homes. Search remains independent of the map, county and area
+query parameters are synchronized with browser history, and list items and
+markers open the same persistent property preview. County and LEA geometries are
+attributed, losslessly encoded client-side visual snapshots generated from
+Tailte Éireann's 2019 services. They are not written to PostGIS or treated as
+the authoritative assignment model.
 
 ### Phase 3 — national coverage
 
@@ -248,7 +250,8 @@ preview, reload, back/forward, slow network, and unavailable tiles.
 
 ## Explicit non-goals for the first release
 
-- Satellite imagery, traffic, routing, or travel-time polygons.
+- Traffic, routing, or travel-time polygons. A map/satellite display switch is
+  already available through the configured Google Maps renderer.
 - Address geocoding through a paid or rate-limited third-party API.
 - Downloading maps for offline use.
 - AI-generated neighbourhood boundaries or property recommendations.
