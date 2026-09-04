@@ -33,11 +33,6 @@ const euros = new Intl.NumberFormat('en-IE', {
   style: 'currency', currency: 'EUR', maximumFractionDigits: 0,
 })
 
-function hasActiveClientHint() {
-  try { return localStorage.getItem(clientSessionHintKey) === 'active' }
-  catch { return false }
-}
-
 function clearClientHint() {
   try { localStorage.removeItem(clientSessionHintKey) }
   catch { /* Server sessions remain authoritative when browser storage is unavailable. */ }
@@ -64,15 +59,15 @@ export function ManagerApp() {
     const controller = new AbortController()
     async function loadWorkspace() {
       try {
-        if (hasActiveClientHint()) {
-          const response = await fetch('/api/v1/client/session', { credentials: 'same-origin', cache: 'no-store', signal: controller.signal })
-          if (response.ok) {
-            const data = await response.json()
-            if (typeof data?.client?.id === 'string' && typeof data?.client?.email === 'string') {
-              setState({ status: 'client-active', client: data.client })
-              return
-            }
-          } else if (response.status === 401 || response.status === 404) clearClientHint()
+        const response = await fetch('/api/v1/client/session', { credentials: 'same-origin', cache: 'no-store', signal: controller.signal })
+        if (response.ok) {
+          const data = await response.clone().json()
+          if (typeof data?.client?.id === 'string' && typeof data?.client?.email === 'string') {
+            setState({ status: 'client-active', client: data.client })
+            return
+          }
+        } else if (response.status === 401 || response.status === 404) {
+          clearClientHint()
         }
         const properties = await fetchManagedProperties(controller.signal)
         setState({ status: 'ready', properties })

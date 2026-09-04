@@ -23,7 +23,6 @@ afterEach(() => { vi.restoreAllMocks(); localStorage.removeItem(clientSessionHin
 
 describe('manager application', () => {
   it('does not expose manager sign in while a client account is active', async () => {
-    localStorage.setItem(clientSessionHintKey, 'active')
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(input => {
       if (String(input) === '/api/v1/client/session') return Promise.resolve(Response.json({ client: { id: 'buyer', email: 'buyer@example.test' } }))
       return Promise.resolve(new Response(null, { status: 401 }))
@@ -161,6 +160,7 @@ describe('manager application', () => {
   it('retries a failed media refresh without uploading the video twice', async () => {
     let reads = 0
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      if (String(input) === '/api/v1/client/session') return new Response(null, { status: 401 })
       if (String(input).endsWith('/videos')) return Response.json({ id: 'job-1', status: 'pending' })
       if (String(input).includes('/media-jobs/')) return Response.json({ id: 'job-1', status: 'ready' })
       reads++
