@@ -2,8 +2,10 @@ package property
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
+	"fmt"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -106,7 +108,8 @@ func (store *Store) ListPublished(ctx context.Context, bounds *Bounds) ([]Proper
 func (store *Store) ListManaged(ctx context.Context) ([]ManagedProperty, error) {
 	rows, err := store.database.Query(ctx, `
 		SELECT id::text, title, address_line1, city, county, price_cents, bedrooms,
-		       property_type, ST_X(location::geometry), ST_Y(location::geometry), status
+		       property_type, ST_X(location::geometry), ST_Y(location::geometry), status,
+		       COALESCE((SELECT jsonb_agg(jsonb_build_object('url', media.url, 'kind', media.kind, 'altText', media.alt_text, 'position', media.position) ORDER BY media.position) FROM property_media AS media WHERE media.property_id = properties.id), '[]'::jsonb)
 		FROM properties
 		ORDER BY updated_at DESC, id DESC
 	`)
@@ -117,14 +120,70 @@ func (store *Store) ListManaged(ctx context.Context) ([]ManagedProperty, error) 
 	items := make([]ManagedProperty, 0)
 	for rows.Next() {
 		var item ManagedProperty
-		item.Media = []Media{}
+		var mediaJSON []byte
 		if err := rows.Scan(&item.ID, &item.Title, &item.AddressLine1, &item.City, &item.County,
-			&item.PriceCents, &item.Bedrooms, &item.PropertyType, &item.Longitude, &item.Latitude, &item.Status); err != nil {
+			&item.PriceCents, &item.Bedrooms, &item.PropertyType, &item.Longitude, &item.Latitude, &item.Status, &mediaJSON); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal(mediaJSON, &item.Media); err != nil {
 			return nil, err
 		}
 		items = append(items, item)
 	}
 	return items, rows.Err()
+}
+
+func (store *Store) UpsertPanorama(ctx context.Context, propertyID, shareURL, altText string) (Media, error) {
+	id, err := randomUUID()
+	if err != nil {
+		return Media{}, err
+	}
+	var media Media
+	err = store.database.QueryRow(ctx, `
+		WITH target AS (SELECT id FROM properties WHERE id = $1::uuid),
+		removed AS (DELETE FROM property_media WHERE property_id IN (SELECT id FROM target) AND kind = 'panorama'),
+		next_position AS (SELECT COALESCE(MAX(position), -1) + 1 AS position FROM property_media WHERE property_id IN (SELECT id FROM target)),
+		inserted AS (
+			INSERT INTO property_media (id, property_id, kind, url, alt_text, position)
+			SELECT $2::uuid, target.id, 'panorama', $3, $4, next_position.position FROM target CROSS JOIN next_position
+			RETURNING url, kind::text, alt_text, position
+		)
+		SELECT url, kind, alt_text, position FROM inserted
+	`, propertyID, id, shareURL, altText).Scan(&media.URL, &media.Kind, &media.AltText, &media.Position)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Media{}, ErrNotFound
+	}
+	return media, err
+}
+
+func (store *Store) RemovePanorama(ctx context.Context, propertyID string) error {
+	var propertyExists bool
+	err := store.database.QueryRow(ctx, `
+		WITH target AS (SELECT id FROM properties WHERE id = $1::uuid),
+		removed AS (
+			DELETE FROM property_media
+			WHERE property_id IN (SELECT id FROM target) AND kind = 'panorama'
+			RETURNING 1
+		)
+		SELECT EXISTS(SELECT 1 FROM target)
+	`, propertyID).Scan(&propertyExists)
+	if err != nil {
+		return err
+	}
+	if !propertyExists {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func randomUUID() (string, error) {
+	var value [16]byte
+	if _, err := rand.Read(value[:]); err != nil {
+		return "", err
+	}
+	value[6] = value[6]&0x0f | 0x40
+	value[8] = value[8]&0x3f | 0x80
+	return fmt.Sprintf("%08x-%04x-%04x-%04x-%012x", value[0:4], value[4:6], value[6:8], value[8:10], value[10:16]), nil
 }
 
 func (store *Store) CreateManaged(ctx context.Context, input ManagedPropertyInput) (ManagedProperty, error) {

@@ -58,6 +58,18 @@ type managerPropertyWriterStub struct {
 	updatedID string
 }
 
+type spatialTourWriterStub struct{ propertyID, shareURL, altText, removedID string }
+
+func (stub *spatialTourWriterStub) UpsertPanorama(_ context.Context, propertyID, shareURL, altText string) (property.Media, error) {
+	stub.propertyID, stub.shareURL, stub.altText = propertyID, shareURL, altText
+	return property.Media{URL: shareURL, Kind: "panorama", AltText: altText, Position: 4}, nil
+}
+
+func (stub *spatialTourWriterStub) RemovePanorama(_ context.Context, propertyID string) error {
+	stub.removedID = propertyID
+	return nil
+}
+
 func (stub *managerPropertyWriterStub) CreateManaged(_ context.Context, input property.ManagedPropertyInput) (property.ManagedProperty, error) {
 	stub.created = input
 	return property.ManagedProperty{Property: property.Property{ID: "new-property", Title: input.Title}, Status: "draft"}, nil
@@ -200,6 +212,41 @@ func TestManagerCanCreateDraftAndPublishIt(t *testing.T) {
 	router.ServeHTTP(updateResponse, update)
 	if updateResponse.Code != http.StatusOK || writer.updatedID != "new-property" || writer.updated.Status != "published" {
 		t.Fatalf("update status = %d, id = %q, lifecycle = %q", updateResponse.Code, writer.updatedID, writer.updated.Status)
+	}
+}
+
+func TestManagerCanAttachValidatedKuulaTour(t *testing.T) {
+	writer := &spatialTourWriterStub{}
+	router := httpapi.NewRouter(httpapi.Dependencies{ManagerAuth: managerAuthStub{validToken: "session-token"}, SpatialTours: writer})
+	request := httptest.NewRequest(http.MethodPut, "/api/v1/manager/properties/property-1/panorama", strings.NewReader(`{"shareUrl":"https://kuula.co/share/LTPpc?fs=1","altText":"Living room 360 tour"}`))
+	request.AddCookie(&http.Cookie{Name: "openhaus_manager_session", Value: "session-token"})
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || writer.propertyID != "property-1" || writer.shareURL != "https://kuula.co/share/LTPpc?fs=1" {
+		t.Fatalf("response = %d, property = %q, URL = %q", response.Code, writer.propertyID, writer.shareURL)
+	}
+}
+
+func TestManagerCanRemovePanorama(t *testing.T) {
+	writer := &spatialTourWriterStub{}
+	router := httpapi.NewRouter(httpapi.Dependencies{ManagerAuth: managerAuthStub{validToken: "session-token"}, SpatialTours: writer})
+	request := httptest.NewRequest(http.MethodDelete, "/api/v1/manager/properties/property-1/panorama", nil)
+	request.AddCookie(&http.Cookie{Name: "openhaus_manager_session", Value: "session-token"})
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusNoContent || writer.removedID != "property-1" {
+		t.Fatalf("response = %d, removed property = %q", response.Code, writer.removedID)
+	}
+}
+
+func TestManagerPanoramaRejectsNonEmbeddableURL(t *testing.T) {
+	router := httpapi.NewRouter(httpapi.Dependencies{ManagerAuth: managerAuthStub{validToken: "session-token"}, SpatialTours: &spatialTourWriterStub{}})
+	request := httptest.NewRequest(http.MethodPut, "/api/v1/manager/properties/property-1/panorama", strings.NewReader(`{"shareUrl":"https://kuula.co/post/LTPpc","altText":"Tour"}`))
+	request.AddCookie(&http.Cookie{Name: "openhaus_manager_session", Value: "session-token"})
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), "invalid_panorama") {
+		t.Fatalf("response = %d %s", response.Code, response.Body.String())
 	}
 }
 

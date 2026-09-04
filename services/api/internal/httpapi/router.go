@@ -39,6 +39,11 @@ type ManagerPropertyWriter interface {
 	UpdateManaged(context.Context, string, property.ManagedPropertyInput) (property.ManagedProperty, error)
 }
 
+type SpatialTourWriter interface {
+	UpsertPanorama(context.Context, string, string, string) (property.Media, error)
+	RemovePanorama(context.Context, string) error
+}
+
 type ManagerAuthenticator interface {
 	Login(context.Context, string, string) (managerauth.Session, error)
 	Authenticate(context.Context, string) (managerauth.User, error)
@@ -55,6 +60,8 @@ type MediaJobGetter interface {
 
 // Dependencies contains the external services used by the HTTP API.
 type Dependencies struct {
+	Images                ImageStore
+	ImageRoot             string
 	Readiness             ReadinessChecker
 	Properties            PropertyLister
 	Videos                VideoUploader
@@ -62,12 +69,20 @@ type Dependencies struct {
 	ManagerAuth           ManagerAuthenticator
 	ManagerProperties     ManagerPropertyLister
 	ManagerPropertyWriter ManagerPropertyWriter
+	SpatialTours          SpatialTourWriter
 	SecureCookies         bool
 }
 
 // NewRouter builds the API's HTTP routing table.
 func NewRouter(dependencies Dependencies) http.Handler {
 	router := http.NewServeMux()
+	if dependencies.Images != nil {
+		router.Handle("PATCH /api/v1/manager/properties/{propertyID}/image-description", requireManager(dependencies.ManagerAuth, updateImageDescription(dependencies.Images)))
+		router.Handle("POST /api/v1/manager/properties/{propertyID}/images", requireManager(dependencies.ManagerAuth, uploadImage(dependencies.Images, dependencies.ImageRoot)))
+		router.Handle("PUT /api/v1/manager/properties/{propertyID}/image-order", requireManager(dependencies.ManagerAuth, orderImages(dependencies.Images)))
+		router.HandleFunc("GET /api/v1/property-images/{name}", serveImage(dependencies.Images, dependencies.ImageRoot, false))
+		router.Handle("GET /api/v1/manager/property-images/{name}", requireManager(dependencies.ManagerAuth, serveImage(dependencies.Images, dependencies.ImageRoot, true)))
+	}
 	router.HandleFunc("GET /healthz", health)
 	router.HandleFunc("GET /readyz", ready(dependencies.Readiness))
 	router.HandleFunc("GET /api/v1/properties", listProperties(dependencies.Properties))
@@ -78,7 +93,57 @@ func NewRouter(dependencies Dependencies) http.Handler {
 	router.Handle("GET /api/v1/manager/properties", requireManager(dependencies.ManagerAuth, listManagedProperties(dependencies.ManagerProperties)))
 	router.Handle("POST /api/v1/manager/properties", requireManager(dependencies.ManagerAuth, createManagedProperty(dependencies.ManagerPropertyWriter)))
 	router.Handle("PUT /api/v1/manager/properties/{propertyID}", requireManager(dependencies.ManagerAuth, updateManagedProperty(dependencies.ManagerPropertyWriter)))
+	router.Handle("PUT /api/v1/manager/properties/{propertyID}/panorama", requireManager(dependencies.ManagerAuth, upsertPanorama(dependencies.SpatialTours)))
+	router.Handle("DELETE /api/v1/manager/properties/{propertyID}/panorama", requireManager(dependencies.ManagerAuth, removePanorama(dependencies.SpatialTours)))
 	return router
+}
+
+func removePanorama(tours SpatialTourWriter) http.HandlerFunc {
+	return func(response http.ResponseWriter, request *http.Request) {
+		err := tours.RemovePanorama(request.Context(), request.PathValue("propertyID"))
+		if errors.Is(err, property.ErrNotFound) {
+			writeError(response, http.StatusNotFound, "not_found", "property not found")
+			return
+		}
+		if err != nil {
+			log.Printf("remove panorama: %v", err)
+			writeError(response, http.StatusInternalServerError, "internal_error", "internal server error")
+			return
+		}
+		response.WriteHeader(http.StatusNoContent)
+	}
+}
+
+func upsertPanorama(tours SpatialTourWriter) http.HandlerFunc {
+	type input struct {
+		ShareURL string `json:"shareUrl"`
+		AltText  string `json:"altText"`
+	}
+	return func(response http.ResponseWriter, request *http.Request) {
+		var body input
+		decoder := json.NewDecoder(http.MaxBytesReader(response, request.Body, 16<<10))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&body); err != nil || strings.TrimSpace(body.AltText) == "" || len(body.AltText) > 240 {
+			writeError(response, http.StatusBadRequest, "invalid_panorama", "a Kuula share URL and description are required")
+			return
+		}
+		normalized, err := property.NormalizeKuulaShareURL(body.ShareURL)
+		if err != nil {
+			writeError(response, http.StatusBadRequest, "invalid_panorama", "use an HTTPS Kuula /share/ link")
+			return
+		}
+		media, err := tours.UpsertPanorama(request.Context(), request.PathValue("propertyID"), normalized, strings.TrimSpace(body.AltText))
+		if errors.Is(err, property.ErrNotFound) {
+			writeError(response, http.StatusNotFound, "not_found", "property not found")
+			return
+		}
+		if err != nil {
+			log.Printf("upsert panorama: %v", err)
+			writeError(response, http.StatusInternalServerError, "internal_error", "internal server error")
+			return
+		}
+		writeJSON(response, http.StatusOK, media)
+	}
 }
 
 func createManagedProperty(properties ManagerPropertyWriter) http.HandlerFunc {

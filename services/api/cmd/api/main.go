@@ -47,6 +47,8 @@ func main() {
 	server := &http.Server{
 		Addr: serverAddress,
 		Handler: httpapi.NewRouter(httpapi.Dependencies{
+			Images:                propertyStore,
+			ImageRoot:             uploadRoot + "/images",
 			Readiness:             databasePool,
 			Properties:            propertyStore,
 			Videos:                mediajob.NewUploadService(uploadRoot, mediaJobStore),
@@ -54,6 +56,7 @@ func main() {
 			ManagerAuth:           managerAuth,
 			ManagerProperties:     propertyStore,
 			ManagerPropertyWriter: propertyStore,
+			SpatialTours:          propertyStore,
 			SecureCookies:         os.Getenv("APP_ENV") == "production",
 		}),
 		ReadHeaderTimeout: 5 * time.Second,
