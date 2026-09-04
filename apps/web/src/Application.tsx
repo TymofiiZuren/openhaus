@@ -1,8 +1,11 @@
 import { Component, lazy, Suspense, type ReactNode } from 'react'
 import './Application.css'
+import { SiteHeader } from './SiteHeader'
 
 const PublicApp = lazy(() => import('./App'))
 const StaffApp = lazy(() => import('./ManagerApp').then(module => ({ default: module.ManagerApp })))
+const InformationApp = lazy(() => import('./InformationPages').then(module => ({ default: module.InformationPages })))
+const BuyerApp = lazy(() => import('./ClientApp').then(module => ({ default: module.ClientApp })))
 
 export class ApplicationBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
   state = { failed: false }
@@ -28,13 +31,18 @@ export class ApplicationBoundary extends Component<{ children: ReactNode }, { fa
 }
 
 export function Application({ pathname = window.location.pathname }: { pathname?: string }) {
-  const manager = pathname === '/manager' || pathname.startsWith('/manager/')
+  const path = pathname.replace(/\/$/, '') || '/'
+  const manager = path === '/manager' || path === '/manager/login' || /^\/manager\/preview\/[^/]+$/.test(path)
+  const client = path === '/client' || path === '/client/login' || path === '/client/register'
+  const information = pathname.replace(/\/$/, '').slice(1)
+  const informationPage = information === 'about' || information === 'contact' || information === 'help' || information === 'privacy' ? information : undefined
+  const catalogue = path === '/' || /^\/properties\/[^/]+(?:\/tour)?$/.test(path)
   return (
     <ApplicationBoundary>
       <Suspense fallback={
         <main aria-busy="true" aria-label="Loading page" />
       }>
-        {manager ? <StaffApp /> : <PublicApp />}
+        {manager ? <StaffApp /> : client ? <BuyerApp key={pathname} pathname={pathname} /> : informationPage ? <InformationApp key={informationPage} page={informationPage} /> : catalogue ? <PublicApp /> : <div className="site-shell"><SiteHeader pathname={pathname} /><main className="application-status"><p className="eyebrow">404 / OpenHaus</p><h1>Page not found.</h1><p>This address may have changed. Find a home or use the navigation above.</p><div className="application-status-actions"><a href="/#explore">Back to property search</a><a href="/help">Open help</a></div></main></div>}
       </Suspense>
     </ApplicationBoundary>
   )

@@ -21,15 +21,25 @@ const managedProperty = {
 afterEach(() => { vi.restoreAllMocks(); window.history.replaceState({}, '', '/') })
 
 describe('manager application', () => {
-  it('keeps every listing overview text-only while retaining library photos', async () => {
+  it('keeps the home logo without a redundant View website link', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({ properties: [] }))
+    render(<ManagerApp />)
+    await waitFor(() => expect(screen.queryByText('Loading manager workspace…')).not.toBeInTheDocument())
+    expect(screen.getByRole('link', { name: 'OpenHaus home' })).toHaveAttribute('href', '/')
+    expect(screen.queryByRole('link', { name: 'View website' })).not.toBeInTheDocument()
+  })
+  it('provides a consistent cover preview for photographed and empty listings', async () => {
     const photographed = { ...managedProperty, id: 'photographed', title: 'Photographed home', media: [{ kind: 'image', url: '/photo.jpg', altText: 'House exterior', position: 0 }] }
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({ properties: [managedProperty, photographed] }))
     render(<ManagerApp />)
     await screen.findByRole('heading', { name: photographed.title })
     for (const article of screen.getAllByRole('article')) {
-      expect(article.querySelector('.manager-property-overview img')).toBeNull()
+      expect(article.querySelector('.manager-cover-preview')).not.toBeNull()
     }
     expect(screen.getByAltText('House exterior')).toBeVisible()
+    expect(screen.getByText('Architectural concept · example only')).toBeVisible()
+    expect(screen.getByAltText('Architectural concept illustration — not a photograph of this property')).toHaveAttribute('src', '/media/placeholders/architectural-home.svg')
+    expect(screen.getByAltText('Cover preview for Photographed home')).toHaveAttribute('src', '/photo.jpg')
   })
   it('shows a quiet missing-photo status instead of a placeholder card', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({ properties: [managedProperty] }))

@@ -28,12 +28,13 @@ export function ManagerImages({propertyID,media,onUploaded,onOrdered,onUpdated}:
  }
  return <section className="manager-images" aria-labelledby={`${id}-title`} aria-busy={busy}>
   <h3 id={`${id}-title`}>Photos & floor plans</h3>
-  <p>Upload one image at a time. JPEG or PNG, up to 10 MiB and 24 megapixels. The first photo is the cover. Saved changes appear immediately on published listings.</p>
+  <p>The first photo is your listing cover. Manage photography and floor plans here; saved changes appear immediately on published listings.</p>
   <form onSubmit={upload}>
    <fieldset disabled={busy}>
     <label htmlFor={`${id}-kind`}>Media type</label><select id={`${id}-kind`} name="kind"><option value="image">Photo</option><option value="floor_plan">Floor plan</option></select>
     <label htmlFor={`${id}-description`}>Image description</label><input id={`${id}-description`} name="description" maxLength={500} required placeholder="e.g. Bright living room overlooking the garden"/>
-    <label htmlFor={`${id}-file`}>Choose photo or plan</label><input id={`${id}-file`} name="image" type="file" accept="image/jpeg,image/png" onChange={(event)=>setFile(event.target.files?.[0])} required/>
+    <label htmlFor={`${id}-file`}>Choose photo or plan</label><input id={`${id}-file`} name="image" type="file" accept="image/jpeg,image/png" aria-describedby={`${id}-file-help`} onChange={(event)=>setFile(event.target.files?.[0])} required/>
+    <small className="manager-upload-help" id={`${id}-file-help`}>JPEG or PNG · Up to 10 MiB · Maximum 24 megapixels</small>
     <button type="submit">{busy?'Saving…':'Upload image'}</button>
    </fieldset>
   </form>
@@ -41,7 +42,7 @@ export function ManagerImages({propertyID,media,onUploaded,onOrdered,onUpdated}:
   <div className="manager-image-grid">{photos.length===0&&plans.length===0&&<div className="manager-gallery-empty"><span aria-hidden="true">＋</span><strong>Give this home its first impression</strong><p>Upload a photo to start the gallery, or a floor plan to show how the rooms connect.</p></div>}{[...photos,...plans].map(item=>{
    const index=photos.indexOf(item)
    const src=item.url.replace('/api/v1/property-images/','/api/v1/manager/property-images/')
-   return <figure key={item.url}><a href={src} target="_blank" rel="noreferrer" aria-label={`Open image: ${item.altText}`}><img src={src} alt={item.altText} loading="lazy"/></a><figcaption>{index===0?'Cover photo':item.kind==='floor_plan'?'Floor plan':`Photo ${index+1}`} · {item.altText}</figcaption>
+   return <figure key={item.url}><a href={src} target="_blank" rel="noreferrer" aria-label={`Open image: ${item.altText}`}><img src={src} alt={item.altText} loading="lazy"/></a><figcaption><span className="manager-media-kind">{index===0?'Cover photo':item.kind==='floor_plan'?'Floor plan':`Photo ${index+1}`}</span><span>{item.altText}</span></figcaption>
     {onUpdated&&<ImageDescriptionEditor propertyID={propertyID} media={item} disabled={busy} onUpdated={onUpdated}/>}
     {index>=0&&<div className="manager-image-actions">
      <button type="button" disabled={busy||index===0} onClick={()=>reorder(index,0)} aria-label={`Make cover: ${item.altText}`}>Make cover</button>

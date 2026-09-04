@@ -1,5 +1,6 @@
-import areaData from './data/irelandSubregions.json'
+import areaJSON from './data/irelandSubregions.json?raw'
 import type { Coordinate } from './googleMapsLoader'
+import { decodeBoundary } from './boundaryCodec'
 
 export type AdministrativeArea = {
   name: string
@@ -7,11 +8,13 @@ export type AdministrativeArea = {
   paths: Coordinate[][]
 }
 
-type EncodedArea = { name: string; county: string; paths: [number, number][][] }
-const areas = (areaData.areas as EncodedArea[]).map((area) => ({
+type EncodedArea = { name: string; county: string; paths: string[] }
+// Parse data as JSON rather than compiling thousands of coordinates as JavaScript.
+const areaData = JSON.parse(areaJSON) as { areas: EncodedArea[]; attribution: string; source: string }
+const areas = areaData.areas.map((area) => ({
   name: area.name,
   county: area.county,
-  paths: area.paths.map((path) => path.map(([lat, lng]) => ({ lat, lng }))),
+  paths: area.paths.map((path) => decodeBoundary(path).map(([lat, lng]) => ({ lat, lng }))),
 }))
 
 export const administrativeAreaAttribution = {

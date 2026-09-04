@@ -3,6 +3,7 @@ import './App.css'
 import { PropertyDetailPage } from './App'
 import { ManagerImages } from './ManagerImages'
 import { ThemeControl } from './ThemeControl'
+import { AuthFields } from './AuthFields'
 import { uploadPropertyVideo, waitForMediaJob, type MediaJob } from './api/mediaJobs'
 import {
   fetchManagedProperties,
@@ -93,7 +94,7 @@ export function ManagerApp() {
       <header className="site-header manager-header">
         <a className="wordmark" href="/" aria-label="OpenHaus home">OpenHaus</a>
         <span className="manager-workspace-label">Property workspace</span>
-        <div className="header-actions"><ThemeControl /><a className="manager-text-button" href="/">View website</a>{isSignedIn && <button className="manager-text-button" type="button" onClick={signOut}>Sign out</button>}</div>
+        <div className="header-actions"><ThemeControl />{isSignedIn && <button className="manager-text-button" type="button" onClick={signOut}>Sign out</button>}</div>
       </header>
       <main className="manager-main">
         {state.status === 'checking' && (
@@ -131,7 +132,6 @@ function ManagerPublicationPreview({ property }: { property?: ManagedProperty })
 function ManagerLogin({ onSubmit, error, busy }: { onSubmit: (email: string, password: string) => void; error?: string; busy?: boolean }) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [showPassword, setShowPassword] = useState(false)
 
   function submit(event: FormEvent) {
     event.preventDefault()
@@ -152,9 +152,7 @@ function ManagerLogin({ onSubmit, error, busy }: { onSubmit: (email: string, pas
       <h1 id="manager-login-title">Manager sign in</h1>
       <p className="manager-login-copy">A focused workspace for reviewing listings, media and publication status.</p>
       <form onSubmit={submit} aria-busy={busy}>
-        <label>Email address<input name="email" type="email" autoComplete="username" required value={email} onChange={(event) => setEmail(event.target.value)} /></label>
-        <label htmlFor="manager-password">Password</label>
-        <div className="manager-password-field"><input id="manager-password" name="password" type={showPassword ? 'text' : 'password'} autoComplete="current-password" required value={password} onChange={(event) => setPassword(event.target.value)} /><button type="button" aria-label={showPassword ? 'Hide password' : 'Show password'} aria-pressed={showPassword} onClick={() => setShowPassword((shown) => !shown)}>{showPassword ? 'Hide' : 'Show'}</button></div>
+        <AuthFields prefix="manager" email={email} password={password} onEmail={setEmail} onPassword={setPassword} disabled={busy} />
         {error && <p className="manager-form-error" role="alert">{error}</p>}
         <button type="submit" disabled={busy}>{busy ? 'Signing in…' : 'Sign in'}</button>
       </form>
@@ -228,6 +226,10 @@ function ManagerDashboard({ properties }: { properties: ManagedProperty[] }) {
                 <h2>{property.title}</h2><p>{property.addressLine1}, {property.city}, Co. {property.county}</p>
                 {!property.media.some((media) => media.kind === 'image' && !media.url.includes('/placeholders/')) && <span className="manager-photo-status">No photos added</span>}
                 </div></div>
+                <figure className="manager-cover-preview">
+                  {property.media.filter(item => item.kind === 'image' && !item.url.includes('/placeholders/')).sort((a, b) => a.position - b.position)[0] ? <img src={property.media.filter(item => item.kind === 'image' && !item.url.includes('/placeholders/')).sort((a, b) => a.position - b.position)[0].url.replace('/api/v1/property-images/', '/api/v1/manager/property-images/')} alt={`Cover preview for ${property.title}`} loading="lazy" /> : <img className="manager-cover-concept" src="/media/placeholders/architectural-home.svg" alt="Architectural concept illustration — not a photograph of this property" loading="lazy" />}
+                  <figcaption>{property.media.some(item => item.kind === 'image' && !item.url.includes('/placeholders/')) ? 'Listing cover preview' : <><span>Architectural concept · example only</span><small>Add your cover photo in the media library below.</small></>}</figcaption>
+                </figure>
                 {compact && <div className="manager-compact-actions"><span>{euros.format(property.priceCents / 100)} · {property.bedrooms} bedrooms</span><button type="button" aria-expanded={expandedID === property.id} aria-controls={`manager-tools-${property.id}`} aria-label={`${expandedID === property.id ? 'Collapse' : 'Manage'} ${property.title}`} onClick={() => setExpandedID(expandedID === property.id ? undefined : property.id)}>{expandedID === property.id ? 'Collapse tools' : 'Manage listing'} <span aria-hidden="true">↗</span></button></div>}
                 <div className="manager-completeness">
                   <div><span>Listing readiness</span><strong>{completeness(property)}% complete</strong></div>

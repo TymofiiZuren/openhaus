@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'react'
+import { useHoverDropdown } from './useHoverDropdown'
 
 type Appearance = 'system' | 'light' | 'dark'
 const preferenceKey = 'openhaus-appearance'
@@ -13,10 +14,13 @@ function readAppearance(): Appearance {
 
 export function ThemeControl() {
   const [appearance, setAppearance] = useState<Appearance>(readAppearance)
-  const [open, setOpen] = useState(false)
+  const { open, setOpen, onPointerEnter, onPointerLeave, onTriggerClick } = useHoverDropdown()
   const container = useRef<HTMLDivElement>(null)
   const trigger = useRef<HTMLButtonElement>(null)
   const panelId = useId()
+  const initialized = useRef(false)
+  const transition = useRef<ViewTransition | null>(null)
+  const requestedTheme = useRef('')
   useEffect(() => {
     if (!open) return
     const dismiss = (event: PointerEvent) => {
@@ -24,23 +28,34 @@ export function ThemeControl() {
     }
     document.addEventListener('pointerdown', dismiss)
     return () => document.removeEventListener('pointerdown', dismiss)
-  }, [open])
+  }, [open, setOpen])
   useEffect(() => {
     const media = window.matchMedia?.('(prefers-color-scheme: dark)')
     const apply = () => {
-      document.documentElement.dataset.theme = appearance === 'system' ? (media?.matches ? 'dark' : 'light') : appearance
+      const theme = appearance === 'system' ? (media?.matches ? 'dark' : 'light') : appearance
+      requestedTheme.current = theme
+      transition.current?.skipTransition()
+      const update = () => { document.documentElement.dataset.theme = requestedTheme.current }
+      if (initialized.current && document.documentElement.dataset.theme !== theme && document.startViewTransition && !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+        const next = document.startViewTransition(update)
+        transition.current = next
+        void next.ready.catch(() => { /* Interrupted transitions still apply the requested theme. */ })
+        void next.finished.finally(() => { if (transition.current === next) transition.current = null }).catch(() => {})
+      } else update()
+      initialized.current = true
     }
     apply()
     media?.addEventListener('change', apply)
     return () => media?.removeEventListener('change', apply)
   }, [appearance])
+  useEffect(() => () => transition.current?.skipTransition(), [])
   useEffect(() => {
     const sync = (event: StorageEvent) => { if (event.key === preferenceKey || event.key === null) setAppearance(readAppearance()) }
     window.addEventListener('storage', sync)
     return () => window.removeEventListener('storage', sync)
   }, [])
   const label = appearance[0].toUpperCase() + appearance.slice(1)
-  return <div className="theme-picker" ref={container} onBlur={event => {
+  return <div className="theme-picker" ref={container} onPointerEnter={onPointerEnter} onPointerLeave={onPointerLeave} onBlur={event => {
     if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false)
   }} onKeyDown={event => {
     if (event.key === 'Escape' && open) {
@@ -48,7 +63,7 @@ export function ThemeControl() {
       setOpen(false)
       trigger.current?.focus()
     }
-  }}><button ref={trigger} type="button" className="theme-switch" aria-label={`Theme: ${label}. Choose appearance`} aria-expanded={open} aria-controls={panelId} onClick={() => setOpen(value => !value)}><svg key={appearance} aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+  }}><button ref={trigger} type="button" className="theme-switch" aria-label={`Theme: ${label}. Choose appearance`} aria-expanded={open} aria-controls={panelId} onClick={onTriggerClick}><svg key={appearance} aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
     {appearance === 'dark' ? <path d="M20 15.5A8.5 8.5 0 0 1 8.5 4 8.5 8.5 0 1 0 20 15.5Z" /> : appearance === 'light' ? <><circle cx="12" cy="12" r="4" /><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5" /></> : <><rect x="3" y="4" width="18" height="13" rx="2" /><path d="M8 21h8m-4-4v4" /></>}
   </svg><span>{label}</span></button>
     {open && <div id={panelId} className="theme-options" role="group" aria-label="Appearance">

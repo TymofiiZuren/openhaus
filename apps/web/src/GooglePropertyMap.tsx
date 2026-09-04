@@ -35,6 +35,7 @@ export function GooglePropertyMap({ properties, selectedPropertyID, selectedCoun
   const markers = useRef<MapMarker[]>([])
   const polygons = useRef<MapPolygon[]>([])
   const mapListeners = useRef<Listener[]>([])
+  const failureObserver = useRef<MutationObserver | undefined>(undefined)
   const onCountySelect = useRef(onSelectCounty)
   const onAreaSelect = useRef(onSelectArea)
   const onPropertySelect = useRef(onSelectProperty)
@@ -74,7 +75,20 @@ export function GooglePropertyMap({ properties, selectedPropertyID, selectedCoun
         })
         const dragListener = map.current.addListener('dragstart', () => onDismiss.current())
         mapListeners.current = [dragListener]
-        setStatus('ready')
+        const reportProviderFailure = () => {
+          if (!container.current?.querySelector('.gm-err-container, .gm-err-message')) return false
+          container.current.replaceChildren()
+          setStatus('error')
+          return true
+        }
+        failureObserver.current?.disconnect()
+        if (!reportProviderFailure()) {
+          failureObserver.current = new MutationObserver(() => {
+            if (reportProviderFailure()) failureObserver.current?.disconnect()
+          })
+          failureObserver.current.observe(container.current, { childList: true, subtree: true })
+          setStatus('ready')
+        }
       })
       .catch(() => { if (!cancelled) setStatus('error') })
     return () => { cancelled = true }
@@ -107,12 +121,14 @@ export function GooglePropertyMap({ properties, selectedPropertyID, selectedCoun
     // Keep neighbouring counties available during county-level exploration so
     // buyers can switch location directly without returning to Ireland first.
     const visibleCountyBoundaries = countyBoundaries
-    const countyPolygons = visibleCountyBoundaries.flatMap((county) => county.paths.map((path) => {
+    // Keep all rings together: preserves holes and gives each county one
+    // interaction target rather than thousands of separate island overlays.
+    const countyPolygons = visibleCountyBoundaries.map((county) => {
       const available = availableCounties.some((name) => sameLocation(name, county.name))
       const selected = sameLocation(county.name, selectedCounty ?? '')
       const polygon = new maps.Polygon({
         map: map.current,
-        paths: path,
+        paths: county.paths,
         clickable: available && !selected,
         ...countyStyle(county.name, selectedCounty, available),
       })
@@ -124,7 +140,7 @@ export function GooglePropertyMap({ properties, selectedPropertyID, selectedCoun
         polygon.addListener('mouseout', () => polygon.setOptions(countyStyle(county.name, selectedCountyRef.current, available))),
       ] : []
       return { name: county.name, kind: 'county' as const, polygon, listeners, available }
-    }))
+    })
     const areaShapes = selectedCounty
       ? areas.flatMap((area) => groupPolygonRings(area.paths).map((paths) => ({ area, paths, size: polygonArea(paths[0]) })))
         .filter(({ size }) => size >= .00005)
@@ -192,6 +208,7 @@ export function GooglePropertyMap({ properties, selectedPropertyID, selectedCoun
   }, [areas, cameraRequestKey, properties, selectedArea, selectedCounty, selectedPropertyID, status])
 
   useEffect(() => () => {
+    failureObserver.current?.disconnect()
     clearMarkers(markers.current)
     clearPolygons(polygons.current)
     for (const listener of mapListeners.current) listener.remove()
@@ -201,7 +218,7 @@ export function GooglePropertyMap({ properties, selectedPropertyID, selectedCoun
     return (
       <div className="map-unavailable" role="status">
         <svg viewBox="0 0 48 48" aria-hidden="true"><path d="m7 12 11-5 12 5 11-5v29l-11 5-12-5-11 5zM18 7v29m12-24v29" /></svg>
-        <div><strong>Map view is unavailable right now.</strong><p>Choose a county or town from the list. Every available home remains accessible.</p></div>
+        <div><strong>Map is not available.</strong><p>Use Choose location to browse every available county and local area.</p></div>
       </div>
     )
   }

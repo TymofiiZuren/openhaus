@@ -3,6 +3,10 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, expect, it, vi } from 'vitest'
 import { ManagerImages } from './ManagerImages'
 afterEach(()=>vi.restoreAllMocks())
+it('explains upload requirements beside the file field',()=>{
+ render(<ManagerImages propertyID="home" media={[]} onUploaded={vi.fn()} onOrdered={vi.fn()}/> )
+ expect(screen.getByLabelText('Choose photo or plan')).toHaveAccessibleDescription('JPEG or PNG · Up to 10 MiB · Maximum 24 megapixels')
+})
 it('edits a saved description and retains it after a failed save',async()=>{
  const media={url:'/front.png',kind:'image' as const,altText:'Front',position:0}
  const saved=vi.fn()

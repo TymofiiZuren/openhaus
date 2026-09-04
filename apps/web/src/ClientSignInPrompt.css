@@ -1,0 +1,4 @@
+.client-sign-in-prompt { display: grid; justify-items: start; gap: 12px; padding-top: 24px; border-top: 1px solid var(--line); }
+.client-sign-in-prompt p, .client-sign-in-prompt small { margin: 0; color: var(--muted); line-height: 1.5; }
+.client-sign-in-prompt a { display: inline-flex; align-items: center; min-height: 44px; color: var(--ink); text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 5px; }
+.client-sign-in-prompt a:hover { text-decoration-color: var(--accent); }

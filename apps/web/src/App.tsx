@@ -1,8 +1,11 @@
 import { lazy, Suspense, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import './App.css'
-import { ThemeControl } from './ThemeControl'
+import { SiteHeader } from './SiteHeader'
+import { ClientSignInPrompt } from './ClientSignInPrompt'
+import { fetchClientSavedProperties, removeClientSavedProperty, saveClientProperty } from './api/clientSavedProperties'
 import { fetchProperties, type Property } from './api/properties'
+import { createPropertySearchIndex } from './propertySearch'
 const PropertyMap = lazy(() => import('./PropertyMap').then((module) => ({ default: module.PropertyMap })))
 const SpatialMediaViewer = lazy(() => import('./SpatialMediaViewer').then((module) => ({ default: module.SpatialMediaViewer })))
 type AreaTools = typeof import('./administrativeAreas')
@@ -16,6 +19,14 @@ const euros = new Intl.NumberFormat('en-IE', {
   style: 'currency', currency: 'EUR', maximumFractionDigits: 0,
 })
 
+const shortlistKey = 'openhaus:comparison:v1'
+function readShortlist(): string[] {
+  try {
+    const saved: unknown = JSON.parse(localStorage.getItem(shortlistKey) ?? '[]')
+    return Array.isArray(saved) ? [...new Set(saved.filter((id): id is string => typeof id === 'string' && id.length > 0 && id.length <= 128))].slice(0, 4) : []
+  } catch { return [] }
+}
+
 function App() {
   const [state, setState] = useState<CatalogueState>({ status: 'loading', properties: [] })
   const [requestKey, setRequestKey] = useState(0)
@@ -28,10 +39,14 @@ function App() {
   const [spatialToursOnly, setSpatialToursOnly] = useState(false)
   const [sortOrder, setSortOrder] = useState('recent')
   const [saveSearchOpen, setSaveSearchOpen] = useState(false)
-  const [shortlistedPropertyIDs, setShortlistedPropertyIDs] = useState<string[]>([])
+  const [shortlistedPropertyIDs, setShortlistedPropertyIDs] = useState<string[]>(readShortlist)
   const [compareOpen, setCompareOpen] = useState(false)
   const [areaTools, setAreaTools] = useState<AreaTools>()
-  const deferredPropertyQuery = useDeferredValue(propertyQuery.trim().toLocaleLowerCase())
+  const deferredPropertyQuery = useDeferredValue(propertyQuery)
+
+  useEffect(() => {
+    try { localStorage.setItem(shortlistKey, JSON.stringify(shortlistedPropertyIDs)) } catch { /* Comparison remains usable without storage. */ }
+  }, [shortlistedPropertyIDs])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -105,9 +120,10 @@ function App() {
     url.searchParams.delete('area')
     window.history.replaceState({}, '', url)
   }, [areaTools, effectiveSelectedArea, selectedArea, state.status])
+  const propertySearchIndex = useMemo(() => createPropertySearchIndex(state.properties), [state.properties])
+  const matchingPropertyIDs = useMemo(() => propertySearchIndex.search(deferredPropertyQuery), [deferredPropertyQuery, propertySearchIndex])
   const filteredProperties = state.properties.filter((property) => {
-    const searchable = `${property.title} ${property.addressLine1} ${property.city} ${property.county}`.toLocaleLowerCase()
-    return (!deferredPropertyQuery || searchable.includes(deferredPropertyQuery))
+    return matchingPropertyIDs.has(property.id)
       && (!minimumBedrooms || property.bedrooms >= minimumBedrooms)
       && (propertyType === 'all' || property.propertyType === propertyType)
       && (!maximumPrice || property.priceCents <= maximumPrice * 100)
@@ -235,7 +251,7 @@ function App() {
       {compareOpen && <ComparisonDialog properties={shortlistedProperties} onRemove={(propertyID) => toggleShortlist(propertyID)} onClose={() => setCompareOpen(false)} />}
       <footer className="site-footer">
         <div><a className="footer-monogram" href="/" aria-label="OpenHaus home"><span>OpenHaus</span><small>/ 01</small></a><span className="footer-signature" aria-hidden="true">Yours, always</span><p>Find home with the full picture.</p></div>
-        <nav aria-label="Footer navigation"><a href="#explore">Explore Ireland</a><a href="#homes">Homes for sale</a><a href="/manager/login">Manager workspace</a></nav>
+        <nav aria-label="Footer navigation"><a href="#explore">Explore Ireland</a><a href="#homes">Homes for sale</a><a href="/about">About OpenHaus</a><a href="/contact">Contact</a><a href="/help">Help</a><a href="/privacy">Privacy information</a><a href="/manager/login">Manager workspace</a></nav>
         <p>Independent portfolio project · Ireland</p>
       </footer>
     </div>
@@ -327,23 +343,45 @@ function PropertyCard({ property, shortlisted = false, comparisonFull = false, o
   )
 }
 
-function SiteHeader() {
-  return (
-    <header className="site-header">
-      <a className="wordmark" href="/" aria-label="OpenHaus home">OpenHaus</a>
-      <nav className="site-navigation" aria-label="Primary navigation">
-        <a href="/#explore">Find a property</a>
-        <a href="/manager/login">Market your property</a>
-        <a href="/#why-openhaus">Why OpenHaus</a>
-        <a href="/#homes">Latest homes</a>
-      </nav>
-      <div className="header-actions"><ThemeControl /><a className="manager-link" href="/manager/login">List a property</a></div>
-    </header>
-  )
-}
-
 export function PropertyDetailPage({ property, status, onRetry }: { property?: Property; status: CatalogueState['status']; onRetry: () => void }) {
   const [viewingOpen, setViewingOpen] = useState(false)
+  const chapterIDs = useMemo(() => property?.media.some(item => item.kind === 'panorama' && item.url.startsWith('https://')) ? ['overview', 'tour', 'intelligence'] : ['overview', 'intelligence'], [property])
+  const [activeChapter, setActiveChapter] = useState(() => chapterIDs.includes(window.location.hash.slice(1)) ? window.location.hash.slice(1) : 'overview')
+
+  useEffect(() => {
+    const restoreChapter = () => {
+      const chapter = window.location.hash.slice(1)
+      setActiveChapter(chapterIDs.includes(chapter) ? chapter : 'overview')
+    }
+    restoreChapter()
+    window.addEventListener('hashchange', restoreChapter)
+    window.addEventListener('popstate', restoreChapter)
+
+    if (typeof IntersectionObserver === 'undefined') {
+      return () => {
+        window.removeEventListener('hashchange', restoreChapter)
+        window.removeEventListener('popstate', restoreChapter)
+      }
+    }
+
+    const observer = new IntersectionObserver((entries) => {
+      const visible = entries.filter(entry => entry.isIntersecting)
+      if (visible.length === 0) return
+      visible.sort((a, b) => Math.abs(a.boundingClientRect.top) - Math.abs(b.boundingClientRect.top))
+      setActiveChapter(visible[0].target.id)
+    }, { rootMargin: `-${getComputedStyle(document.documentElement).getPropertyValue('--public-header-height').trim() || '82px'} 0px -58%`, threshold: [0, 0.1] })
+
+    chapterIDs.forEach((id) => {
+      const section = document.getElementById(id)
+      if (section) observer.observe(section)
+    })
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('hashchange', restoreChapter)
+      window.removeEventListener('popstate', restoreChapter)
+    }
+  }, [chapterIDs])
+
   return (
     <div className="site-shell">
       <a className="skip-link" href="#property-detail">Skip to property details</a>
@@ -354,12 +392,19 @@ export function PropertyDetailPage({ property, status, onRetry }: { property?: P
         {status === 'success' && !property && <div className="property-page-message"><p className="eyebrow">Property unavailable</p><h1>This home could not be found.</h1><a href="/">Return to property search</a></div>}
         {status === 'success' && property && <>
           <div className="property-page-nav"><a href="/" aria-label="Back to property search"><span aria-hidden="true">←</span> Back to property search</a><span>{property.city} · Co. {property.county}</span></div>
-          <nav className="property-chapters" aria-label="Property sections"><a href="#overview">Overview & media</a>{property.media.some(item => item.kind === 'panorama' && item.url.startsWith('https://')) && <a href="#tour">360° tour</a>}<a href="#intelligence">Property insights</a><a href={`/?county=${encodeURIComponent(property.county)}&property=${encodeURIComponent(property.id)}#explore`}>Show on map</a><button type="button" onClick={() => setViewingOpen(true)}>Request viewing</button></nav>
+          <nav className="property-chapters" aria-label="Property sections">
+            <a href="#overview" aria-current={activeChapter === 'overview' ? 'location' : undefined} onClick={() => setActiveChapter('overview')}>Overview & media</a>
+            {property.media.some(item => item.kind === 'panorama' && item.url.startsWith('https://')) && <a href="#tour" aria-current={activeChapter === 'tour' ? 'location' : undefined} onClick={() => setActiveChapter('tour')}>360° tour</a>}
+            <a href="#intelligence" aria-current={activeChapter === 'intelligence' ? 'location' : undefined} onClick={() => setActiveChapter('intelligence')}>Property insights</a>
+            <a href={`/?county=${encodeURIComponent(property.county)}&property=${encodeURIComponent(property.id)}#explore`}>Show on map</a>
+            <button type="button" onClick={() => setViewingOpen(true)}>Request viewing</button>
+          </nav>
           <article className="property-page-layout" id="overview">
             <div className="property-page-hero" id="media"><PropertyGallery property={property} /></div>
             <div className="property-page-summary">
               <div className="property-page-identity"><p className="eyebrow">Property for sale</p><h1>{property.title}</h1><p className="property-page-address">{property.addressLine1}, Co. {property.county}</p></div>
               <strong className="property-page-price"><span>Asking price</span>{euros.format(property.priceCents / 100)}</strong>
+              <ClientPropertySaveAction property={property} />
               {property.media.some(item => item.kind === 'panorama' && item.url.startsWith('https://')) && <a className="property-summary-tour" href={`/properties/${property.id}/tour`}>Open full-window 360° tour <span aria-hidden="true">↗</span></a>}
               <dl><div><dt>Home</dt><dd>{titleCase(property.propertyType)}</dd></div><div><dt>Bedrooms</dt><dd>{property.bedrooms}</dd></div><div><dt>Property media</dt><dd>{property.media.length} items</dd></div></dl>
               <aside className="property-contact-card" aria-label="Arrange a viewing"><p className="eyebrow">OpenHaus viewings</p><h2>See this home in person</h2><p>Request details or arrange a private viewing with the listing team.</p><button className="viewing-link" type="button" onClick={() => setViewingOpen(true)}>Arrange a viewing <span aria-hidden="true">→</span></button></aside>
@@ -373,6 +418,51 @@ export function PropertyDetailPage({ property, status, onRetry }: { property?: P
       </main>
     </div>
   )
+}
+
+function ClientPropertySaveAction({ property }: { property: Property }) {
+  const [state, setState] = useState<'loading' | 'anonymous' | 'ready' | 'unavailable'>('loading')
+  const [saved, setSaved] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [feedback, setFeedback] = useState('')
+
+  useEffect(() => {
+    const controller = new AbortController()
+    async function load() {
+      try {
+        const response = await fetch('/api/v1/client/session', { credentials: 'same-origin', cache: 'no-store', signal: controller.signal })
+        if (controller.signal.aborted) return
+        if (response.status === 401 || response.status === 404) { setState('anonymous'); return }
+        if (!response.ok) { setState('unavailable'); return }
+        const properties = await fetchClientSavedProperties(controller.signal)
+        if (!controller.signal.aborted) { setSaved(properties.some(item => item.id === property.id)); setState('ready') }
+      } catch { if (!controller.signal.aborted) setState('unavailable') }
+    }
+    void load()
+    return () => controller.abort()
+  }, [property.id])
+
+  async function toggle() {
+    if (busy) return
+    setBusy(true); setFeedback('')
+    try {
+      if (saved) await removeClientSavedProperty(property.id)
+      else await saveClientProperty(property.id)
+      setSaved(current => !current)
+      setFeedback(saved ? 'Removed from your account.' : 'Saved to your account.')
+    } catch { setFeedback('We could not update this saved home. Please try again.') }
+    finally { setBusy(false) }
+  }
+
+  if (state === 'anonymous') return <div className="property-save-action"><a href="/client/login">Sign in to save this home</a></div>
+  if (state !== 'ready') return null
+  return <div className="property-save-action">
+    <button type="button" aria-pressed={saved} aria-label={`${saved ? 'Remove' : 'Save'} ${property.title}`} disabled={busy} onClick={() => void toggle()}>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4.75h12v15l-6-3.8-6 3.8v-15Z" /></svg>
+      {busy ? 'Updating…' : saved ? 'Saved to account' : 'Save this home'}
+    </button>
+    {feedback && <span role={feedback.startsWith('We could not') ? 'alert' : 'status'}>{feedback}</span>}
+  </div>
 }
 
 function ImmersiveServiceFeature({ property }: { property: Property }) {
@@ -490,13 +580,19 @@ function PropertyDecisionPanel({ property }: { property: Property }) {
   const monthly = ((askingPrice - deposit) * .0047).toFixed(0)
   const storageKey = `openhaus:property-notes:${property.id}`
   const [notesOpen, setNotesOpen] = useState(false)
+  const [notesError, setNotesError] = useState('')
   const [buyerNotes, setBuyerNotes] = useState<{ notes: string; questions: string[] }>(() => {
-    try { return JSON.parse(window.localStorage.getItem(storageKey) ?? '{"notes":"","questions":[]}') }
+    try {
+      const saved = JSON.parse(window.localStorage.getItem(storageKey) ?? 'null')
+      return { notes: typeof saved?.notes === 'string' ? saved.notes : '', questions: Array.isArray(saved?.questions) ? saved.questions.filter((question: unknown): question is string => typeof question === 'string') : [] }
+    }
     catch { return { notes: '', questions: [] } }
   })
   const hasNotes = buyerNotes.notes.trim().length > 0 || buyerNotes.questions.length > 0
   const saveNotes = (next: { notes: string; questions: string[] }) => {
-    window.localStorage.setItem(storageKey, JSON.stringify(next))
+    try { window.localStorage.setItem(storageKey, JSON.stringify(next)) }
+    catch { setNotesError('Your notes could not be saved in this browser. Keep this window open, copy your notes, or enable browser storage and try again.'); return }
+    setNotesError('')
     setBuyerNotes(next)
     setNotesOpen(false)
   }
@@ -504,11 +600,11 @@ function PropertyDecisionPanel({ property }: { property: Property }) {
     <header><p className="section-index">Property intelligence</p><h2 id="decision-title">Understand the commitment.</h2><p>Illustrative figures help organise questions before professional financial, legal and survey advice.</p></header>
     <dl><div><dt>10% deposit</dt><dd>{euros.format(deposit)}</dd><small>Illustrative only</small></div><div><dt>Monthly estimate</dt><dd>{euros.format(Number(monthly))}</dd><small>Sample repayment</small></div><div><dt>Energy profile</dt><dd>B2</dd><small>Example BER</small></div><div><dt>Media coverage</dt><dd>{property.media.length}</dd><small>Available items</small></div></dl>
     <div className="decision-context" id="location"><div><span>Area context</span><strong>{property.city}, Co. {property.county}</strong><p>Transport, schools, broadband, planning and comparable sales can connect here as verified providers are added.</p></div><div id="viewing"><span>Buyer workspace</span><strong>Build your viewing file</strong><p>{hasNotes ? 'Notes saved locally' : 'Keep private observations and questions attached to this property.'}</p><button type="button" onClick={() => setNotesOpen(true)}>{hasNotes ? 'Edit property notes' : 'Add property notes'} <span aria-hidden="true">→</span></button></div></div>
-    {notesOpen && <PropertyNotesDialog property={property} value={buyerNotes} onSave={saveNotes} onClose={() => setNotesOpen(false)} />}
+    {notesOpen && <PropertyNotesDialog property={property} value={buyerNotes} error={notesError} onSave={saveNotes} onClose={() => { setNotesOpen(false); setNotesError('') }} />}
   </section>
 }
 
-function PropertyNotesDialog({ property, value, onSave, onClose }: { property: Property; value: { notes: string; questions: string[] }; onSave: (value: { notes: string; questions: string[] }) => void; onClose: () => void }) {
+function PropertyNotesDialog({ property, value, error, onSave, onClose }: { property: Property; value: { notes: string; questions: string[] }; error?: string; onSave: (value: { notes: string; questions: string[] }) => void; onClose: () => void }) {
   const notesRef = useRef<HTMLTextAreaElement>(null)
   const [notes, setNotes] = useState(value.notes)
   const [questions, setQuestions] = useState(value.questions)
@@ -522,9 +618,11 @@ function PropertyNotesDialog({ property, value, onSave, onClose }: { property: P
       <form onSubmit={(event) => { event.preventDefault(); onSave({ notes, questions }) }}>
         <label>Private notes<textarea ref={notesRef} rows={6} value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="What should you remember at the viewing?" /></label>
         <fieldset><legend>Questions for the viewing</legend><div className="property-question-list">{prompts.map((prompt) => <label key={prompt}><input type="checkbox" checked={questions.includes(prompt)} onChange={() => toggleQuestion(prompt)} /><span>{prompt}</span></label>)}</div></fieldset>
-        <p>Stored only in this browser for the prototype. Account sync and sharing will be introduced with the authenticated buyer workspace.</p>
+        <p>Stored only in this browser. You do not need to sign in to save these notes.</p>
+        {error && <p role="alert">{error}</p>}
         <div><button type="button" onClick={onClose}>Cancel</button><button type="submit">Save property notes</button></div>
       </form>
+      <ClientSignInPrompt />
     </section>
   </Overlay>
 }

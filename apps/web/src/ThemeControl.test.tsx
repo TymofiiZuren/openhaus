@@ -3,7 +3,33 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, expect, it, vi } from 'vitest'
 import { ThemeControl } from './ThemeControl'
 
-afterEach(() => { localStorage.clear(); delete document.documentElement.dataset.theme; vi.restoreAllMocks() })
+afterEach(() => { localStorage.clear(); delete document.documentElement.dataset.theme; Reflect.deleteProperty(document, 'startViewTransition'); vi.restoreAllMocks(); vi.unstubAllGlobals() })
+
+it('changes themes without animation when reduced motion is requested', async () => {
+  vi.stubGlobal('matchMedia', (query: string) => ({ matches: query.includes('reduced-motion'), addEventListener: vi.fn(), removeEventListener: vi.fn() }))
+  const transition = vi.fn()
+  Object.defineProperty(document, 'startViewTransition', { configurable: true, value: transition })
+  render(<ThemeControl />)
+  await userEvent.click(screen.getByRole('button', { name: /Theme: System/ }))
+  await userEvent.click(screen.getByRole('button', { name: /Dark After hours/ }))
+  expect(document.documentElement).toHaveAttribute('data-theme', 'dark')
+  expect(transition).not.toHaveBeenCalled()
+})
+
+it('crossfades theme changes but applies the initial theme immediately', async () => {
+  const transition = vi.fn((update: () => void) => {
+    update()
+    return { finished: Promise.resolve(), ready: Promise.resolve(), skipTransition: vi.fn() }
+  })
+  Object.defineProperty(document, 'startViewTransition', { configurable: true, value: transition })
+  render(<ThemeControl />)
+  expect(transition).not.toHaveBeenCalled()
+  await userEvent.click(screen.getByRole('button', { name: /Theme: System/ }))
+  await userEvent.click(screen.getByRole('button', { name: /Dark After hours/ }))
+  expect(transition).toHaveBeenCalledOnce()
+  expect(document.documentElement).toHaveAttribute('data-theme', 'dark')
+  Reflect.deleteProperty(document, 'startViewTransition')
+})
 
 it('applies and remembers dark mode across remounts', async () => {
   const user = userEvent.setup()

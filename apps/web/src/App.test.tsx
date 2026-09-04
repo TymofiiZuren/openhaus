@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
@@ -8,6 +8,7 @@ it('provides actionable property navigation without unavailable tour links', asy
   mockResponse({ properties: [property] })
   render(<App />)
   const nav = await screen.findByRole('navigation', { name: 'Property sections' })
+  expect(within(screen.getByRole('navigation', { name: 'Primary navigation' })).queryByRole('link', { name: 'Client account' })).not.toBeInTheDocument()
   expect(within(nav).queryByRole('link', { name: 'Your notes' })).not.toBeInTheDocument()
   expect(within(nav).queryByRole('link', { name: '360° tour' })).not.toBeInTheDocument()
   expect(within(nav).getByRole('link', { name: 'Show on map' })).toHaveAttribute('href', `/?county=Dublin&property=${property.id}#explore`)
@@ -19,11 +20,72 @@ it('provides actionable property navigation without unavailable tour links', asy
   expect(screen.getByRole('dialog')).toBeInTheDocument()
 })
 
+it('marks the current property chapter for direct links and browser history', async () => {
+  window.history.replaceState({}, '', `/properties/${property.id}#intelligence`)
+  mockResponse({ properties: [property] })
+  render(<App />)
+
+  const nav = await screen.findByRole('navigation', { name: 'Property sections' })
+  expect(within(nav).getByRole('link', { name: 'Property insights' })).toHaveAttribute('aria-current', 'location')
+  expect(within(nav).getByRole('link', { name: 'Overview & media' })).not.toHaveAttribute('aria-current')
+
+  window.history.replaceState({}, '', `/properties/${property.id}#overview`)
+  window.dispatchEvent(new PopStateEvent('popstate'))
+
+  await waitFor(() => expect(within(nav).getByRole('link', { name: 'Overview & media' })).toHaveAttribute('aria-current', 'location'))
+  expect(within(nav).getByRole('link', { name: 'Property insights' })).not.toHaveAttribute('aria-current')
+})
+
+it('updates the current property chapter as sections enter the reading area', async () => {
+  let notify: IntersectionObserverCallback | undefined
+  vi.stubGlobal('IntersectionObserver', vi.fn(function (callback: IntersectionObserverCallback) {
+    notify = callback
+    return { observe: vi.fn(), unobserve: vi.fn(), disconnect: vi.fn(), takeRecords: () => [], root: null, rootMargin: '', thresholds: [] }
+  }))
+  window.history.replaceState({}, '', `/properties/${property.id}`)
+  mockResponse({ properties: [property] })
+  render(<App />)
+
+  const nav = await screen.findByRole('navigation', { name: 'Property sections' })
+  const intelligence = document.getElementById('intelligence')!
+  const bounds = intelligence.getBoundingClientRect()
+  act(() => notify?.([{
+    boundingClientRect: bounds,
+    intersectionRatio: 1,
+    intersectionRect: bounds,
+    isIntersecting: true,
+    rootBounds: null,
+    target: intelligence,
+    time: 0,
+  }], {} as IntersectionObserver))
+
+  expect(within(nav).getByRole('link', { name: 'Property insights' })).toHaveAttribute('aria-current', 'location')
+})
+
 it('offers a direct full-window tour from the property summary', async () => {
   window.history.replaceState({}, '', `/properties/${property.id}`)
   mockResponse({ properties: [{ ...property, media: [...property.media, { url: 'https://kuula.co/share/LTPpc', kind: 'panorama', altText: 'Tour', position: 4 }] }] })
   render(<App />)
   expect(await screen.findByRole('link', { name: 'Open full-window 360° tour' })).toHaveAttribute('href', `/properties/${property.id}/tour`)
+})
+
+it('lets a signed-in client save a home from its property page', async () => {
+  window.history.replaceState({}, '', `/properties/${property.id}`)
+  const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
+    const url = String(input)
+    if (url === '/api/v1/properties') return Promise.resolve(Response.json({ properties: [property] }))
+    if (url === '/api/v1/client/session') return Promise.resolve(Response.json({ client: { id: 'buyer', email: 'buyer@example.test' } }))
+    if (url === '/api/v1/client/saved-properties') return Promise.resolve(Response.json({ properties: [] }))
+    if (url.endsWith(`/saved-properties/${property.id}`) && init?.method === 'PUT') return Promise.resolve(new Response(null, { status: 204 }))
+    return Promise.resolve(new Response(null, { status: 404 }))
+  })
+
+  render(<App />)
+  const save = await screen.findByRole('button', { name: `Save ${property.title}` })
+  await userEvent.click(save)
+
+  expect(await screen.findByRole('status')).toHaveTextContent('Saved to your account')
+  expect(fetchMock).toHaveBeenCalledWith(`/api/v1/client/saved-properties/${property.id}`, expect.objectContaining({ method: 'PUT' }))
 })
 
 const property = {
@@ -103,6 +165,28 @@ afterEach(() => {
 })
 
 describe('property catalogue', () => {
+  it('restores a buyer comparison after returning to the website', async () => {
+    mockResponse({ properties: [property] })
+    const view = render(<App />)
+    await userEvent.click(await screen.findByRole('button', { name: `Add ${property.title} to comparison` }))
+    view.unmount()
+    render(<App />)
+    const tray = await screen.findByRole('region', { name: 'Property comparison' })
+    expect(within(tray).getByRole('button', { name: `Remove ${property.title} from comparison` })).toBeVisible()
+  })
+
+  it('keeps comparison usable when browser storage rejects updates', async () => {
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new DOMException('Storage blocked', 'SecurityError') })
+    mockResponse({ properties: [property] })
+    render(<App />)
+
+    await userEvent.click(await screen.findByRole('button', { name: `Add ${property.title} to comparison` }))
+
+    const tray = await screen.findByRole('region', { name: 'Property comparison' })
+    expect(within(tray).getByText('1 home selected')).toBeVisible()
+    expect(within(tray).getByRole('button', { name: `Remove ${property.title} from comparison` })).toBeVisible()
+  })
+
   it('filters homes from the search workspace and keeps map results in sync', async () => {
     mockResponse({ properties: [property, corkProperty] })
     const user = userEvent.setup()
@@ -283,7 +367,6 @@ describe('property catalogue', () => {
     expect(screen.getByRole('heading', { name: corkProperty.title })).toBeVisible()
     expect(screen.queryByRole('heading', { name: property.title })).not.toBeInTheDocument()
     expect(within(explorer).getByText('1 home for sale')).toBeVisible()
-    await user.click(screen.getByRole('button', { name: 'Choose an area in Cork' }))
     expect(screen.getByRole('button', { name: 'Explore Cork City North West, 1 property' })).toBeVisible()
 
     await user.click(explorer.querySelector('.map-back-button') as HTMLButtonElement)
@@ -397,10 +480,14 @@ describe('property catalogue', () => {
 
     await user.click(await screen.findByRole('button', { name: 'Choose location' }))
     await user.click(await screen.findByRole('button', { name: 'Explore Cork, 2 properties' }))
-    expect(screen.getByRole('button', { name: 'Explore Dublin, 1 property' })).toBeVisible()
-    expect(screen.getByRole('button', { name: 'Explore Cork, 2 properties' })).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.queryByRole('button', { name: 'Back to all Cork' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('searchbox', { name: 'Search counties' })).not.toBeInTheDocument()
+    expect(document.querySelector('[aria-controls="county-options"]')).toHaveAttribute('aria-expanded', 'false')
+    expect(document.querySelector('[aria-controls="county-options"]')).toHaveFocus()
+    expect(screen.getByRole('button', { name: 'Choose an area in Cork' })).toHaveAttribute('aria-expanded', 'true')
     await user.click(screen.getByRole('button', { name: 'Choose an area in Cork' }))
+    expect(screen.queryByRole('searchbox', { name: 'Search areas in Cork' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Choose an area in Cork' }))
+    expect(screen.queryByRole('button', { name: 'Back to all Cork' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Explore Cork City North West, 1 property' })).toBeVisible()
     expect(screen.getByRole('button', { name: 'Explore Bandon - Kinsale, 1 property' })).toBeVisible()
 
@@ -434,7 +521,6 @@ describe('property catalogue', () => {
 
     await user.click(await screen.findByRole('button', { name: 'Choose location' }))
     await user.click(screen.getByRole('button', { name: 'Explore Cork, 2 properties' }))
-    await user.click(screen.getByRole('button', { name: 'Choose an area in Cork' }))
     await user.click(screen.getByRole('button', { name: 'Explore Bandon - Kinsale, 1 property' }))
     expect(window.location.search).toBe('?county=Cork&area=Bandon+-+Kinsale')
 
@@ -467,7 +553,7 @@ describe('property catalogue', () => {
 
     render(<App />)
 
-    expect(await screen.findByText('Map view is unavailable right now.')).toBeVisible()
+    expect(await screen.findByText('Map is not available.')).toBeVisible()
     await user.click(screen.getByRole('button', { name: 'Choose location' }))
     expect(screen.getByRole('button', { name: 'Explore Dublin, 1 property' })).toBeVisible()
   })

@@ -1,7 +1,22 @@
 import { describe, expect, it } from 'vitest'
 import { boundariesForSelection, boundaryBounds, countyBoundaries, mapViewport } from './countyBoundaries'
+import countyJSON from './data/irelandCounties.json?raw'
 
 describe('county boundaries', () => {
+  it('uses geographic county data with six-decimal precision and preserved rings', () => {
+    const data = JSON.parse(countyJSON)
+    expect(data.encoding).toBe('polyline6')
+    expect(data.geometryPrecision).toBe(6)
+    expect(data.maxAllowableOffset).toBe(0.0001)
+    expect(new Set(countyBoundaries.map(county => county.name)).size).toBe(26)
+    for (const county of countyBoundaries) {
+      for (const ring of county.paths) {
+        expect(ring.length).toBeGreaterThanOrEqual(4)
+        expect(ring[0]).toEqual(ring.at(-1))
+      }
+      expect(county.bounds).toEqual(boundaryBounds(county))
+    }
+  })
   it('provides all Irish counties as Google Maps latitude and longitude paths', () => {
     expect(countyBoundaries).toHaveLength(26)
 
@@ -10,18 +25,18 @@ describe('county boundaries', () => {
     expect(cork?.paths.flat().every(({ lat, lng }) => lat >= 51 && lat <= 56 && lng >= -11 && lng <= -5)).toBe(true)
   })
 
-  it('presents Dublin as one county outline before local areas are selected', () => {
+  it('keeps Dublin mainland and islands in one selectable county', () => {
     const dublin = countyBoundaries.find((county) => county.name === 'Dublin')
 
-    expect(dublin?.paths).toHaveLength(1)
-    expect(dublin?.paths[0].length).toBeGreaterThan(100)
-    expect(pointInPath({ lat: 53.255, lng: -6.113 }, dublin?.paths[0] ?? [])).toBe(true)
+    expect(dublin?.paths.length).toBeGreaterThan(1)
+    expect(dublin?.paths.some(path => path.length > 100)).toBe(true)
+    expect(dublin?.paths.some(path => pointInPath({ lat: 53.255, lng: -6.113 }, path))).toBe(true)
   })
 
   it('presents Cork city and county as one county boundary before drill-down', () => {
     const cork = countyBoundaries.find((county) => county.name === 'Cork')
 
-    expect(cork?.paths.length).toBeLessThan(25)
+    expect(cork?.paths.length).toBeGreaterThan(25)
     expect(cork?.paths.some((path) => pointInPath({ lat: 51.8985, lng: -8.4756 }, path))).toBe(true)
   })
 
@@ -31,7 +46,7 @@ describe('county boundaries', () => {
 
     const cork = boundariesForSelection('Cork')[0]
     expect(boundaryBounds(cork)).toEqual(expect.objectContaining({
-      west: expect.closeTo(-10.235, 2),
+      west: expect.closeTo(-10.248416, 6),
       south: expect.closeTo(51.42, 2),
       east: expect.closeTo(-7.843, 2),
       north: expect.closeTo(52.388, 2),

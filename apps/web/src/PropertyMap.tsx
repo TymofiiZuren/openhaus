@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState, useTransition } from 'react'
 import type { ReactNode } from 'react'
 import type { Property } from './api/properties'
 import { areaForCoordinate, areasForCounty } from './administrativeAreas'
@@ -30,6 +30,7 @@ export function PropertyMap({ properties, selectedCounty, selectedArea, property
   const linkedPropertyID = initialSelectedPropertyID ?? new URLSearchParams(window.location.search).get('property') ?? undefined
   const [countyQuery, setCountyQuery] = useState('')
   const [countyDropdownOpen, setCountyDropdownOpen] = useState(true)
+  const countyControl = useRef<HTMLDivElement>(null)
   const [areaQuery, setAreaQuery] = useState('')
   const [showAllAreas, setShowAllAreas] = useState(false)
   const [propertySelection, setPropertySelection] = useState<{ touched: boolean; id?: string }>({ touched: false })
@@ -60,9 +61,13 @@ export function PropertyMap({ properties, selectedCounty, selectedArea, property
   const selectedProperty = visibleProperties.find((property) => property.id === selectedPropertyID)
 
   function chooseCounty(county: string | null) {
+    if (county !== null && countyControl.current?.contains(document.activeElement)) {
+      countyControl.current.querySelector<HTMLButtonElement>('[aria-controls="county-options"]')?.focus({ preventScroll: true })
+    }
     setSelectedPropertyID(undefined)
     setAreaQuery('')
-    setShowAllAreas(false)
+    setCountyDropdownOpen(county === null)
+    setShowAllAreas(county !== null)
     onCountyChange(county)
   }
 
@@ -98,7 +103,7 @@ export function PropertyMap({ properties, selectedCounty, selectedArea, property
       </header>
 
       <div className="property-search-bar" role="search" aria-label="Search and filter homes">
-        <label className="property-search-input"><span className="visually-hidden">Search homes</span><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg><input type="search" value={propertyQuery} placeholder="Search by address, town or property" onChange={(event) => onPropertyQueryChange(event.target.value)} /></label>
+        <PropertySearchInput value={propertyQuery} onChange={onPropertyQueryChange} />
         <label><span>Price</span><select aria-label="Maximum price" value={maximumPrice} onChange={(event) => onMaximumPriceChange(Number(event.target.value))}><option value="0">Any price</option><option value="650000">Up to €650k</option><option value="800000">Up to €800k</option><option value="1000000">Up to €1m</option></select></label>
         <label><span>Beds</span><select aria-label="Minimum bedrooms" value={minimumBedrooms} onChange={(event) => onMinimumBedroomsChange(Number(event.target.value))}><option value="0">Any beds</option><option value="2">2+ beds</option><option value="3">3+ beds</option><option value="4">4+ beds</option></select></label>
         <label><span>Type</span><select aria-label="Property type" value={propertyType} onChange={(event) => onPropertyTypeChange(event.target.value)}><option value="all">All types</option><option value="detached">Detached</option><option value="terraced">Terraced</option></select></label>
@@ -110,7 +115,7 @@ export function PropertyMap({ properties, selectedCounty, selectedArea, property
         <div className={`location-toolbar${locationPanelOpen ? ' is-open' : ''}`} aria-hidden={!locationPanelOpen}>
           <div className="location-panel-heading"><div><span>{selectedCounty ? 'Refine location' : 'Explore Ireland'}</span><strong>{activeArea ?? selectedCounty ?? 'Counties'}</strong></div><button type="button" aria-label="Close location search" onClick={() => setLocationPanelOpen(false)}>×</button></div>
           <div className="location-toolbar-primary">
-            <div className="location-filter-group">
+            <div className="location-filter-group" ref={countyControl}>
               <p>Homes by county</p>
               <LocationDropdown id="county-options" open={countyDropdownOpen} onOpenChange={setCountyDropdownOpen} value={selectedCounty ?? 'Choose a county'} searchLabel="Search counties" searchPlaceholder="Search counties" query={countyQuery} onQueryChange={setCountyQuery} optionsLabel="Counties with homes for sale">
                 {!normalizedCountyQuery && <button type="button" aria-pressed={!selectedCounty} aria-label="All Ireland" onClick={() => chooseCounty(null)}>All Ireland <span>{properties.length}</span></button>}
@@ -163,6 +168,21 @@ export function PropertyMap({ properties, selectedCounty, selectedArea, property
       </div>
     </section>
   )
+}
+
+function PropertySearchInput({ value, onChange }: { value: string; onChange: (query: string) => void }) {
+  const [draft, setDraft] = useState(value)
+  const [isPending, startTransition] = useTransition()
+
+  return <label className="property-search-input" aria-busy={isPending}>
+    <span className="visually-hidden">Search homes</span>
+    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg>
+    <input type="search" value={draft} placeholder="Search by address, town or property" onChange={(event) => {
+      const query = event.target.value
+      setDraft(query)
+      startTransition(() => onChange(query))
+    }} />
+  </label>
 }
 
 function LocationDropdown({ id, open, onOpenChange, value, searchLabel, searchPlaceholder, query, onQueryChange, optionsLabel, children }: { id: string; open: boolean; onOpenChange: (open: boolean) => void; value: string; searchLabel: string; searchPlaceholder: string; query: string; onQueryChange: (query: string) => void; optionsLabel: string; children: ReactNode }) {
