@@ -201,6 +201,27 @@ describe('property catalogue', () => {
     expect(screen.getByText('1 result')).toBeVisible()
   })
 
+  it('uses the OpenHaus guide to understand and apply a natural-language property brief', async () => {
+    mockResponse({ properties: [property, corkProperty] })
+    const user = userEvent.setup()
+
+    render(<App />)
+
+    const launcher = await screen.findByRole('button', { name: 'Ask OpenHaus' })
+    await user.click(launcher)
+    const guide = screen.getByRole('dialog', { name: 'OpenHaus guide' })
+    await user.type(within(guide).getByLabelText('What are you looking for?'), '3 bedroom homes under €800k in Cork')
+    await user.click(within(guide).getByRole('button', { name: 'Find matching homes' }))
+
+    expect(within(guide).getByText('Garden-view contemporary residence')).toBeVisible()
+    await user.click(within(guide).getByRole('button', { name: 'Apply to catalogue' }))
+
+    expect(screen.getByRole('heading', { name: corkProperty.title })).toBeVisible()
+    expect(screen.queryByRole('heading', { name: property.title })).not.toBeInTheDocument()
+    expect(window.location.search).toContain('county=Cork')
+    await waitFor(() => expect(launcher).toHaveFocus())
+  })
+
   it('sorts the catalogue by price', async () => {
     mockResponse({ properties: [property, corkProperty] })
     const user = userEvent.setup()

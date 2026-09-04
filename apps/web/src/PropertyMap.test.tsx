@@ -37,6 +37,13 @@ const sharedProps = {
 }
 
 describe('property map listing visibility', () => {
+  it('offers every property type supported by the listing editor', () => {
+    render(<PropertyMap {...sharedProps} properties={[dublinProperty]} selectedCounty={null} />)
+
+    expect(screen.getByRole('option', { name: 'Apartment' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'Semi-detached' })).toBeInTheDocument()
+  })
+
   it('shows all visible listing markers and the listing rail in the Ireland overview', () => {
     render(<PropertyMap {...sharedProps} properties={[dublinProperty, corkProperty]} selectedCounty={null} />)
 

@@ -120,6 +120,8 @@ The development account foundation keeps buyer identity and sessions separate fr
 - [x] Local viewing-request overlay prototype with sample availability and no personal-data persistence.
 - Connect viewing requests to authenticated buyers and live staff availability.
 - Notification preferences and alert history.
+- [x] Privacy-first catalogue concierge that translates natural-language buyer briefs into existing filters and grounded listing matches without sending prompts to a third party.
+- Provider-backed assistant only after a documented data-processing, retention, disclosure and evaluation review; the local catalogue remains the deterministic fallback.
 
 ### Phase C — spatial media
 

@@ -61,6 +61,7 @@ Light palette:
 - Theme changes use one synchronized crossfade and respect `prefers-reduced-motion`.
 - Every pointer target is at least 44px; icon visuals may be smaller inside a larger transparent hit area.
 - Hover may enhance a control but never be the only way to operate it.
+- Buyer assistance opens as the shared edge-panel overlay, returns only catalogue-backed homes and always exposes an explicit “apply to catalogue” action.
 
 ## Accessibility and performance
 

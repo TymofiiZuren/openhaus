@@ -6,6 +6,7 @@ import { ClientSignInPrompt } from './ClientSignInPrompt'
 import { fetchClientSavedProperties, removeClientSavedProperty, saveClientProperty } from './api/clientSavedProperties'
 import { fetchProperties, type Property } from './api/properties'
 import { createPropertySearchIndex } from './propertySearch'
+import { createConciergeReply, type ConciergeCriteria, type ConciergeReply } from './propertyConcierge'
 const PropertyMap = lazy(() => import('./PropertyMap').then((module) => ({ default: module.PropertyMap })))
 const SpatialMediaViewer = lazy(() => import('./SpatialMediaViewer').then((module) => ({ default: module.SpatialMediaViewer })))
 type AreaTools = typeof import('./administrativeAreas')
@@ -27,7 +28,7 @@ function readShortlist(): string[] {
   } catch { return [] }
 }
 
-function HomepageHero({ query, propertyCount, onQueryChange }: { query: string; propertyCount?: number; onQueryChange: (query: string) => void }) {
+function HomepageHero({ query, propertyCount, onQueryChange, onAskOpenHaus }: { query: string; propertyCount?: number; onQueryChange: (query: string) => void; onAskOpenHaus: () => void }) {
   return <section className="home-hero" aria-label="Find your next home">
     <div className="home-hero-media">
       <img className="home-hero-image" src="/media/properties/leeson-park/exterior-front.webp" alt="Contemporary Irish home exterior" fetchPriority="high" />
@@ -44,7 +45,7 @@ function HomepageHero({ query, propertyCount, onQueryChange }: { query: string; 
           <input id="home-hero-search" type="search" value={query} placeholder="Address, county or local area" onChange={(event) => onQueryChange(event.target.value)} />
           <button type="submit">Search homes</button>
         </form>
-        <nav className="home-hero-actions" aria-label="Opening shortcuts"><a href="#explore">Explore the map</a><a href="#homes">View recent homes</a></nav>
+        <nav className="home-hero-actions" aria-label="Opening shortcuts"><button type="button" onClick={onAskOpenHaus}>Ask OpenHaus</button><a href="#explore">Explore the map</a><a href="#homes">View recent homes</a></nav>
       </div>
       <dl className="home-hero-facts">
         <div><dt>Coverage</dt><dd>All Ireland</dd></div>
@@ -69,6 +70,7 @@ function App() {
   const [saveSearchOpen, setSaveSearchOpen] = useState(false)
   const [shortlistedPropertyIDs, setShortlistedPropertyIDs] = useState<string[]>(readShortlist)
   const [compareOpen, setCompareOpen] = useState(false)
+  const [conciergeOpen, setConciergeOpen] = useState(false)
   const [areaTools, setAreaTools] = useState<AreaTools>()
   const deferredPropertyQuery = useDeferredValue(propertyQuery)
 
@@ -177,6 +179,26 @@ function App() {
   const shortlistedProperties = state.properties.filter((property) => shortlistedPropertyIDs.includes(property.id))
   const toggleShortlist = (propertyID: string) => setShortlistedPropertyIDs((current) => current.includes(propertyID) ? current.filter((id) => id !== propertyID) : current.length < 4 ? [...current, propertyID] : current)
 
+  const applyConciergeCriteria = useCallback((criteria: ConciergeCriteria) => {
+    const county = criteria.location && state.properties.find((property) => property.county.localeCompare(criteria.location!, undefined, { sensitivity: 'base' }) === 0)?.county
+    if (county) {
+      selectCounty(county)
+      setPropertyQuery('')
+    } else {
+      if (criteria.location) {
+        const matchingProperty = state.properties.find((property) => property.city.localeCompare(criteria.location!, undefined, { sensitivity: 'base' }) === 0)
+        selectCounty(matchingProperty?.county ?? null)
+      }
+      setPropertyQuery(criteria.location ?? '')
+    }
+    setMinimumBedrooms(criteria.minimumBedrooms)
+    setMaximumPrice(criteria.maximumPrice)
+    setPropertyType(criteria.propertyType)
+    setSpatialToursOnly(criteria.spatialToursOnly)
+    setConciergeOpen(false)
+    requestAnimationFrame(() => document.getElementById('homes')?.scrollIntoView?.({ block: 'start' }))
+  }, [selectCounty, state.properties])
+
   if (requestedTourPropertyID) {
     return <PropertyTourPage property={state.properties.find((property) => property.id === requestedTourPropertyID)} status={state.status} onRetry={retry} />
   }
@@ -190,7 +212,7 @@ function App() {
       <a className="skip-link" href="#explore">Skip to property search</a>
       <SiteHeader />
       <main>
-      <HomepageHero query={propertyQuery} propertyCount={state.status === 'success' ? state.properties.length : undefined} onQueryChange={setPropertyQuery} />
+      <HomepageHero query={propertyQuery} propertyCount={state.status === 'success' ? state.properties.length : undefined} onQueryChange={setPropertyQuery} onAskOpenHaus={() => setConciergeOpen(true)} />
         <div id="explore" className="map-first">
           {state.status === 'success' && state.properties.length > 0 && (
             <Suspense fallback={<div className="map-module-loading" role="status">Preparing the property map…</div>}>
@@ -278,6 +300,7 @@ function App() {
       />}
       {shortlistedProperties.length > 0 && <ComparisonTray properties={shortlistedProperties} onCompare={() => setCompareOpen(true)} onRemove={(propertyID) => toggleShortlist(propertyID)} onClear={() => setShortlistedPropertyIDs([])} />}
       {compareOpen && <ComparisonDialog properties={shortlistedProperties} onRemove={(propertyID) => toggleShortlist(propertyID)} onClose={() => setCompareOpen(false)} />}
+      {conciergeOpen && <PropertyConcierge properties={state.properties} onApply={applyConciergeCriteria} onClose={() => setConciergeOpen(false)} />}
       <footer className="site-footer">
         <div><a className="footer-monogram" href="/" aria-label="OpenHaus home"><span>OpenHaus</span><small>/ 01</small></a><span className="footer-signature" aria-hidden="true">Yours, always</span><p>Find home with the full picture.</p></div>
         <nav aria-label="Footer navigation"><a href="#explore">Explore Ireland</a><a href="#homes">Homes for sale</a><a href="/about">About OpenHaus</a><a href="/contact">Contact</a><a href="/help">Help</a><a href="/privacy">Privacy information</a><a href="/manager/login">Manager workspace</a></nav>
@@ -313,9 +336,14 @@ function SaveSearchDialog({ matchingHomes, location, minimumBedrooms, propertyTy
 
 function Overlay({ labelID, onClose, children }: { labelID: string; onClose: () => void; children: ReactNode }) {
   const dialogRef = useRef<HTMLDivElement>(null)
+  const onCloseRef = useRef(onClose)
+  useEffect(() => { onCloseRef.current = onClose }, [onClose])
   useEffect(() => {
+    const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') { onClose(); return }
+      if (event.key === 'Escape') { onCloseRef.current(); return }
       if (event.key !== 'Tab' || !dialogRef.current) return
       const controls = [...dialogRef.current.querySelectorAll<HTMLElement>('button:not([disabled]),a[href],input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])')]
       if (controls.length === 0) return
@@ -325,9 +353,52 @@ function Overlay({ labelID, onClose, children }: { labelID: string; onClose: () 
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus() }
     }
     document.addEventListener('keydown', handleKeyDown)
-    return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [onClose])
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown)
+      document.body.style.overflow = previousOverflow
+      previouslyFocused?.focus({ preventScroll: true })
+    }
+  }, [])
   return <div className="overlay-layer" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}><div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby={labelID}>{children}</div></div>
+}
+
+function PropertyConcierge({ properties, onApply, onClose }: { properties: Property[]; onApply: (criteria: ConciergeCriteria) => void; onClose: () => void }) {
+  const inputRef = useRef<HTMLInputElement>(null)
+  const [message, setMessage] = useState('')
+  const [reply, setReply] = useState<ConciergeReply | null>(null)
+  const suggestions = ['Homes in Cork under €800k', '4 bedroom homes', 'Detached homes with a 360 tour']
+
+  useEffect(() => { inputRef.current?.focus() }, [])
+
+  const ask = (brief: string) => {
+    setMessage(brief)
+    setReply(createConciergeReply(brief, properties))
+  }
+
+  return <Overlay labelID="concierge-title" onClose={onClose}>
+    <section className="property-concierge">
+      <header>
+        <div><p className="section-index">Property concierge · catalogue 01</p><h2 id="concierge-title">OpenHaus guide</h2></div>
+        <button type="button" className="overlay-close" aria-label="Close OpenHaus guide" onClick={onClose}>×</button>
+      </header>
+      <div className="concierge-introduction">
+        <p>Describe the home you want in one sentence. I’ll translate it into precise catalogue filters and show only real OpenHaus listings.</p>
+        <div className="concierge-suggestions" aria-label="Suggested searches">
+          {suggestions.map((suggestion) => <button type="button" key={suggestion} onClick={() => ask(suggestion)}>{suggestion}</button>)}
+        </div>
+      </div>
+      <form onSubmit={(event) => { event.preventDefault(); ask(message) }}>
+        <label htmlFor="concierge-message">What are you looking for?</label>
+        <div><input ref={inputRef} id="concierge-message" value={message} onChange={(event) => setMessage(event.target.value)} placeholder="For example: 3 bedrooms under €800k in Cork" autoComplete="off" /><button type="submit" disabled={!message.trim()}>Find matching homes</button></div>
+      </form>
+      {reply && <div className="concierge-reply" aria-live="polite">
+        <p>{reply.summary}</p>
+        {reply.matches.length > 0 && <ul>{reply.matches.slice(0, 3).map((property) => <li key={property.id}><a href={`/properties/${property.id}`}><span>{property.city} · {property.bedrooms} bedrooms</span><strong>{property.title}</strong><small>{euros.format(property.priceCents / 100)}</small></a></li>)}</ul>}
+        {reply.canApply && <button type="button" className="concierge-apply" onClick={() => onApply(reply.criteria)}>Apply to catalogue <span aria-hidden="true">→</span></button>}
+      </div>}
+      <footer><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 3.5 7.5v5c0 4.8 3.1 7.5 8.5 8.5 5.4-1 8.5-3.7 8.5-8.5v-5L12 3Z"/><path d="m8.5 12 2.2 2.2 4.8-5"/></svg><p><strong>Private by default.</strong> Searches stay in this browser and use the current catalogue only. No personal or financial advice.</p></footer>
+    </section>
+  </Overlay>
 }
 
 function ComparisonTray({ properties, onCompare, onRemove, onClear }: { properties: Property[]; onCompare: () => void; onRemove: (propertyID: string) => void; onClear: () => void }) {
