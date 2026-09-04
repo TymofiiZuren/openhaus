@@ -3,6 +3,7 @@ package httpapi_test
 import (
 	"bytes"
 	"context"
+	"errors"
 	"github.com/TymofiiZuren/openhaus/services/api/internal/httpapi"
 	"github.com/TymofiiZuren/openhaus/services/api/internal/property"
 	"image"
@@ -10,13 +11,20 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 )
 
-type imagesStub struct{ saved property.Media }
+type imagesStub struct {
+	saved  property.Media
+	addErr error
+}
 
 func (s *imagesStub) AddImage(_ context.Context, _ string, kind, url, description string) (property.Media, error) {
+	if s.addErr != nil {
+		return property.Media{}, s.addErr
+	}
 	s.saved = property.Media{URL: url, Kind: kind, AltText: description}
 	return s.saved, nil
 }
@@ -85,5 +93,35 @@ func TestImageUploadAndDraftPrivacy(t *testing.T) {
 	router.ServeHTTP(response, request)
 	if response.Code != 200 {
 		t.Fatalf("manager preview: %d", response.Code)
+	}
+}
+
+func TestImageUploadRemovesFileWhenAttachmentFails(t *testing.T) {
+	root := t.TempDir()
+	store := &imagesStub{addErr: errors.New("database unavailable")}
+	router := httpapi.NewRouter(httpapi.Dependencies{Images: store, ImageRoot: root, ManagerAuth: managerAuthStub{validToken: "valid"}})
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	writer.WriteField("kind", "image")
+	writer.WriteField("description", "Front elevation")
+	part, _ := writer.CreateFormFile("image", "front.png")
+	png.Encode(part, image.NewRGBA(image.Rect(0, 0, 2, 2)))
+	writer.Close()
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/manager/properties/home/images", bytes.NewReader(body.Bytes()))
+	request.Header.Set("Content-Type", writer.FormDataContentType())
+	request.AddCookie(&http.Cookie{Name: "openhaus_manager_session", Value: "valid"})
+	response := httptest.NewRecorder()
+
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("status=%d want=%d", response.Code, http.StatusBadRequest)
+	}
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		t.Fatalf("read upload root: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("failed attachment left %d file(s) behind", len(entries))
 	}
 }

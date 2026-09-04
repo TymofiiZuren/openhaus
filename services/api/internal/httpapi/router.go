@@ -44,6 +44,12 @@ type SpatialTourWriter interface {
 	RemovePanorama(context.Context, string) error
 }
 
+type ClientSavedPropertyStore interface {
+	ListClientSaved(context.Context, string) ([]property.Property, error)
+	SaveClientProperty(context.Context, string, string) error
+	RemoveClientSavedProperty(context.Context, string, string) error
+}
+
 type ManagerAuthenticator interface {
 	Login(context.Context, string, string) (managerauth.Session, error)
 	Authenticate(context.Context, string) (managerauth.User, error)
@@ -60,6 +66,9 @@ type MediaJobGetter interface {
 
 // Dependencies contains the external services used by the HTTP API.
 type Dependencies struct {
+	ClientAuth            ClientAuthenticator
+	ClientSavedProperties ClientSavedPropertyStore
+	ClientOrigin          string
 	Images                ImageStore
 	ImageRoot             string
 	Readiness             ReadinessChecker
@@ -76,6 +85,9 @@ type Dependencies struct {
 // NewRouter builds the API's HTTP routing table.
 func NewRouter(dependencies Dependencies) http.Handler {
 	router := http.NewServeMux()
+	if dependencies.ClientAuth != nil {
+		clientRoutes(router, dependencies.ClientAuth, dependencies.ClientSavedProperties, dependencies.ClientOrigin, dependencies.SecureCookies)
+	}
 	if dependencies.Images != nil {
 		router.Handle("PATCH /api/v1/manager/properties/{propertyID}/image-description", requireManager(dependencies.ManagerAuth, updateImageDescription(dependencies.Images)))
 		router.Handle("POST /api/v1/manager/properties/{propertyID}/images", requireManager(dependencies.ManagerAuth, uploadImage(dependencies.Images, dependencies.ImageRoot)))

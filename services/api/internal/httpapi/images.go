@@ -109,18 +109,26 @@ func uploadImage(store ImageStore, root string) http.HandlerFunc {
 		}
 		name := rand.Text() + ".png"
 		url := "/api/v1/property-images/" + name
+		path := filepath.Join(root, name)
 		if err = os.MkdirAll(root, 0700); err == nil {
-			err = os.WriteFile(filepath.Join(root, name), clean, 0600)
+			err = os.WriteFile(path, clean, 0600)
 		}
 		if err != nil {
 			writeError(w, 500, "storage_failed", "Could not save image")
 			return
 		}
+		attached := false
+		defer func() {
+			if !attached {
+				_ = os.Remove(path)
+			}
+		}()
 		media, err := store.AddImage(r.Context(), r.PathValue("propertyID"), kind, url, description)
 		if err != nil {
 			writeError(w, 400, "save_failed", "Could not attach image to this property")
 			return
 		}
+		attached = true
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
 		json.NewEncoder(w).Encode(media)

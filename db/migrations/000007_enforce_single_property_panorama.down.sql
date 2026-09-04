@@ -1,0 +1,1 @@
+DROP INDEX IF EXISTS property_media_one_panorama_per_property_idx;
