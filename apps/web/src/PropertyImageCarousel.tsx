@@ -29,8 +29,8 @@ export function PropertyImageCarousel({ property, className, onImageClick }: Pro
           ? <button className="property-carousel-photo property-carousel-placeholder" type="button" aria-label={`Show ${property.title} on map`} onClick={onImageClick}><img src="/media/placeholders/architectural-home.svg" alt={`Architectural study for ${property.title}; photography coming soon`} loading="lazy" /><span>Concept study</span></button>
           : <div className="property-carousel-photo property-carousel-placeholder"><img src="/media/placeholders/architectural-home.svg" alt={`Architectural study for ${property.title}; photography coming soon`} loading="lazy" /><span>Concept study</span></div>}
       {images.length > 1 && <>
-        <button className="property-carousel-arrow is-previous" type="button" aria-label={`Previous image of ${property.title}`} onClick={(event) => changeImage(event, -1)}><span aria-hidden="true">‹</span></button>
-        <button className="property-carousel-arrow is-next" type="button" aria-label={`Next image of ${property.title}`} onClick={(event) => changeImage(event, 1)}><span aria-hidden="true">›</span></button>
+        <button className="property-carousel-arrow is-previous" type="button" aria-label={`Previous image of ${property.title}`} onClick={(event) => changeImage(event, -1)}><svg viewBox="0 0 28 32" aria-hidden="true"><path d="M20 3 8 16l12 13" /></svg></button>
+        <button className="property-carousel-arrow is-next" type="button" aria-label={`Next image of ${property.title}`} onClick={(event) => changeImage(event, 1)}><svg viewBox="0 0 28 32" aria-hidden="true"><path d="m8 3 12 13L8 29" /></svg></button>
         <span className="property-carousel-count" aria-live="polite">{visibleIndex + 1} / {images.length}</span>
       </>}
     </div>

@@ -27,6 +27,34 @@ function readShortlist(): string[] {
   } catch { return [] }
 }
 
+function HomepageHero({ query, propertyCount, onQueryChange }: { query: string; propertyCount?: number; onQueryChange: (query: string) => void }) {
+  return <section className="home-hero" aria-label="Find your next home">
+    <div className="home-hero-media">
+      <img className="home-hero-image" src="/media/properties/leeson-park/exterior-front.webp" alt="Contemporary Irish home exterior" fetchPriority="high" />
+      <p><span>Featured residence</span><strong>Dublin · Ireland</strong></p>
+    </div>
+    <div className="home-hero-layout">
+      <div className="home-hero-copy">
+        <p className="eyebrow">Irish homes · viewed properly</p>
+        <h1 id="home-hero-title">The complete picture, before the viewing.</h1>
+        <p>Search location, photography, measured plans and immersive tours as one connected property story.</p>
+        <form className="home-hero-search" role="search" onSubmit={(event) => { event.preventDefault(); document.getElementById('explore')?.scrollIntoView() }}>
+          <label className="visually-hidden" htmlFor="home-hero-search">Search homes from the opening feature</label>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg>
+          <input id="home-hero-search" type="search" value={query} placeholder="Address, county or local area" onChange={(event) => onQueryChange(event.target.value)} />
+          <button type="submit">Search homes</button>
+        </form>
+        <nav className="home-hero-actions" aria-label="Opening shortcuts"><a href="#explore">Explore the map</a><a href="#homes">View recent homes</a></nav>
+      </div>
+      <dl className="home-hero-facts">
+        <div><dt>Coverage</dt><dd>All Ireland</dd></div>
+        <div><dt>Live catalogue</dt><dd>{propertyCount === undefined ? 'Loading' : `${propertyCount} ${propertyCount === 1 ? 'home' : 'homes'}`}</dd></div>
+        <div><dt>Every listing</dt><dd>Media · plans · place</dd></div>
+      </dl>
+    </div>
+  </section>
+}
+
 function App() {
   const [state, setState] = useState<CatalogueState>({ status: 'loading', properties: [] })
   const [requestKey, setRequestKey] = useState(0)
@@ -162,6 +190,7 @@ function App() {
       <a className="skip-link" href="#explore">Skip to property search</a>
       <SiteHeader />
       <main>
+      <HomepageHero query={propertyQuery} propertyCount={state.status === 'success' ? state.properties.length : undefined} onQueryChange={setPropertyQuery} />
         <div id="explore" className="map-first">
           {state.status === 'success' && state.properties.length > 0 && (
             <Suspense fallback={<div className="map-module-loading" role="status">Preparing the property map…</div>}>

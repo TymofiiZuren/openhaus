@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title">
+  <title id="title">OpenHaus</title>
+  <rect width="64" height="64" rx="15" fill="#1f2925"/>
+  <path d="M9 30.5 32 11l23 19.5-4 4-4-3.4V53H17V31.1l-4 3.4-4-4Z" fill="#f7f2e9"/>
+  <rect width="9" height="9" x="22" y="35" rx="1" fill="#1f2925"/>
+  <path d="M35 32h11v21H35z" fill="#c77559"/>
+  <circle cx="42.5" cy="42.5" r="1.4" fill="#f7f2e9"/>
+</svg>

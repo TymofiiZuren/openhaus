@@ -4,7 +4,7 @@
 .client-main p { color: var(--muted); line-height: 1.6; margin: 0; }
 .client-main a, .client-footer a { color: var(--ink); text-decoration-thickness: 1px; text-underline-offset: 6px; transition: text-decoration-color 180ms ease, color 180ms ease; }
 .client-main a:hover, .client-footer a:hover { color: var(--accent); }
-.client-panel { display: grid; gap: 24px; background: var(--surface); border-radius: var(--radius-panel); padding: clamp(28px,4vw,44px); min-width: 0; animation: client-appear 240ms ease; }
+.client-panel { display: grid; gap: 24px; padding: clamp(28px,4vw,44px); min-width: 0; border: 1px solid var(--line); border-radius: var(--radius-panel); background: var(--raised-surface); box-shadow: var(--panel-shadow); }
 .client-panel h2 { margin: 0; font: 400 1.8rem/1.25 var(--display-font); overflow-wrap: anywhere; }
 .client-panel form { display: grid; gap: 12px; }
 .client-panel > button, .client-panel form > button { min-height: 52px; padding: 12px 24px; border: 1px solid var(--line-strong); border-radius: var(--radius-control); background: var(--inverse-surface); color: var(--on-inverse); font: inherit; cursor: pointer; transition: opacity 180ms ease; }
@@ -17,7 +17,7 @@
 .client-saved > div { display: grid; gap: 6px; padding-bottom: 18px; }
 .client-saved h3 { margin: 0; font: 400 1.55rem/1.2 var(--display-font); }
 .client-saved article { display: grid; grid-template-columns: 104px minmax(0,1fr) auto; gap: 18px; align-items: center; padding: 18px 0; border-top: 1px solid var(--line); }
-.client-saved article > img { width: 104px; aspect-ratio: 4 / 3; display: block; object-fit: cover; border-radius: 8px; background: var(--soft); }
+.client-saved article > img { width: 104px; aspect-ratio: 4 / 3; display: block; object-fit: cover; border-radius: var(--radius-control); background: var(--soft); }
 .client-saved article > div { display: grid; align-content: start; gap: 5px; }
 .client-saved article span, .client-saved article small { color: var(--muted); }
 .client-saved article > div:last-child { justify-items: end; }
@@ -25,8 +25,7 @@
 .client-panel .client-notice { padding-bottom: 24px; border-bottom: 1px solid var(--line); font-size: .95rem; }
 .client-links { display: grid; gap: 16px; }
 .client-links a { min-height: 44px; display: flex; align-items: center; }
-.client-feedback { padding: 16px; background: var(--soft); border-radius: 8px; }
+.client-feedback { padding: 16px; border-left: 2px solid var(--accent); border-radius: 0; background: var(--soft); }
 .client-footer { display: flex; flex-wrap: wrap; gap: 24px; padding: 32px; border-top: 1px solid var(--line); color: var(--muted); }
-@keyframes client-appear { from { opacity: 0; } to { opacity: 1; } }
 @media (max-width: 760px) { .client-main { grid-template-columns: 1fr; gap: 32px; } .client-panel { padding: 24px; } .client-saved article { grid-template-columns: 84px minmax(0,1fr); } .client-saved article > img { width: 84px; } .client-saved article > div:last-child { grid-column: 2; grid-template-columns: repeat(2,max-content); justify-content: start; justify-items: start; gap: 18px; } }
-@media (prefers-reduced-motion: reduce) { .client-panel { animation: none; } .client-main a, .client-footer a, .client-panel button { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .client-main a, .client-footer a, .client-panel button { transition: none; } }

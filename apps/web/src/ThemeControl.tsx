@@ -7,9 +7,9 @@ const preferenceKey = 'openhaus-appearance'
 function readAppearance(): Appearance {
   try {
     const saved = localStorage.getItem(preferenceKey)
-    if (saved === 'light' || saved === 'dark') return saved
+    if (saved === 'light' || saved === 'dark' || saved === 'system') return saved
   } catch { /* Storage is optional; the control still works in this tab. */ }
-  return 'system'
+  return 'dark'
 }
 
 export function ThemeControl() {

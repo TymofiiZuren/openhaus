@@ -415,8 +415,25 @@ describe('property catalogue', () => {
 
     render(<App />)
 
+    const hero = screen.getByRole('region', { name: 'Find your next home' })
+    expect(within(hero).getByRole('heading', { level: 1, name: 'The complete picture, before the viewing.' })).toBeVisible()
+    expect(within(hero).getByRole('searchbox', { name: 'Search homes from the opening feature' })).toBeVisible()
+    expect(within(hero).getByRole('img', { name: 'Contemporary Irish home exterior' })).toHaveAttribute('src', '/media/properties/leeson-park/exterior-front.webp')
+    expect(hero.querySelector('video')).not.toBeInTheDocument()
+
     const explorer = await screen.findByRole('region', { name: 'Explore homes by location' })
-    expect(within(explorer).getByRole('heading', { level: 1, name: 'Find a place that feels like home' })).toBeVisible()
+    expect(within(explorer).getByRole('heading', { level: 2, name: 'Explore homes across Ireland' })).toBeVisible()
+  })
+
+  it('shares the opening search query with the map search', async () => {
+    mockResponse({ properties: [property, corkProperty] })
+    const user = userEvent.setup()
+
+    render(<App />)
+
+    await user.type(screen.getByRole('searchbox', { name: 'Search homes from the opening feature' }), 'Cork')
+    const explorer = await screen.findByRole('region', { name: 'Explore homes by location' })
+    expect(within(explorer).getByRole('searchbox', { name: 'Search homes' })).toHaveValue('Cork')
   })
 
   it('opens a contextual saved-search dialog and confirms the alert', async () => {
@@ -506,7 +523,7 @@ describe('property catalogue', () => {
     expect(screen.queryByRole('heading', { name: corkProperty.title })).not.toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'Back to all Cork' }))
-    expect(screen.getByRole('heading', { level: 1, name: 'Homes in Cork' })).toBeVisible()
+    expect(within(screen.getByRole('region', { name: 'Explore homes by location' })).getByRole('heading', { level: 2, name: 'Homes in Cork' })).toBeVisible()
     expect(screen.getByRole('button', { name: 'Explore Bandon - Kinsale, 1 property' })).toHaveAttribute('aria-pressed', 'false')
     expect(screen.getByRole('heading', { name: corkProperty.title })).toBeVisible()
     expect(screen.getByRole('heading', { name: kinsaleProperty.title })).toBeVisible()
@@ -526,7 +543,7 @@ describe('property catalogue', () => {
 
     window.history.back()
     window.dispatchEvent(new PopStateEvent('popstate'))
-    await waitFor(() => expect(screen.getByRole('heading', { level: 1, name: 'Homes in Cork' })).toBeVisible())
+    await waitFor(() => expect(within(screen.getByRole('region', { name: 'Explore homes by location' })).getByRole('heading', { level: 2, name: 'Homes in Cork' })).toBeVisible())
     expect(window.location.search).toBe('?county=Cork')
   })
 

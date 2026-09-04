@@ -92,7 +92,7 @@ export function ManagerApp() {
   return (
     <div className="manager-shell">
       <header className="site-header manager-header">
-        <a className="wordmark" href="/" aria-label="OpenHaus home">OpenHaus</a>
+        <a className="wordmark" href="/" aria-label="OpenHaus home">OpenHaus<span aria-hidden="true">.</span></a>
         <span className="manager-workspace-label">Property workspace</span>
         <div className="header-actions"><ThemeControl />{isSignedIn && <button className="manager-text-button" type="button" onClick={signOut}>Sign out</button>}</div>
       </header>

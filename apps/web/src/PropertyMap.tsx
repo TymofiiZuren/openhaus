@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, useTransition } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { Property } from './api/properties'
 import { areaForCoordinate, areasForCounty } from './administrativeAreas'
@@ -96,7 +96,7 @@ export function PropertyMap({ properties, selectedCounty, selectedArea, property
       <header className="location-heading">
         <div className="location-heading-copy">
           <p className="eyebrow">Property for sale in Ireland</p>
-          <h1>{activeArea ? `Homes in ${activeArea}` : selectedCounty ? `Homes in ${selectedCounty}` : 'Find a place that feels like home'}</h1>
+          <h2>{activeArea ? `Homes in ${activeArea}` : selectedCounty ? `Homes in ${selectedCounty}` : 'Explore homes across Ireland'}</h2>
           <p className="location-introduction">Search by county or local area, then explore every available home on the map.</p>
           <p className="location-total" aria-live="polite">{homeCount(visibleProperties.length)} for sale</p>
         </div>
@@ -171,17 +171,10 @@ export function PropertyMap({ properties, selectedCounty, selectedArea, property
 }
 
 function PropertySearchInput({ value, onChange }: { value: string; onChange: (query: string) => void }) {
-  const [draft, setDraft] = useState(value)
-  const [isPending, startTransition] = useTransition()
-
-  return <label className="property-search-input" aria-busy={isPending}>
+  return <label className="property-search-input">
     <span className="visually-hidden">Search homes</span>
     <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg>
-    <input type="search" value={draft} placeholder="Search by address, town or property" onChange={(event) => {
-      const query = event.target.value
-      setDraft(query)
-      startTransition(() => onChange(query))
-    }} />
+    <input type="search" value={value} placeholder="Search by address, town or property" onChange={(event) => onChange(event.target.value)} />
   </label>
 }
 
