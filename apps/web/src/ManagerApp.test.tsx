@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ManagerApp } from './ManagerApp'
@@ -18,9 +18,172 @@ const managedProperty = {
   status: 'draft',
 }
 
-afterEach(() => vi.restoreAllMocks())
+afterEach(() => { vi.restoreAllMocks(); window.history.replaceState({}, '', '/') })
 
 describe('manager application', () => {
+  it('shows a quiet missing-photo status instead of a placeholder card', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({ properties: [managedProperty] }))
+    render(<ManagerApp />)
+    expect(await screen.findByText('No photos added')).toBeVisible()
+    expect(screen.queryByText('Property photography')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Upload image' })).toBeVisible()
+  })
+  it('sorts listings without discarding media input or changing the active filter', async () => {
+    const second = { ...managedProperty, id: 'second', title: 'Alder house', priceCents: 10000000, media: [{kind:'image',url:'/photo.jpg',altText:'Front',position:0}] }
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({ properties: [managedProperty, second] }))
+    const user = userEvent.setup()
+    render(<ManagerApp />)
+    const sort = await screen.findByLabelText('Sort listings')
+    await user.type(screen.getAllByLabelText('Image description')[0], 'Work in progress')
+    await user.selectOptions(screen.getByLabelText('Filter listings by stage'), 'media-capture')
+    await user.selectOptions(sort, 'price-low')
+    expect(screen.getAllByRole('article')[0]).toHaveTextContent(second.title)
+    await user.selectOptions(sort, 'price-high')
+    expect(screen.getAllByRole('article')[0]).toHaveTextContent(managedProperty.title)
+    expect(screen.getAllByLabelText('Image description')[0]).toHaveValue('Work in progress')
+    await user.selectOptions(sort, 'title')
+    expect(screen.getAllByRole('article')[0]).toHaveTextContent(second.title)
+    await user.selectOptions(sort, 'readiness')
+    expect(screen.getAllByRole('article')[0]).toHaveTextContent(managedProperty.title)
+    expect(screen.getByLabelText('Filter listings by stage')).toHaveValue('media-capture')
+  })
+  it('switches to a compact portfolio without discarding unfinished media input', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({ properties: [managedProperty] }))
+    const user = userEvent.setup()
+    render(<ManagerApp />)
+    await user.type(await screen.findByLabelText('Image description'), 'Garden at sunset')
+    await user.click(screen.getByRole('button', { name: 'Compact view' }))
+    expect(screen.getByRole('button', { name: 'Compact view' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.queryByRole('button', { name: 'Upload image' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: `Manage ${managedProperty.title}` }))
+    expect(screen.getByLabelText('Image description')).toHaveValue('Garden at sunset')
+    expect(screen.getByRole('button', { name: 'Upload image' })).toBeVisible()
+  })
+  it('offers authenticated publication previews for draft listings', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({ properties: [managedProperty] }))
+    render(<ManagerApp />)
+    expect(await screen.findByRole('link', { name: 'Preview listing' })).toHaveAttribute('href', `/manager/preview/${managedProperty.id}`)
+  })
+
+  it('switches preview widths without publishing the draft', async () => {
+    window.history.replaceState({}, '', `/manager/preview/${managedProperty.id}`)
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({ properties: [managedProperty] }))
+    const user = userEvent.setup()
+    render(<ManagerApp />)
+    const frame = await screen.findByTitle('Listing publication preview')
+    expect(frame).toHaveAttribute('src', `/manager/preview/${managedProperty.id}?frame=1`)
+    await user.click(screen.getByRole('button', { name: 'Mobile · 390px' }))
+    expect(frame).toHaveStyle({ width: '390px' })
+    expect(fetchMock.mock.calls.every(([, init]) => !init?.method || init.method === 'GET')).toBe(true)
+  })
+
+  it('renders saved draft media through the protected preview image route', async () => {
+    window.history.replaceState({}, '', `/manager/preview/${managedProperty.id}?frame=1`)
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({ properties: [{ ...managedProperty, media: [{ kind: 'image', url: '/api/v1/property-images/test.png', altText: 'Front of the house', position: 0 }] }] }))
+    render(<ManagerApp />)
+    expect(await screen.findByRole('heading', { name: managedProperty.title })).toBeVisible()
+    expect(screen.getByRole('main', { name: 'Property details' })).toBeVisible()
+    expect(screen.getAllByAltText('Front of the house')[0]).toHaveAttribute('src', '/api/v1/manager/property-images/test.png')
+  })
+
+  it('requires a manager session before showing a publication preview', async () => {
+    window.history.replaceState({}, '', `/manager/preview/${managedProperty.id}?frame=1`)
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 401 }))
+    render(<ManagerApp />)
+    expect(await screen.findByRole('heading', { name: 'Manager sign in' })).toBeVisible()
+    expect(screen.queryByRole('main', { name: 'Property details' })).not.toBeInTheDocument()
+    expect(screen.queryByTitle('Listing publication preview')).not.toBeInTheDocument()
+  })
+  it('searches across listing facts and combines search with the stage filter', async () => {
+    const other = { ...managedProperty, id: 'second', title: 'Harbour house', addressLine1: 'Pier Road', city: 'Kinsale', county: 'Cork', status: 'published' }
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({ properties: [managedProperty, other] }))
+    const user = userEvent.setup()
+    render(<ManagerApp />)
+    const search = await screen.findByRole('searchbox', { name: 'Search your listings' })
+    for (const query of ['  HARBOUR ', 'pier road', 'kinsale', 'cork']) {
+      await user.clear(search)
+      await user.type(search, query)
+      expect(screen.getByRole('heading', { name: other.title })).toBeVisible()
+      expect(screen.queryByRole('heading', { name: managedProperty.title })).not.toBeInTheDocument()
+      expect(screen.getByText('1 of 2 listings')).toBeVisible()
+    }
+    await user.selectOptions(screen.getByLabelText('Filter listings by stage'), 'media-capture')
+    expect(screen.getByText('No listings match your search and stage.')).toBeVisible()
+    await user.click(screen.getByRole('button', { name: 'Reset filters' }))
+    expect(search).toHaveValue('')
+    expect(screen.getByRole('heading', { name: managedProperty.title })).toBeVisible()
+    expect(screen.getByRole('heading', { name: other.title })).toBeVisible()
+  })
+
+  it('preserves an unfinished image description while filtering a listing out and back in', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({ properties: [managedProperty] }))
+    const user = userEvent.setup()
+    render(<ManagerApp />)
+    await user.type(await screen.findByLabelText('Image description'), 'Living room facing the garden')
+    await user.type(screen.getByRole('searchbox', { name: 'Search your listings' }), 'no matching home')
+    await user.click(screen.getByRole('button', { name: 'Reset filters' }))
+    expect(screen.getByLabelText('Image description')).toHaveValue('Living room facing the garden')
+  })
+  it('retries a failed media refresh without uploading the video twice', async () => {
+    let reads = 0
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      if (String(input).endsWith('/videos')) return Response.json({ id: 'job-1', status: 'pending' })
+      if (String(input).includes('/media-jobs/')) return Response.json({ id: 'job-1', status: 'ready' })
+      reads++
+      if (reads === 2) return new Response(null, { status: 503 })
+      return Response.json({ properties: [{ ...managedProperty, media: reads > 2 ? [{ kind: 'video', url: '/media/tour.mp4', position: 0, altText: 'Video' }] : [] }] })
+    })
+    const user = userEvent.setup()
+    render(<ManagerApp />)
+    await user.upload(await screen.findByLabelText(`Choose video for ${managedProperty.title}`), new File(['video'], 'tour.mp4', { type: 'video/mp4' }))
+    await user.click(screen.getByRole('button', { name: 'Upload video' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Video processed, but listing readiness could not be refreshed')
+    expect(screen.getByText('63% complete')).toBeVisible()
+    await user.click(screen.getByRole('button', { name: 'Refresh listing media' }))
+    expect(await screen.findByText('75% complete')).toBeVisible()
+    expect(fetchMock.mock.calls.filter(([input]) => String(input).endsWith('/videos'))).toHaveLength(1)
+  })
+  it('refreshes readiness after video processing without reloading the workspace', async () => {
+    let ready = false
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      if (String(input).endsWith('/videos')) return Response.json({ id: 'job-1', status: 'pending' })
+      if (String(input).includes('/media-jobs/')) { ready = true; return Response.json({ id: 'job-1', status: 'ready' }) }
+      return Response.json({ properties: [{ ...managedProperty, media: ready ? [{ kind: 'video', url: '/media/tour.mp4', position: 0, altText: 'Video' }] : [] }] })
+    })
+    const user = userEvent.setup()
+    render(<ManagerApp />)
+    await user.upload(await screen.findByLabelText(`Choose video for ${managedProperty.title}`), new File(['video'], 'tour.mp4', { type: 'video/mp4' }))
+    await user.click(screen.getByRole('button', { name: 'Upload video' }))
+    expect(await screen.findByText('Video tour ready.')).toBeVisible()
+    expect(screen.getByText('75% complete')).toBeVisible()
+    expect(screen.getByText('Review checklist · 2 missing')).toBeVisible()
+  })
+  it('explains the readiness score with missing media and completed facts', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({ properties: [managedProperty] }))
+    const user = userEvent.setup()
+    render(<ManagerApp />)
+
+    await user.click(await screen.findByText('Review checklist · 3 missing'))
+    const checklist = screen.getByRole('list', { name: `Readiness checks for ${managedProperty.title}` })
+    expect(within(checklist).getByText('Photography').closest('li')).toHaveTextContent('Missing')
+    expect(within(checklist).getByText('Title and address').closest('li')).toHaveTextContent('Complete')
+    expect(within(checklist).getByText('Floor plan').closest('li')).toHaveTextContent('Missing')
+    await user.click(screen.getByRole('button', { name: 'Edit property facts' }))
+    expect(screen.getByLabelText('Listing title')).toHaveValue(managedProperty.title)
+  })
+
+  it('previews a saved tour on a draft without making the listing public', async () => {
+    const draft = { ...managedProperty, media: [{ url: 'https://kuula.co/share/LTPpc', kind: 'panorama', altText: 'Tour', position: 0 }] }
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({ properties: [draft] }))
+    const user = userEvent.setup()
+    render(<ManagerApp />)
+
+    await user.click(await screen.findByText('Preview saved 360° tour'))
+    expect(screen.queryByTitle(`${managedProperty.title} manager preview`)).not.toBeInTheDocument()
+    await user.click(await screen.findByRole('button', { name: 'Enter 360° tour' }))
+    expect(screen.getByTitle(`${managedProperty.title} manager preview`)).toHaveAttribute('src', expect.stringContaining('https://kuula.co/share/LTPpc'))
+    expect(screen.queryByRole('link', { name: /View public listing/ })).not.toBeInTheDocument()
+  })
   it('signs in and opens the protected listing dashboard', async () => {
     let signedIn = false
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
@@ -44,10 +207,26 @@ describe('manager application', () => {
     expect(await screen.findByRole('heading', { name: 'Your properties' })).toBeVisible()
     expect(screen.getByRole('heading', { name: managedProperty.title })).toBeVisible()
     expect(screen.getByText('Draft')).toBeVisible()
+    expect(screen.getAllByText('Media capture').some((element) => element.classList.contains('manager-workflow-stage'))).toBe(true)
+    expect(screen.getByText('63% complete')).toBeVisible()
+    expect(screen.getByLabelText(`${managedProperty.title} completeness`)).toHaveAttribute('value', '63')
     expect(fetchMock).toHaveBeenCalledWith('/api/v1/manager/session', expect.objectContaining({
       method: 'POST',
       body: JSON.stringify({ email: 'manager@openhaus.ie', password: 'correct horse battery staple' }),
     }))
+  })
+
+  it('filters the listing pipeline by workflow stage', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({ properties: [managedProperty] }))
+    const user = userEvent.setup()
+
+    render(<ManagerApp />)
+
+    expect(await screen.findByRole('heading', { name: managedProperty.title })).toBeVisible()
+    await user.selectOptions(screen.getByLabelText('Filter listings by stage'), 'live')
+
+    expect(screen.queryByRole('heading', { name: managedProperty.title })).not.toBeInTheDocument()
+    expect(screen.getByText('No listings match this stage.')).toBeVisible()
   })
 
   it('shows a safe error when credentials are rejected', async () => {
@@ -132,11 +311,12 @@ describe('manager application', () => {
   })
 
   it('uploads and processes video through authenticated manager routes', async () => {
+	let processed = false
 	const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
 		const url = String(input)
 		if (url.endsWith('/videos') && init?.method === 'POST') return Response.json({ id: 'job-1', propertyId: managedProperty.id, status: 'pending', attempts: 0, createdAt: '2026-08-28T00:00:00Z' }, { status: 202 })
-		if (url.endsWith('/media-jobs/job-1')) return Response.json({ id: 'job-1', propertyId: managedProperty.id, status: 'ready', attempts: 1, createdAt: '2026-08-28T00:00:00Z' })
-		return Response.json({ properties: [managedProperty] })
+		if (url.endsWith('/media-jobs/job-1')) { processed = true; return Response.json({ id: 'job-1', propertyId: managedProperty.id, status: 'ready', attempts: 1, createdAt: '2026-08-28T00:00:00Z' }) }
+		return Response.json({ properties: [{ ...managedProperty, media: processed ? [{ kind: 'video', url: '/media/tour.mp4', altText: 'Video tour', position: 0 }] : [] }] })
 	})
 	const user = userEvent.setup()
 	render(<ManagerApp />)
@@ -144,5 +324,35 @@ describe('manager application', () => {
 	await user.click(screen.getByRole('button', { name: 'Upload video' }))
 	expect(await screen.findByText('Video tour ready.')).toBeVisible()
 	expect(fetchMock).toHaveBeenCalledWith(`/api/v1/manager/properties/${managedProperty.id}/videos`, expect.objectContaining({ method: 'POST' }))
+  })
+
+  it('attaches a Kuula tour to a listing record', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      if (String(input).endsWith('/panorama') && init?.method === 'PUT') return Response.json({ url: 'https://kuula.co/share/LTPpc?fs=1', kind: 'panorama', altText: `360° tour of ${managedProperty.title}`, position: 0 })
+      return Response.json({ properties: [managedProperty] })
+    })
+    const user = userEvent.setup()
+    render(<ManagerApp />)
+    await user.type(await screen.findByLabelText('Add Kuula 360° tour'), 'https://kuula.co/share/LTPpc?fs=1')
+    await user.click(screen.getByRole('button', { name: 'Attach tour' }))
+    expect(await screen.findByText('360° tour attached.')).toHaveAttribute('role', 'status')
+    expect(fetchMock).toHaveBeenCalledWith(`/api/v1/manager/properties/${managedProperty.id}/panorama`, expect.objectContaining({ method: 'PUT' }))
+  })
+
+  it('confirms before removing a panorama from a listing', async () => {
+    const propertyWithTour = { ...managedProperty, media: [...managedProperty.media, { url: 'https://kuula.co/share/LTPpc', kind: 'panorama' as const, altText: '360 tour', position: 4 }] }
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      if (String(input).endsWith('/panorama') && init?.method === 'DELETE') return new Response(null, { status: 204 })
+      return Response.json({ properties: [propertyWithTour] })
+    })
+    const user = userEvent.setup()
+    render(<ManagerApp />)
+
+    await user.click(await screen.findByRole('button', { name: `Remove 360° tour from ${managedProperty.title}` }))
+    expect(screen.getByText('Remove this tour?')).toBeVisible()
+    await user.click(screen.getByRole('button', { name: 'Confirm remove tour' }))
+
+    expect(await screen.findByText('360° tour removed.')).toHaveAttribute('role', 'status')
+    expect(fetchMock).toHaveBeenCalledWith(`/api/v1/manager/properties/${managedProperty.id}/panorama`, expect.objectContaining({ method: 'DELETE' }))
   })
 })

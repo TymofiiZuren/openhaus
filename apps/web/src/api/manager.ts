@@ -42,6 +42,26 @@ export async function updateManagedProperty(id: string, input: ManagedPropertyIn
   return mutateManagedProperty(`/api/v1/manager/properties/${id}`, 'PUT', input)
 }
 
+export async function attachPropertyPanorama(id: string, shareUrl: string, altText: string): Promise<Property['media'][number]> {
+  const response = await fetch(`/api/v1/manager/properties/${id}/panorama`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({ shareUrl, altText }),
+  })
+  if (response.status === 401) throw new ManagerAuthenticationError('Manager authentication is required')
+  if (!response.ok) throw new Error(`Panorama update failed with status ${response.status}`)
+  return (await response.json()) as Property['media'][number]
+}
+
+export async function removePropertyPanorama(id: string): Promise<void> {
+  const response = await fetch(`/api/v1/manager/properties/${id}/panorama`, {
+    method: 'DELETE',
+    headers: { Accept: 'application/json' },
+  })
+  if (response.status === 401) throw new ManagerAuthenticationError('Manager authentication is required')
+  if (!response.ok) throw new Error(`Panorama removal failed with status ${response.status}`)
+}
+
 async function mutateManagedProperty(url: string, method: 'POST' | 'PUT', input: ManagedPropertyInput) {
   const response = await fetch(url, {
     method,

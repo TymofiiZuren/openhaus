@@ -6,6 +6,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="Explore homes for sale across Ireland with OpenHaus." />
     <title>OpenHaus — Homes across Ireland</title>
+    <script>
+      // Set the palette before rendering so a saved dark preference never flashes white.
+      (() => {
+        let saved;
+        try { saved = localStorage.getItem('openhaus-appearance'); } catch {}
+        document.documentElement.dataset.theme = saved === 'dark' || saved === 'light'
+          ? saved : (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

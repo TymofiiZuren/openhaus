@@ -1,7 +1,8 @@
 import type { Property } from './api/properties'
+import { areaForCoordinate } from './administrativeAreas'
 
-export function groupPropertiesForMap(properties: Property[], selectedCounty?: string | null) {
-  if (selectedCounty) {
+export function groupPropertiesForMap(properties: Property[], selectedCounty?: string | null, selectedArea?: string) {
+  if (selectedCounty && selectedArea) {
     return properties.map((property) => ({
       label: property.title,
       markerLabel: compactPrice(property.priceCents),
@@ -12,7 +13,10 @@ export function groupPropertiesForMap(properties: Property[], selectedCounty?: s
 
   const groups = new Map<string, Property[]>()
   for (const property of properties) {
-    groups.set(property.county, [...(groups.get(property.county) ?? []), property])
+    const area = selectedCounty
+      ? areaForCoordinate(property.county, { lat: property.latitude, lng: property.longitude })?.name ?? property.city
+      : property.county
+    groups.set(area, [...(groups.get(area) ?? []), property])
   }
   return [...groups.entries()].map(([label, groupedProperties]) => ({
     label,

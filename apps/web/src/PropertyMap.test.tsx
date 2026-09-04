@@ -3,8 +3,8 @@ import { describe, expect, it, vi } from 'vitest'
 import type { Property } from './api/properties'
 
 vi.mock('./GooglePropertyMap', () => ({
-  GooglePropertyMap: ({ properties }: { properties: Property[] }) => (
-    <div data-testid="map-properties">{properties.map((property) => property.title).join(',')}</div>
+  GooglePropertyMap: ({ properties, selectedPropertyID }: { properties: Property[]; selectedPropertyID?: string }) => (
+    <div data-testid="map-properties" data-selected-property={selectedPropertyID}>{properties.map((property) => property.title).join(',')}</div>
   ),
 }))
 
@@ -26,10 +26,12 @@ const sharedProps = {
   minimumBedrooms: 0,
   propertyType: 'all',
   maximumPrice: 0,
+  spatialToursOnly: false,
   onPropertyQueryChange: vi.fn(),
   onMinimumBedroomsChange: vi.fn(),
   onPropertyTypeChange: vi.fn(),
   onMaximumPriceChange: vi.fn(),
+  onSpatialToursOnlyChange: vi.fn(),
   onCountyChange: vi.fn(),
   onAreaChange: vi.fn(),
 }
@@ -47,5 +49,22 @@ describe('property map listing visibility', () => {
 
     expect(screen.getByTestId('map-properties')).toHaveTextContent('Cork home')
     expect(screen.getByRole('complementary', { name: 'Homes matching your search' })).toBeVisible()
+  })
+
+  it('activates the matching map marker when a sidebar home is selected', async () => {
+    const user = (await import('@testing-library/user-event')).default.setup()
+    render(<PropertyMap {...sharedProps} properties={[corkProperty]} selectedCounty="Cork" />)
+
+    await user.click(screen.getByRole('button', { name: `Select ${corkProperty.title} on map` }))
+
+    expect(screen.getByTestId('map-properties')).toHaveAttribute('data-selected-property', corkProperty.id)
+    expect(screen.getByRole('article', { name: `Preview ${corkProperty.title}` })).toBeVisible()
+  })
+
+  it('restores a property selected by a deep link', () => {
+    render(<PropertyMap {...sharedProps} properties={[corkProperty]} selectedCounty="Cork" initialSelectedPropertyID={corkProperty.id} />)
+
+    expect(screen.getByTestId('map-properties')).toHaveAttribute('data-selected-property', corkProperty.id)
+    expect(screen.getByRole('article', { name: `Preview ${corkProperty.title}` })).toBeVisible()
   })
 })

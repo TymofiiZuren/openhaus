@@ -1,5 +1,8 @@
-import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
 import './App.css'
+import { PropertyDetailPage } from './App'
+import { ManagerImages } from './ManagerImages'
+import { ThemeControl } from './ThemeControl'
 import { uploadPropertyVideo, waitForMediaJob, type MediaJob } from './api/mediaJobs'
 import {
   fetchManagedProperties,
@@ -10,6 +13,8 @@ import {
   type ManagedProperty,
   type ManagedPropertyInput,
   updateManagedProperty,
+  attachPropertyPanorama,
+  removePropertyPanorama,
 } from './api/manager'
 
 type ManagerState =
@@ -18,6 +23,8 @@ type ManagerState =
   | { status: 'loading' }
   | { status: 'ready'; properties: ManagedProperty[] }
   | { status: 'error'; message: string }
+
+const SpatialMediaViewer = lazy(() => import('./SpatialMediaViewer').then((module) => ({ default: module.SpatialMediaViewer })))
 
 const euros = new Intl.NumberFormat('en-IE', {
   style: 'currency', currency: 'EUR', maximumFractionDigits: 0,
@@ -79,18 +86,21 @@ export function ManagerApp() {
   }
 
   const isSignedIn = state.status === 'ready'
+  const previewID = window.location.pathname.match(/^\/manager\/preview\/([^/]+)$/)?.[1]
+  if (previewID && state.status === 'ready') return <ManagerPublicationPreview property={state.properties.find((property) => property.id === previewID)} />
   return (
     <div className="manager-shell">
       <header className="site-header manager-header">
         <a className="wordmark" href="/" aria-label="OpenHaus home">OpenHaus</a>
-        {isSignedIn && <button className="manager-text-button" type="button" onClick={signOut}>Sign out</button>}
+        <span className="manager-workspace-label">Property workspace</span>
+        <div className="header-actions"><ThemeControl /><a className="manager-text-button" href="/">View website</a>{isSignedIn && <button className="manager-text-button" type="button" onClick={signOut}>Sign out</button>}</div>
       </header>
       <main className="manager-main">
-        {(state.status === 'checking' || state.status === 'loading') && (
+        {state.status === 'checking' && (
           <div className="manager-centred" role="status"><span className="spinner" />Loading manager workspace…</div>
         )}
-        {(state.status === 'signed-out' || state.status === 'error') && (
-          <ManagerLogin onSubmit={signIn} error={state.status === 'error' ? state.message : undefined} />
+        {(state.status === 'signed-out' || state.status === 'error' || state.status === 'loading') && (
+          <ManagerLogin onSubmit={signIn} busy={state.status === 'loading'} error={state.status === 'error' ? state.message : undefined} />
         )}
         {state.status === 'ready' && <ManagerDashboard properties={state.properties} />}
       </main>
@@ -98,28 +108,59 @@ export function ManagerApp() {
   )
 }
 
-function ManagerLogin({ onSubmit, error }: { onSubmit: (email: string, password: string) => void; error?: string }) {
+function ManagerPublicationPreview({ property }: { property?: ManagedProperty }) {
+  const [width, setWidth] = useState(1440)
+  const [revision, setRevision] = useState(0)
+  if (!property) return <main className="manager-main"><h1>Listing unavailable</h1><p>This listing is not available in your workspace.</p><a href="/manager/login">Back to dashboard</a></main>
+  if (new URLSearchParams(window.location.search).get('frame') === '1') {
+    const previewProperty = { ...property, media: property.media.map((item) => ({ ...item, url: item.url.replace('/api/v1/property-images/', '/api/v1/manager/property-images/') })) }
+    return <Suspense fallback={<p role="status">Preparing listing preview…</p>}><PropertyDetailPage property={previewProperty} status="success" onRetry={() => window.location.reload()} /></Suspense>
+  }
+  return <main className="manager-publication-preview">
+    <header><div><a href="/manager/login">← Back to dashboard</a><p className="eyebrow">Private publication preview · {property.status}</p><h1>{property.title}</h1><p>Saved content only. This does not publish the listing. Buyer links inside the preview may leave this page; enquiries remain demonstrations.</p></div>
+      <div className="manager-preview-controls" role="group" aria-label="Preview viewport">
+        {([[1440, 'Desktop'], [768, 'Tablet'], [390, 'Mobile']] as const).map(([size, label]) => <button type="button" key={size} aria-pressed={width === size} onClick={() => setWidth(size)}>{label} · {size}px</button>)}
+        <button type="button" onClick={() => setRevision((value) => value + 1)}>Refresh saved content</button>
+      </div>
+    </header>
+    <p className="manager-preview-hint">Scroll horizontally on smaller screens to inspect the full selected width. These are viewport presets, not device emulation.</p>
+    <div className="manager-preview-canvas"><iframe key={revision} title="Listing publication preview" src={`/manager/preview/${property.id}?frame=1`} style={{ width }} allow="fullscreen" /></div>
+  </main>
+}
+
+function ManagerLogin({ onSubmit, error, busy }: { onSubmit: (email: string, password: string) => void; error?: string; busy?: boolean }) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
 
   function submit(event: FormEvent) {
     event.preventDefault()
+    if (busy) return
     onSubmit(email, password)
   }
 
   return (
+    <div className="manager-entry">
+    <aside className="manager-entry-intro" aria-label="Workspace introduction">
+      <p className="section-index">OpenHaus / For property professionals</p>
+      <h2>Every detail.<br /><em>One workspace.</em></h2>
+      <p>Bring your listings, photography and immersive tours together, from first draft to publication.</p>
+      <dl><div><dt>01</dt><dd>Manage your portfolio</dd></div><div><dt>02</dt><dd>Prepare photos, plans & 360° tours</dd></div><div><dt>03</dt><dd>Preview before publishing</dd></div></dl>
+    </aside>
     <section className="manager-login" aria-labelledby="manager-login-title">
       <p className="eyebrow">Private workspace</p>
       <h1 id="manager-login-title">Manager sign in</h1>
       <p className="manager-login-copy">A focused workspace for reviewing listings, media and publication status.</p>
-      <form onSubmit={submit}>
+      <form onSubmit={submit} aria-busy={busy}>
         <label>Email address<input name="email" type="email" autoComplete="username" required value={email} onChange={(event) => setEmail(event.target.value)} /></label>
-        <label>Password<input name="password" type="password" autoComplete="current-password" required value={password} onChange={(event) => setPassword(event.target.value)} /></label>
+        <label htmlFor="manager-password">Password</label>
+        <div className="manager-password-field"><input id="manager-password" name="password" type={showPassword ? 'text' : 'password'} autoComplete="current-password" required value={password} onChange={(event) => setPassword(event.target.value)} /><button type="button" aria-label={showPassword ? 'Hide password' : 'Show password'} aria-pressed={showPassword} onClick={() => setShowPassword((shown) => !shown)}>{showPassword ? 'Hide' : 'Show'}</button></div>
         {error && <p className="manager-form-error" role="alert">{error}</p>}
-        <button type="submit">Sign in</button>
+        <button type="submit" disabled={busy}>{busy ? 'Signing in…' : 'Sign in'}</button>
       </form>
       <a href="/">Return to public listings</a>
     </section>
+    </div>
   )
 }
 
@@ -127,7 +168,25 @@ function ManagerDashboard({ properties }: { properties: ManagedProperty[] }) {
   const [items, setItems] = useState(properties)
   const [editing, setEditing] = useState<ManagedProperty | 'new'>()
   const [saveError, setSaveError] = useState<string>()
+  const [stageFilter, setStageFilter] = useState('all')
+  const [sort, setSort] = useState('default')
+  const [compact, setCompact] = useState(false)
+  const [expandedID, setExpandedID] = useState<string>()
+  const [search, setSearch] = useState('')
+  const query = search.trim().toLocaleLowerCase()
   const published = items.filter((property) => property.status === 'published').length
+  const needsAttention = items.filter((property) => property.status === 'draft' && completeness(property) < 88).length
+  const filteredItems = items.filter((property) =>
+    (stageFilter === 'all' || workflowStageKey(property) === stageFilter) &&
+    (!query || [property.title, property.addressLine1, property.city, property.county].some((value) => value.toLocaleLowerCase().includes(query))))
+  const visibleIDs = new Set(filteredItems.map((property) => property.id))
+  const orderedItems = [...items].sort((a, b) => {
+    if (sort === 'price-low') return a.priceCents - b.priceCents
+    if (sort === 'price-high') return b.priceCents - a.priceCents
+    if (sort === 'title') return a.title.localeCompare(b.title, 'en', { sensitivity: 'base', numeric: true })
+    if (sort === 'readiness') return completeness(a) - completeness(b)
+    return 0
+  })
 
   async function save(input: ManagedPropertyInput) {
     setSaveError(undefined)
@@ -143,17 +202,44 @@ function ManagerDashboard({ properties }: { properties: ManagedProperty[] }) {
     <section className="manager-dashboard" aria-labelledby="manager-properties-title">
       <div className="manager-dashboard-heading">
         <div><p className="eyebrow">Portfolio overview</p><h1 id="manager-properties-title">Your properties</h1><p>Create, review and publish every listing from one place.</p></div>
-        <div className="manager-heading-actions"><div className="manager-summary" aria-label="Portfolio summary"><span><strong>{items.length}</strong> Total listings</span><span><strong>{published}</strong> Published</span></div><button className="manager-primary-button" type="button" onClick={() => setEditing('new')}>Add property</button></div>
+        <div className="manager-heading-actions"><div className="manager-summary" aria-label="Portfolio summary"><span><strong>{items.length}</strong> Total listings</span><span><strong>{needsAttention}</strong> Need attention</span><span><strong>{published}</strong> Published</span></div><button className="manager-primary-button" type="button" onClick={() => setEditing('new')}>Add property</button></div>
       </div>
       {editing && <ManagerPropertyForm property={editing === 'new' ? undefined : editing} onCancel={() => setEditing(undefined)} onSave={save} error={saveError} />}
+      <div className="manager-view-switch" role="group" aria-label="Portfolio display"><button type="button" aria-pressed={compact} onClick={() => { setCompact(true); setExpandedID(undefined) }}>Compact view</button><button type="button" aria-pressed={!compact} onClick={() => setCompact(false)}>Editing view</button><span>Scan your portfolio or work on listing content.</span></div>
+      {items.length > 0 && <div className="manager-pipeline-toolbar">
+        <div><p className="section-index">Listing pipeline</p><strong>Move work forward by stage</strong></div>
+        <label className="manager-search">Search your listings<input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Title, address, town or county" /></label>
+        <label>Sort listings<select value={sort} onChange={(event) => setSort(event.target.value)}><option value="default">Default order</option><option value="readiness">Least complete first</option><option value="price-low">Price: low to high</option><option value="price-high">Price: high to low</option><option value="title">Title: A–Z</option></select></label>
+        <label>Filter listings by stage<select value={stageFilter} onChange={(event) => setStageFilter(event.target.value)}><option value="all">All stages</option><option value="draft-setup">Draft setup</option><option value="media-capture">Media capture</option><option value="ready-for-review">Ready for review</option><option value="live">Live</option><option value="archived">Archived</option></select></label>
+      </div>}
+      {items.length > 0 && <div className="manager-filter-summary"><p role="status" aria-live="polite">{filteredItems.length} of {items.length} listings</p>{(search || stageFilter !== 'all') && <button type="button" onClick={() => { setSearch(''); setStageFilter('all') }}>Reset filters</button>}</div>}
+      {items.length > 0 && filteredItems.length === 0 && <div className="manager-empty manager-filter-empty"><h2>{query ? 'No listings match your search and stage.' : 'No listings match this stage.'}</h2><p>Try a title, street, town or county, or reset the filters above.</p></div>}
       {items.length === 0 ? (
         <div className="manager-empty"><h2>No properties yet</h2><p>Your first listing will appear here.</p></div>
       ) : (
         <div className="manager-property-list">
-          {items.map((property) => (
-            <article className="manager-property-row" key={property.id}>
-              <div><span className={`manager-status manager-status-${property.status}`}>{titleCase(property.status)}</span><h2>{property.title}</h2><p>{property.addressLine1}, {property.city}, Co. {property.county}</p></div>
-              <div className="manager-property-meta"><dl><div><dt>Price</dt><dd>{euros.format(property.priceCents / 100)}</dd></div><div><dt>Bedrooms</dt><dd>{property.bedrooms}</dd></div><div><dt>Type</dt><dd>{titleCase(property.propertyType)}</dd></div></dl><div className="manager-row-actions"><button type="button" aria-label={`Edit ${property.title}`} onClick={() => setEditing(property)}>Edit listing</button>{property.status === 'published' && <a href={`/properties/${property.id}`}>View public listing <span aria-hidden="true">→</span></a>}</div><ManagerVideoUpload property={property} /></div>
+          {orderedItems.map((property) => (
+            <article className={`manager-property-row${compact && expandedID !== property.id ? ' manager-property-compact' : ''}`} key={property.id} hidden={!visibleIDs.has(property.id)}>
+              <div className="manager-property-overview">
+                <p className="manager-panel-kicker">01 / Listing overview</p>
+                <div className="manager-listing-identity">
+                {property.media.find((media) => media.kind === 'image' && !media.url.includes('/placeholders/')) ? <img className="manager-cover" src={property.media.find((media) => media.kind === 'image' && !media.url.includes('/placeholders/'))!.url.replace('/api/v1/property-images/', '/api/v1/manager/property-images/')} alt="" loading="lazy" /> : null}
+                <div>
+                <div className="manager-property-state"><span className={`manager-status manager-status-${property.status}`}>{titleCase(property.status)}</span><span className="manager-workflow-stage">{workflowStage(property)}</span></div>
+                <h2>{property.title}</h2><p>{property.addressLine1}, {property.city}, Co. {property.county}</p>
+                {!property.media.some((media) => media.kind === 'image' && !media.url.includes('/placeholders/')) && <span className="manager-photo-status">No photos added</span>}
+                </div></div>
+                {compact && <div className="manager-compact-actions"><span>{euros.format(property.priceCents / 100)} · {property.bedrooms} bedrooms</span><button type="button" aria-expanded={expandedID === property.id} aria-controls={`manager-tools-${property.id}`} aria-label={`${expandedID === property.id ? 'Collapse' : 'Manage'} ${property.title}`} onClick={() => setExpandedID(expandedID === property.id ? undefined : property.id)}>{expandedID === property.id ? 'Collapse tools' : 'Manage listing'} <span aria-hidden="true">↗</span></button></div>}
+                <div className="manager-completeness">
+                  <div><span>Listing readiness</span><strong>{completeness(property)}% complete</strong></div>
+                  <progress aria-label={`${property.title} completeness`} max="100" value={completeness(property)}>{completeness(property)}%</progress>
+                </div>
+                <div hidden={compact && expandedID !== property.id}><ManagerReadinessChecklist property={property} onEdit={() => setEditing(property)} /></div>
+              </div>
+<div className="manager-property-meta" id={`manager-tools-${property.id}`} hidden={compact && expandedID !== property.id}><p className="manager-panel-kicker">02 / Details & immersive media</p><h3>Listing essentials</h3><dl><div><dt>Price</dt><dd>{euros.format(property.priceCents / 100)}</dd></div><div><dt>Bedrooms</dt><dd>{property.bedrooms}</dd></div><div><dt>Type</dt><dd>{titleCase(property.propertyType)}</dd></div></dl><div className="manager-row-actions"><a href={`/manager/preview/${property.id}`} target="_blank" rel="noreferrer">Preview listing</a><button type="button" aria-label={`Edit ${property.title}`} onClick={() => setEditing(property)}>Edit listing</button>{property.status === 'published' && <a href={`/properties/${property.id}`}>View public listing <span aria-hidden="true">→</span></a>}</div><ManagerPanoramaForm property={property} onAttached={(media) => setItems((current) => current.map((item) => item.id === property.id ? { ...item, media: [...item.media.filter((entry) => entry.kind !== 'panorama'), media] } : item))} onRemoved={() => setItems((current) => current.map((item) => item.id === property.id ? { ...item, media: item.media.filter((entry) => entry.kind !== 'panorama') } : item))} /><ManagerTourPreview property={property} /><ManagerVideoUpload property={property} onReady={(media) => setItems((current) => current.map((item) => item.id === property.id ? { ...item, media: [...item.media.filter((entry) => entry.kind !== 'video'), ...media] } : item))} /></div>
+              <div className="manager-property-library" hidden={compact && expandedID !== property.id}><p className="manager-panel-kicker">03 / Media library</p>
+                <ManagerImages onUpdated={(media) => setItems((current) => current.map((item) => item.id === property.id ? { ...item, media: item.media.map((entry) => entry.url === media.url ? { ...entry, altText: media.altText } : entry) } : item))} propertyID={property.id} media={property.media} onUploaded={(media) => setItems((current) => current.map((item) => item.id === property.id ? {...item,media:[...item.media,media]} : item))} onOrdered={(media) => setItems((current) => current.map((item) => item.id === property.id ? {...item,media} : item))}/>
+              </div>
             </article>
           ))}
         </div>
@@ -162,13 +248,58 @@ function ManagerDashboard({ properties }: { properties: ManagedProperty[] }) {
   )
 }
 
-type UploadState = { status: 'idle' } | { status: 'busy'; job?: MediaJob } | { status: 'ready' } | { status: 'error'; message: string }
+function ManagerPanoramaForm({ property, onAttached, onRemoved }: { property: ManagedProperty; onAttached: (media: ManagedProperty['media'][number]) => void; onRemoved: () => void }) {
+  const existing = property.media.find((item) => item.kind === 'panorama')
+  const [shareURL, setShareURL] = useState(existing?.url ?? '')
+  const [state, setState] = useState<'idle' | 'saving' | 'saved' | 'removing' | 'removed' | 'error'>('idle')
+  const [confirmingRemoval, setConfirmingRemoval] = useState(false)
+  async function submit(event: FormEvent) {
+    event.preventDefault(); setState('saving')
+    try {
+      const media = await attachPropertyPanorama(property.id, shareURL, `360° tour of ${property.title}`)
+      onAttached(media); setState('saved')
+    } catch { setState('error') }
+  }
+  async function remove() {
+    setState('removing')
+    try {
+      await removePropertyPanorama(property.id)
+      setShareURL(''); setConfirmingRemoval(false); onRemoved(); setState('removed')
+    } catch { setConfirmingRemoval(false); setState('error') }
+  }
+  return <form className="manager-panorama-form" onSubmit={submit}>
+    <label><span>{existing ? 'Replace Kuula 360° tour' : 'Add Kuula 360° tour'}</span><input type="url" required value={shareURL} onChange={(event) => { setShareURL(event.target.value); setState('idle') }} placeholder="https://kuula.co/share/…" aria-describedby={`panorama-help-${property.id}`} /></label>
+    <button type="submit" disabled={state === 'saving'}>{state === 'saving' ? 'Saving…' : existing ? 'Replace tour' : 'Attach tour'}</button>
+    {existing && !confirmingRemoval && <button className="manager-panorama-remove" type="button" aria-label={`Remove 360° tour from ${property.title}`} onClick={() => setConfirmingRemoval(true)}>Remove tour</button>}
+    {existing && confirmingRemoval && <div className="manager-panorama-confirm" role="group" aria-label="Confirm panorama removal"><strong>Remove this tour?</strong><span>The public listing will immediately show its photography and plans fallback.</span><div><button type="button" onClick={() => setConfirmingRemoval(false)}>Keep tour</button><button type="button" disabled={state === 'removing'} onClick={remove}>{state === 'removing' ? 'Removing…' : 'Confirm remove tour'}</button></div></div>}
+    <small id={`panorama-help-${property.id}`}>Paste the embeddable Kuula /share/ link, not the /post/ page.</small>
+    {state === 'saved' && <span role="status">360° tour attached.</span>}{state === 'removed' && <span role="status">360° tour removed.</span>}{state === 'error' && <span role="alert">The panorama update could not be completed.</span>}
+  </form>
+}
 
-function ManagerVideoUpload({ property }: { property: ManagedProperty }) {
+type UploadState = { status: 'idle' } | { status: 'busy'; job?: MediaJob } | { status: 'ready' } | { status: 'refreshing' } | { status: 'refresh-error' } | { status: 'error'; message: string }
+
+function ManagerVideoUpload({ property, onReady }: { property: ManagedProperty; onReady: (media: ManagedProperty['media']) => void }) {
   const [file, setFile] = useState<File>()
   const [state, setState] = useState<UploadState>({ status: 'idle' })
   const controller = useRef<AbortController | undefined>(undefined)
   useEffect(() => () => controller.current?.abort(), [])
+
+  async function refreshMedia() {
+    setState({ status: 'refreshing' })
+    try {
+      const properties = await fetchManagedProperties(controller.current?.signal)
+      const saved = properties.find((item) => item.id === property.id)
+      const videos = saved?.media.filter((item) => item.kind === 'video')
+      if (!videos?.length) throw new Error('Processed video not available')
+      onReady(videos)
+      setFile(undefined)
+      setState({ status: 'ready' })
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return
+      setState({ status: 'refresh-error' })
+    }
+  }
 
   function chooseFile(event: ChangeEvent<HTMLInputElement>) {
     const selected = event.target.files?.[0]
@@ -196,15 +327,19 @@ function ManagerVideoUpload({ property }: { property: ManagedProperty }) {
       const queued = await uploadPropertyVideo(property.id, file, controller.current.signal)
       setState({ status: 'busy', job: queued })
       const completed = await waitForMediaJob(queued.id, (job) => setState({ status: 'busy', job }), controller.current.signal)
-      setState(completed.status === 'ready' ? { status: 'ready' } : { status: 'error', message: completed.errorMessage || 'Video processing failed.' })
+      if (completed.status === 'ready') await refreshMedia()
+      else setState({ status: 'error', message: completed.errorMessage || 'Video processing failed.' })
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') return
       setState({ status: 'error', message: 'The video could not be uploaded. Try again.' })
     }
   }
 
+  if (state.status === 'refreshing' || state.status === 'refresh-error') return <div className="manager-video-upload">
+    {state.status === 'refreshing' ? <span role="status">Video processed. Updating listing readiness…</span> : <><span role="alert">Video processed, but listing readiness could not be refreshed. Retry without uploading again.</span><button type="button" onClick={refreshMedia}>Refresh listing media</button></>}
+  </div>
   return <form className="manager-video-upload" onSubmit={upload}>
-    <label><span>Add video tour</span><input aria-label={`Choose video for ${property.title}`} type="file" accept="video/mp4,video/quicktime,.mp4,.mov" onChange={chooseFile} disabled={state.status === 'busy'} /></label>
+    <label className="manager-file-picker"><span>Video walkthrough</span><span className="manager-file-picker-control"><input aria-label={`Choose video for ${property.title}`} type="file" accept="video/mp4,video/quicktime,.mp4,.mov" onChange={chooseFile} disabled={state.status === 'busy'} /><span className="manager-file-picker-action" aria-hidden="true">{file ? 'Change video' : 'Select video'}</span><span className="manager-file-picker-name" aria-hidden="true">{file ? file.name : 'Browse your files'}</span></span><small>MP4 or MOV · up to 2 GiB. Select a file, then upload.</small></label>
     <button type="submit" disabled={!file || state.status === 'busy'}>{state.status === 'busy' ? 'Processing…' : 'Upload video'}</button>
     {state.status === 'busy' && <span role="status">{state.job?.status === 'processing' ? 'Preparing video…' : 'Video queued…'}</span>}
     {state.status === 'ready' && <span role="status">Video tour ready.</span>}
@@ -238,4 +373,66 @@ function ManagerPropertyForm({ property, onCancel, onSave, error }: { property?:
 
 function titleCase(value: string) {
   return value.replaceAll('_', ' ').replace(/\b\w/g, (character) => character.toUpperCase())
+}
+
+function readinessChecks(property: ManagedProperty) {
+  return [
+    { label: 'Title and address', complete: Boolean(property.title && property.addressLine1), guidance: 'Add the listing title and street address in property facts.' },
+    { label: 'City and county', complete: Boolean(property.city && property.county), guidance: 'Set the location in property facts.' },
+    { label: 'Asking price', complete: property.priceCents > 0, guidance: 'Set a positive asking price in property facts.' },
+    { label: 'Bedrooms and property type', complete: property.bedrooms >= 0 && Boolean(property.propertyType), guidance: 'Review the bedroom count and property type.' },
+    { label: 'Map coordinates', complete: Number.isFinite(property.longitude) && Number.isFinite(property.latitude) && (property.longitude !== 0 || property.latitude !== 0), guidance: 'Add the property coordinates in property facts.' },
+    { label: 'Photography', complete: property.media.some((item) => item.kind === 'image'), guidance: 'Use Photos & floor plans below to upload photography and choose a cover.' },
+    { label: 'Floor plan', complete: property.media.some((item) => item.kind === 'floor_plan'), guidance: 'Choose Floor plan in Photos & floor plans below to upload a measured drawing.' },
+    { label: 'Video or 360° tour', complete: property.media.some((item) => item.kind === 'video' || item.kind === 'panorama'), guidance: 'Use the video upload or Kuula tour form on this listing.' },
+  ]
+}
+
+function completeness(property: ManagedProperty) {
+  const checks = readinessChecks(property)
+  return Math.round(checks.filter((check) => check.complete).length / checks.length * 100)
+}
+
+function ManagerReadinessChecklist({ property, onEdit }: { property: ManagedProperty; onEdit: () => void }) {
+  const checks = readinessChecks(property)
+  const missing = checks.filter((check) => !check.complete).length
+  return <details className="manager-readiness-checklist">
+    <summary>Review checklist · {missing ? `${missing} missing` : 'All items present'}</summary>
+    <p>Content presence only—not verification of accuracy or a publication approval.</p>
+    <ul aria-label={`Readiness checks for ${property.title}`}>
+      {checks.map((check) => <li key={check.label}>
+        <div><strong>{check.label}</strong><span>{check.complete ? 'Complete' : 'Missing'}</span></div>
+        {!check.complete && <p>{check.guidance}</p>}
+      </li>)}
+    </ul>
+    <button type="button" onClick={onEdit}>Edit property facts</button>
+  </details>
+}
+
+function ManagerTourPreview({ property }: { property: ManagedProperty }) {
+  const [open, setOpen] = useState(false)
+  const panorama = property.media.find((media) => media.kind === 'panorama')
+  if (!panorama) return null
+  return <section className="manager-tour-preview" aria-label={`Tour preview for ${property.title}`}>
+    <button type="button" aria-expanded={open} aria-controls={`tour-preview-${property.id}`} onClick={() => setOpen((value) => !value)}>{open ? 'Close tour preview' : 'Preview saved 360° tour'}</button>
+    {open && <div id={`tour-preview-${property.id}`}>
+      <p>Manager preview only. Opening this viewer does not publish the listing.</p>
+      <div className="manager-tour-preview-stage"><Suspense fallback={<p role="status">Preparing tour preview…</p>}>
+        <SpatialMediaViewer key={panorama.url} source={{ provider: 'embed', embedUrl: panorama.url, title: `${property.title} manager preview`, posterUrl: property.media.find((media) => media.kind === 'image')?.url }} />
+      </Suspense></div>
+    </div>}
+  </section>
+}
+
+function workflowStage(property: ManagedProperty) {
+  if (property.status === 'archived') return 'Archived'
+  if (property.status === 'published') return 'Live'
+  const score = completeness(property)
+  if (score >= 88) return 'Ready for review'
+  if (score >= 50) return 'Media capture'
+  return 'Draft setup'
+}
+
+function workflowStageKey(property: ManagedProperty) {
+  return workflowStage(property).toLowerCase().replaceAll(' ', '-')
 }

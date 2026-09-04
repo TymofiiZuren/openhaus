@@ -30,7 +30,7 @@ docker compose -f infra/docker-compose.yml up -d
 set -a
 . ./.env
 set +a
-export DATABASE_URL="postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:${POSTGRES_PORT}/${POSTGRES_DB}?sslmode=disable"
+export DATABASE_URL="postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST:-127.0.0.1}:${POSTGRES_PORT}/${POSTGRES_DB}?sslmode=disable"
 cd services/api
 go run ./cmd/api
 ```
@@ -87,7 +87,7 @@ cp .env.example .env
 set -a
 . ./.env
 set +a
-export DATABASE_URL="postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:${POSTGRES_PORT}/${POSTGRES_DB}?sslmode=disable"
+export DATABASE_URL="postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST:-127.0.0.1}:${POSTGRES_PORT}/${POSTGRES_DB}?sslmode=disable"
 migrate -path db/migrations -database "$DATABASE_URL" up
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/seeds/000001_properties.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/seeds/000002_property_media.sql
@@ -109,6 +109,12 @@ curl http://localhost:8080/healthz
 curl http://localhost:8080/readyz
 curl http://localhost:8080/api/v1/properties
 ```
+
+`healthz` only confirms that the HTTP process is alive. Do not start the web
+client until `readyz` returns `200` with `{"status":"ready"}`; a `503` means the
+API cannot currently reach PostgreSQL. Keep `POSTGRES_HOST` explicit when
+building `DATABASE_URL` so a missing shell variable cannot select an unintended
+local PostgreSQL socket.
 
 Limit the public catalogue to the visible WGS84 map bounds with
 `west,south,east,north` coordinates:
@@ -153,6 +159,24 @@ PostGIS bounding-box query remains the foundation for the later viewport-search
 API. See [`docs/MAP_IMPLEMENTATION_PLAN.md`](docs/MAP_IMPLEMENTATION_PLAN.md)
 for the production data gates and next phases.
 
+## Hosted 360-degree tours
+
+Each listing stores its Kuula share link as `property_media.kind = panorama`.
+Managers attach, replace or remove the tour from the protected property workspace;
+the API accepts an HTTPS `/share/` URL, validates its provider and persists it
+with the listing. A `/post/` profile URL is intentionally rejected.
+
+The tour is not requested until the visitor chooses **Enter 360° tour**. The
+viewer accepts only Kuula share hosts and Matterport Showcase links, preserves
+a poster/fallback experience, and grants fullscreen, gyroscope, accelerometer
+and XR permissions inside a sandboxed iframe. This browser allowlist is defense
+in depth; the API repeats the allowlist check before writing the link.
+
+Matterport can use the same embed contract with a Showcase URL such as
+`https://my.matterport.com/show/?m=MODEL_ID`. Add its SDK only when the product
+needs programmatic tour navigation, Mattertags or model events; SDK keys must
+be domain-restricted and must not be committed.
+
 ## Manager authentication
 
 Manager routes use an opaque session cookie. Passwords are bcrypt hashes and
@@ -178,6 +202,26 @@ It restores an existing cookie-backed session and lets managers create drafts,
 edit listing details, and move listings between draft, published, and archived
 states without exposing the session token to JavaScript. Media uploads and job
 polling are also restricted to authenticated manager sessions.
+
+Reset an existing local manager without placing the password in shell history.
+The command replaces the bcrypt hash and revokes that manager's active sessions:
+
+```bash
+cd services/api
+set -a
+source ../../.env
+set +a
+manager_email="manager@openhaus.local"
+printf "New password for %s: " "$manager_email"
+read -rs manager_password
+printf "\n"
+manager_database_url="postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:${POSTGRES_PORT}/${POSTGRES_DB}?sslmode=disable"
+DATABASE_URL="$manager_database_url" MANAGER_EMAIL="$manager_email" MANAGER_PASSWORD="$manager_password" go run ./cmd/reset-manager
+unset manager_password manager_database_url
+```
+
+Passwords must contain at least 12 characters. The reset command never prints
+the password or stores its plaintext form in the database.
 
 ## Asynchronous video processing
 

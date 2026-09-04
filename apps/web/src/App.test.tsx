@@ -3,6 +3,29 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
 
+it('provides actionable property navigation without unavailable tour links', async () => {
+  window.history.replaceState({}, '', `/properties/${property.id}`)
+  mockResponse({ properties: [property] })
+  render(<App />)
+  const nav = await screen.findByRole('navigation', { name: 'Property sections' })
+  expect(within(nav).queryByRole('link', { name: 'Your notes' })).not.toBeInTheDocument()
+  expect(within(nav).queryByRole('link', { name: '360° tour' })).not.toBeInTheDocument()
+  expect(within(nav).getByRole('link', { name: 'Show on map' })).toHaveAttribute('href', `/?county=Dublin&property=${property.id}#explore`)
+  for (const link of within(nav).getAllByRole('link')) {
+    const href = link.getAttribute('href')!
+    if (href.startsWith('#')) expect(document.getElementById(href.slice(1))).not.toBeNull()
+  }
+  await userEvent.click(within(nav).getByRole('button', { name: 'Request viewing' }))
+  expect(screen.getByRole('dialog')).toBeInTheDocument()
+})
+
+it('offers a direct full-window tour from the property summary', async () => {
+  window.history.replaceState({}, '', `/properties/${property.id}`)
+  mockResponse({ properties: [{ ...property, media: [...property.media, { url: 'https://kuula.co/share/LTPpc', kind: 'panorama', altText: 'Tour', position: 4 }] }] })
+  render(<App />)
+  expect(await screen.findByRole('link', { name: 'Open full-window 360° tour' })).toHaveAttribute('href', `/properties/${property.id}/tour`)
+})
+
 const property = {
   id: '11111111-1111-4111-8111-111111111111',
   title: 'Red-brick home near St Stephen\'s Green',
@@ -75,6 +98,7 @@ const kinsaleProperty = {
 afterEach(() => {
   vi.restoreAllMocks()
   vi.unstubAllEnvs()
+  window.localStorage.clear()
   window.history.replaceState({}, '', '/')
 })
 
@@ -106,16 +130,116 @@ describe('property catalogue', () => {
     expect(cards[1]).toHaveTextContent(property.title)
   })
 
+  it('filters the catalogue and map to homes with a 360 degree tour', async () => {
+    const panoramaProperty = { ...property, media: [...property.media, { url: 'https://kuula.co/share/LTPpc', kind: 'panorama' as const, altText: '360 tour', position: 4 }] }
+    mockResponse({ properties: [panoramaProperty, corkProperty] })
+    const user = userEvent.setup()
+
+    render(<App />)
+
+    await user.click(await screen.findByRole('checkbox', { name: '360° tours only' }))
+
+    expect(screen.getByRole('heading', { name: property.title })).toBeVisible()
+    expect(screen.queryByRole('heading', { name: corkProperty.title })).not.toBeInTheDocument()
+    expect(screen.getByText('1 result')).toBeVisible()
+  })
+
   it('opens a property on a dedicated detail URL', async () => {
     window.history.replaceState({}, '', `/properties/${property.id}`)
-    mockResponse({ properties: [property, corkProperty] })
+    mockResponse({ properties: [{ ...property, media: [...property.media, { url: 'https://kuula.co/share/LTPpc?fs=1', kind: 'panorama', altText: '360 tour', position: 4 }] }, corkProperty] })
 
     render(<App />)
 
     expect(await screen.findByRole('main', { name: 'Property details' })).toBeVisible()
     expect(screen.getByRole('heading', { level: 1, name: property.title })).toBeVisible()
     expect(screen.getByRole('link', { name: 'Back to property search' })).toHaveAttribute('href', '/')
+    expect(screen.getByRole('link', { name: '360° tour' })).toHaveAttribute('href', '#tour')
+    expect(screen.getByRole('heading', { name: 'Walk through every room.' })).toBeVisible()
+    expect(screen.getByRole('link', { name: 'Open full 360° tour' })).toHaveAttribute('href', `/properties/${property.id}/tour`)
+    expect(await screen.findByRole('button', { name: 'Enter 360° tour' })).toBeVisible()
     expect(screen.queryByRole('region', { name: 'Explore homes by location' })).not.toBeInTheDocument()
+  })
+
+  it('opens a property panorama on a dedicated full-view URL', async () => {
+    window.history.replaceState({}, '', `/properties/${property.id}/tour`)
+    mockResponse({ properties: [{ ...property, media: [...property.media, { url: 'https://kuula.co/share/LTPpc?fs=1', kind: 'panorama', altText: '360 tour', position: 4 }] }] })
+
+    render(<App />)
+
+    expect(await screen.findByRole('main', { name: `${property.title} 360° tour` })).toBeVisible()
+    expect(screen.getByRole('link', { name: `Back to ${property.title}` })).toHaveAttribute('href', `/properties/${property.id}`)
+    expect(screen.getByRole('link', { name: 'View property details' })).toHaveAttribute('href', `/properties/${property.id}`)
+    expect(screen.getByRole('link', { name: 'View location on map' })).toHaveAttribute('href', `/?county=${property.county}&property=${property.id}#explore`)
+    expect(await screen.findByRole('button', { name: 'Enter 360° tour' })).toBeVisible()
+  })
+
+  it('restores a linked property as the active map location', async () => {
+    window.history.replaceState({}, '', `/?county=${property.county}&property=${property.id}#explore`)
+    mockResponse({ properties: [property, corkProperty] })
+
+    render(<App />)
+
+    expect(await screen.findByRole('article', { name: `Preview ${property.title}` })).toBeVisible()
+    expect(screen.getByRole('button', { name: `Select ${property.title} on map` })).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('expands the property tour workspace to browser fullscreen', async () => {
+    window.history.replaceState({}, '', `/properties/${property.id}/tour`)
+    mockResponse({ properties: [{ ...property, media: [...property.media, { url: 'https://kuula.co/share/LTPpc?fs=1', kind: 'panorama', altText: '360 tour', position: 4 }] }] })
+    const requestFullscreen = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(HTMLElement.prototype, 'requestFullscreen', { configurable: true, value: requestFullscreen })
+    const user = userEvent.setup()
+
+    render(<App />)
+
+    await user.click(await screen.findByRole('button', { name: 'Open tour in browser fullscreen' }))
+    expect(requestFullscreen).toHaveBeenCalledOnce()
+  })
+
+  it('promotes the immersive service away from the opening showcase', async () => {
+    const panoramaProperty = { ...property, media: [...property.media, { url: 'https://kuula.co/share/LTPpc?fs=1', kind: 'panorama' as const, altText: '360 tour', position: 4 }] }
+    mockResponse({ properties: [panoramaProperty] })
+
+    render(<App />)
+
+    expect(await screen.findByRole('region', { name: 'Immersive property viewing' })).toBeVisible()
+    expect(screen.getByRole('link', { name: `Open the 360° tour for ${property.title}` })).toHaveAttribute('href', `/properties/${property.id}/tour`)
+  })
+
+  it('collects a contextual viewing request from the property page', async () => {
+    window.history.replaceState({}, '', `/properties/${property.id}`)
+    mockResponse({ properties: [property] })
+    const user = userEvent.setup()
+
+    render(<App />)
+
+    await user.click(await screen.findByRole('button', { name: 'Arrange a viewing' }))
+    const dialog = screen.getByRole('dialog', { name: `Request a viewing for ${property.title}` })
+    expect(within(dialog).getByText(new RegExp(property.addressLine1))).toBeVisible()
+    await user.type(within(dialog).getByLabelText('Your name'), 'Aisling Murphy')
+    await user.type(within(dialog).getByLabelText('Email address'), 'aisling@example.com')
+    await user.click(within(dialog).getByRole('radio', { name: 'Saturday · 11:00' }))
+    await user.click(within(dialog).getByRole('button', { name: 'Send viewing request' }))
+
+    expect(within(dialog).getByRole('status')).toHaveTextContent('Your sample viewing request is ready')
+  })
+
+  it('keeps buyer notes attached to the property locally', async () => {
+    window.history.replaceState({}, '', `/properties/${property.id}`)
+    mockResponse({ properties: [property] })
+    const user = userEvent.setup()
+
+    render(<App />)
+
+    await user.click(await screen.findByRole('button', { name: 'Add property notes' }))
+    const dialog = screen.getByRole('dialog', { name: `Notes for ${property.title}` })
+    await user.type(within(dialog).getByLabelText('Private notes'), 'Check afternoon light in the kitchen.')
+    await user.click(within(dialog).getByRole('checkbox', { name: 'Ask about recent renovations' }))
+    await user.click(within(dialog).getByRole('button', { name: 'Save property notes' }))
+
+    expect(screen.getByText('Notes saved locally')).toBeVisible()
+    await user.click(screen.getByRole('button', { name: 'Edit property notes' }))
+    expect(within(screen.getByRole('dialog', { name: `Notes for ${property.title}` })).getByLabelText('Private notes')).toHaveValue('Check afternoon light in the kitchen.')
   })
 
   it('shows a loading state while properties are requested', () => {
@@ -155,13 +279,14 @@ describe('property catalogue', () => {
     await user.click(screen.getByRole('button', { name: 'Explore Cork, 1 property' }))
 
     expect(explorer.querySelector('.location-drilldown-slot')).toBe(reservedDrilldownSlot)
-    expect(screen.getByRole('button', { name: 'All Ireland' })).toHaveTextContent('Ireland')
+    expect(explorer.querySelector('.map-back-button')).toHaveTextContent('Ireland')
     expect(screen.getByRole('heading', { name: corkProperty.title })).toBeVisible()
     expect(screen.queryByRole('heading', { name: property.title })).not.toBeInTheDocument()
     expect(within(explorer).getByText('1 home for sale')).toBeVisible()
+    await user.click(screen.getByRole('button', { name: 'Choose an area in Cork' }))
     expect(screen.getByRole('button', { name: 'Explore Cork City North West, 1 property' })).toBeVisible()
 
-    await user.click(screen.getByRole('button', { name: 'All Ireland' }))
+    await user.click(explorer.querySelector('.map-back-button') as HTMLButtonElement)
     expect(screen.getByRole('heading', { name: property.title })).toBeVisible()
     expect(screen.getByRole('heading', { name: corkProperty.title })).toBeVisible()
   })
@@ -189,6 +314,7 @@ describe('property catalogue', () => {
 
     expect(screen.getByRole('heading', { name: 'Homes in Bandon - Kinsale' })).toBeVisible()
     expect(screen.getByRole('button', { name: `Select ${kinsaleProperty.title} on map` })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('article', { name: `Preview ${kinsaleProperty.title}` })).toBeVisible()
   })
 
   it('keeps the national listing grid available before a county is selected', async () => {
@@ -208,6 +334,43 @@ describe('property catalogue', () => {
 
     const explorer = await screen.findByRole('region', { name: 'Explore homes by location' })
     expect(within(explorer).getByRole('heading', { level: 1, name: 'Find a place that feels like home' })).toBeVisible()
+  })
+
+  it('opens a contextual saved-search dialog and confirms the alert', async () => {
+    mockResponse({ properties: [property, corkProperty] })
+    const user = userEvent.setup()
+
+    render(<App />)
+
+    await user.click(await screen.findByRole('button', { name: 'Save search' }))
+    const dialog = screen.getByRole('dialog', { name: 'Save this search' })
+    expect(within(dialog).getByText('2 matching homes')).toBeVisible()
+    await user.type(within(dialog).getByLabelText('Email address'), 'buyer@example.com')
+    await user.click(within(dialog).getByRole('button', { name: 'Create property alert' }))
+
+    expect(within(dialog).getByRole('status')).toHaveTextContent('Your sample alert is ready')
+  })
+
+  it('shortlists homes and compares them in a persistent buyer tray', async () => {
+    mockResponse({ properties: [property, corkProperty] })
+    const user = userEvent.setup()
+
+    render(<App />)
+
+    await user.click(await screen.findByRole('button', { name: `Add ${property.title} to comparison` }))
+    await user.click(screen.getByRole('button', { name: `Add ${corkProperty.title} to comparison` }))
+    const tray = screen.getByRole('region', { name: 'Property comparison' })
+    expect(within(tray).getByText('2 homes selected')).toBeVisible()
+    await user.click(within(tray).getByRole('button', { name: 'Compare homes' }))
+
+    const dialog = screen.getByRole('dialog', { name: 'Compare selected homes' })
+    expect(within(dialog).getByText(property.title)).toBeVisible()
+    expect(within(dialog).getByText(corkProperty.title)).toBeVisible()
+    expect(within(dialog).getAllByText('Asking price')).toHaveLength(2)
+
+    await user.click(within(dialog).getByRole('button', { name: `Remove ${property.title} from comparison` }))
+    expect(within(dialog).queryByText(property.title)).not.toBeInTheDocument()
+    expect(within(tray).getByText('1 home selected')).toBeVisible()
   })
 
   it('lets a buyer search available counties and towns from the map panel', async () => {
@@ -237,6 +400,7 @@ describe('property catalogue', () => {
     expect(screen.getByRole('button', { name: 'Explore Dublin, 1 property' })).toBeVisible()
     expect(screen.getByRole('button', { name: 'Explore Cork, 2 properties' })).toHaveAttribute('aria-pressed', 'true')
     expect(screen.queryByRole('button', { name: 'Back to all Cork' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Choose an area in Cork' }))
     expect(screen.getByRole('button', { name: 'Explore Cork City North West, 1 property' })).toBeVisible()
     expect(screen.getByRole('button', { name: 'Explore Bandon - Kinsale, 1 property' })).toBeVisible()
 
@@ -259,6 +423,25 @@ describe('property catalogue', () => {
     expect(screen.getByRole('button', { name: 'Explore Bandon - Kinsale, 1 property' })).toHaveAttribute('aria-pressed', 'false')
     expect(screen.getByRole('heading', { name: corkProperty.title })).toBeVisible()
     expect(screen.getByRole('heading', { name: kinsaleProperty.title })).toBeVisible()
+  })
+
+  it('deep-links county and area selection and restores it with browser history', async () => {
+    vi.stubEnv('VITE_GOOGLE_MAPS_API_KEY', '')
+    mockResponse({ properties: [property, corkProperty, kinsaleProperty] })
+    const user = userEvent.setup()
+
+    render(<App />)
+
+    await user.click(await screen.findByRole('button', { name: 'Choose location' }))
+    await user.click(screen.getByRole('button', { name: 'Explore Cork, 2 properties' }))
+    await user.click(screen.getByRole('button', { name: 'Choose an area in Cork' }))
+    await user.click(screen.getByRole('button', { name: 'Explore Bandon - Kinsale, 1 property' }))
+    expect(window.location.search).toBe('?county=Cork&area=Bandon+-+Kinsale')
+
+    window.history.back()
+    window.dispatchEvent(new PopStateEvent('popstate'))
+    await waitFor(() => expect(screen.getByRole('heading', { level: 1, name: 'Homes in Cork' })).toBeVisible())
+    expect(window.location.search).toBe('?county=Cork')
   })
 
   it('returns an unavailable county URL to the useful Ireland overview', async () => {
@@ -310,6 +493,12 @@ describe('property catalogue', () => {
 
     await user.click(screen.getByRole('button', { name: 'Previous image' }))
     expect(screen.getByRole('img', { name: 'Bright open-plan living room' })).toBeVisible()
+
+    await user.click(screen.getByRole('button', { name: 'Later media thumbnails' }))
+    expect(screen.getAllByRole('img', { name: 'Measured floor plan of the property' }).some((image) => image.classList.contains('gallery-image'))).toBe(true)
+
+    await user.click(screen.getByRole('button', { name: 'Earlier media thumbnails' }))
+    expect(screen.getByRole('img', { name: 'Bright open-plan living room' })).toBeVisible()
   })
 
   it('shows native video controls when the buyer selects a video tour', async () => {
@@ -329,10 +518,17 @@ describe('property catalogue', () => {
 
   it('falls back safely when a property has no media', async () => {
     mockResponse({ properties: [{ ...property, media: [] }] })
+    const user = userEvent.setup()
 
     render(<App />)
 
     expect((await screen.findAllByRole('img', { name: /Architectural study for/ }))[0]).toBeVisible()
+
+    await user.click(screen.getByRole('button', { name: `View Illustrative floor plan for ${property.title}` }))
+    expect(screen.getByRole('img', { name: `Illustrative floor plan for ${property.title}` })).toHaveAttribute(
+      'src',
+      '/media/placeholders/sample-floor-plan.png',
+    )
   })
 
   it('shows an empty state when no published homes exist', async () => {

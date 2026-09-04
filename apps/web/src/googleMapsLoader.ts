@@ -2,6 +2,7 @@ export type Coordinate = { lat: number; lng: number }
 export type BoundsInstance = { extend(position: Coordinate): void }
 export type Listener = { remove(): void }
 export type MapInstance = {
+  getDiv?(): HTMLElement
   addListener(event: 'dragstart' | 'zoom_changed' | 'idle', listener: () => void): Listener
   fitBounds(bounds: BoundsInstance, padding?: number): void
   getZoom(): number | undefined
@@ -16,8 +17,6 @@ export type MapInstance = {
 export type MarkerInstance = {
   addListener(event: 'click', listener: () => void): Listener
   setMap(map: MapInstance | null): void
-  setIcon(icon: Record<string, unknown>): void
-  setZIndex(index: number): void
 }
 export type InfoWindowInstance = {
   addListener(event: 'closeclick', listener: () => void): Listener
