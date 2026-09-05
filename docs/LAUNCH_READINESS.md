@@ -1,6 +1,6 @@
 # OpenHaus launch readiness
 
-Working estimate: approximately 55% of the planned public product, based on the product roadmap and implementation review, not an audited score or legal certification.
+Working estimate: approximately 58% of the planned public product, based on the product roadmap and implementation review, not an audited score or legal certification.
 
 ## Delivered foundations
 
@@ -9,15 +9,18 @@ Working estimate: approximately 55% of the planned public product, based on the 
 - Manager authentication, property editing, media upload and preview workflows.
 - Browser-local buyer notes and comparisons.
 - Account-owned saved homes with a deliberate browser-comparison import; account-owned notes and searches remain future work.
+- Browser-local, explainable home matching and a catalogue-derived county index. These decision tools use visible listing facts and make no investment or suitability prediction.
 - About, Contact, searchable Help and draft Privacy information routes. Contact identity is deliberately unconfigured pending operator details.
+- Services, buyer, seller, accessibility, draft terms and public roadmap pages, plus a demonstration selling-agent directory linked from listings.
 - Confirmed deletion of browser-local notes/comparisons from the Privacy page. This is not server-side account deletion or a complete GDPR erasure workflow.
+- Manager profiles now expose the authenticated email and account identifier. Managers can change their password or revoke every manager session; both actions clear the current session, and password changes verify the existing password first.
 
 ## Next product increments, in order
 
 1. Development registration, login/logout and account pages are now verified against the migrated local database. Add verified email, recovery and expiry cleanup before public use. Keep manager and buyer permissions separate; test ownership on every account-owned record. Notes and comparisons currently remain browser-local.
 2. Extend the delivered account-owned saved homes and direct property-page save control into account-owned notes, searches and viewing history. Browser comparison import is explicit rather than automatic.
 3. Real viewing requests, staff availability, email delivery, cancellation and status tracking. Current viewing and saved-search forms are demonstrations.
-4. Verified contact channel and enquiry delivery with anti-abuse controls and data-minimising forms. Add Services and a buyer guide once the offered services are confirmed.
+4. Verified contact channel and enquiry delivery with anti-abuse controls and data-minimising forms. Replace the demonstration Services, buyer and seller guidance with operator-approved offerings and support routes.
 5. Terms of use, finalized Privacy and cookies/storage information, and accessibility statement based on an actual audit. Unknown frontend routes now have a useful not-found view; production hosting/status behavior still needs verification.
 6. Optional assistant only after a provider/data review: grounded help answers, visible AI disclosure, no private notes by default, minimal retention, human escalation and no invented property/legal/financial advice. Searchable Help is the current non-AI alternative.
 
@@ -30,6 +33,17 @@ Working estimate: approximately 55% of the planned public product, based on the 
 - Implement and test access/export/correction/deletion workflows with identity verification and timely responses.
 - Document breach handling and assess whether a DPIA is required. Conduct security and accessibility checks before public launch.
 - Review notices against actual processing, not planned capabilities. Do not market the demonstration as GDPR-compliant.
+
+## Selling-agent identity boundary — demonstration only
+
+Property pages now identify a sample selling-agent profile and link to a public directory so the buyer-facing information architecture is testable. These profiles are explicitly marked as demonstrations and do not publish invented phone numbers, email addresses or regulatory licence numbers. Before launch, replace this local directory with verified agent records owned by the API, add staff assignment and audit history, and require operator review before an identity becomes public.
+
+## Public information and agent increment — 2026-09-05
+
+- Services, buyer, seller, accessibility, draft terms and roadmap pages are routed, deep-linkable and covered by frontend tests.
+- The agent directory, individual profile routes and county-to-agent presentation are visible in the running browser; the property page exposes the assigned profile and viewing action in one labelled region.
+- Frontend: 188 tests across 29 files passed, the production build passed, and lint passed with the three existing map fast-refresh warnings. The build still reports the previously known large map and administrative-area chunks.
+- No deployment, database mutation, real contact publication or external provider change was made. The 58% estimate remains a planning measure, not a legal, security, accessibility or launch certification.
 
 Authoritative starting points: [DPC transparency guidance](https://www.dataprotection.ie/en/individuals/know-your-rights/right-be-informed-transparency-article-13-14-gdpr), [DPC self-assessment](https://www.dataprotection.ie/en/organisations/resources-organisations/self-assessment-checklist), and [DPC cookies guidance](https://www.dataprotection.ie/sites/default/files/uploads/2020-04/Guidance%20note%20on%20cookies%20and%20other%20tracking%20technologies.pdf).
 

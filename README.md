@@ -198,10 +198,13 @@ MANAGER_PASSWORD="use-a-long-local-password" \
 go run ./cmd/create-manager
 ```
 
-Login with `POST /api/v1/manager/session`; logout with `DELETE` on the same
-route. `GET /api/v1/manager/properties` requires the returned HttpOnly cookie
-and includes draft, published, and archived listings. Set `APP_ENV=production`
-in production so the cookie is also marked `Secure`.
+Login with `POST /api/v1/manager/session`; inspect the authenticated identity
+with `GET` and logout with `DELETE` on the same route. An authenticated manager
+can change their password with `PUT /api/v1/manager/password` or revoke every
+active session with `DELETE /api/v1/manager/sessions`. A password change revokes
+all sessions atomically. `GET /api/v1/manager/properties` requires the returned
+HttpOnly cookie and includes draft, published, and archived listings. Set
+`APP_ENV=production` in production so the cookie is also marked `Secure`.
 
 The web manager workspace is available at `http://localhost:5173/manager/login`.
 It restores an existing cookie-backed session and lets managers create drafts,
@@ -226,8 +229,8 @@ DATABASE_URL="$manager_database_url" MANAGER_EMAIL="$manager_email" MANAGER_PASS
 unset manager_password manager_database_url
 ```
 
-Passwords must contain at least 12 characters. The reset command never prints
-the password or stores its plaintext form in the database.
+Passwords must contain 12–72 bytes. The reset command never prints the password
+or stores its plaintext form in the database.
 
 ## Development client accounts
 

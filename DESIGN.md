@@ -141,3 +141,4 @@ Keep the current React 19, TypeScript and Vite frontend; Go API; PostgreSQL/Post
 | 2026-09-04 | Use restrained functional motion | Preserves responsiveness while making state changes feel intentional. |
 | 2026-09-04 | Replace the homepage residence image with a live discovery desk | Makes the opening product-led, information-rich and visually closer to the requested rigid reference. |
 | 2026-09-04 | Keep buyer and manager entry points mutually exclusive in the interface | Prevents role confusion while preserving server-side authorization on every manager route. |
+| 2026-09-05 | Present catalogue homes one at a time in a 50/50 media-and-details frame | Restores the opening experience’s editorial rhythm, gives every image equal weight and avoids the cramped paired-card layout. |

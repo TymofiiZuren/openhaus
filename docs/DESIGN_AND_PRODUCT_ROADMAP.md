@@ -121,6 +121,8 @@ The development account foundation keeps buyer identity and sessions separate fr
 - Connect viewing requests to authenticated buyers and live staff availability.
 - Notification preferences and alert history.
 - [x] Privacy-first catalogue concierge that translates natural-language buyer briefs into existing filters and grounded listing matches without sending prompts to a third party.
+- [x] Explainable Match Lab that re-ranks the live catalogue from buyer-controlled budget, space, media and location signals, with shareable URL criteria and no profiling.
+- [x] Live Area Index derived from catalogue inventory, asking prices, bedroom counts, property types and media completeness.
 - Provider-backed assistant only after a documented data-processing, retention, disclosure and evaluation review; the local catalogue remains the deterministic fallback.
 
 ### Phase C — spatial media
