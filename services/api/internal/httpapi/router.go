@@ -56,6 +56,11 @@ type ManagerAuthenticator interface {
 	Logout(context.Context, string) error
 }
 
+type ManagerAccountSecurity interface {
+	ChangePassword(context.Context, managerauth.User, string, string) error
+	LogoutAll(context.Context, string) error
+}
+
 type VideoUploader interface {
 	AcceptUpload(context.Context, string, string, io.Reader) (mediajob.Job, error)
 }
@@ -101,7 +106,10 @@ func NewRouter(dependencies Dependencies) http.Handler {
 	router.Handle("POST /api/v1/manager/properties/{propertyID}/videos", requireManager(dependencies.ManagerAuth, uploadVideo(dependencies.Videos)))
 	router.Handle("GET /api/v1/manager/media-jobs/{jobID}", requireManager(dependencies.ManagerAuth, getMediaJob(dependencies.Jobs)))
 	router.HandleFunc("POST /api/v1/manager/session", managerLogin(dependencies.ManagerAuth, dependencies.SecureCookies))
+	router.HandleFunc("GET /api/v1/manager/session", managerSession(dependencies.ManagerAuth))
 	router.HandleFunc("DELETE /api/v1/manager/session", managerLogout(dependencies.ManagerAuth, dependencies.SecureCookies))
+	router.HandleFunc("PUT /api/v1/manager/password", managerPassword(dependencies.ManagerAuth, dependencies.SecureCookies))
+	router.HandleFunc("DELETE /api/v1/manager/sessions", managerSessions(dependencies.ManagerAuth, dependencies.SecureCookies))
 	router.Handle("GET /api/v1/manager/properties", requireManager(dependencies.ManagerAuth, listManagedProperties(dependencies.ManagerProperties)))
 	router.Handle("POST /api/v1/manager/properties", requireManager(dependencies.ManagerAuth, createManagedProperty(dependencies.ManagerPropertyWriter)))
 	router.Handle("PUT /api/v1/manager/properties/{propertyID}", requireManager(dependencies.ManagerAuth, updateManagedProperty(dependencies.ManagerPropertyWriter)))
@@ -275,6 +283,109 @@ func managerLogout(authenticator ManagerAuthenticator, secure bool) http.Handler
 	}
 }
 
+func managerSession(authenticator ManagerAuthenticator) http.HandlerFunc {
+	return func(response http.ResponseWriter, request *http.Request) {
+		response.Header().Set("Cache-Control", "no-store")
+		cookie, err := request.Cookie(managerSessionCookie)
+		if err != nil {
+			writeError(response, http.StatusUnauthorized, "authentication_required", "manager authentication is required")
+			return
+		}
+		user, err := authenticator.Authenticate(request.Context(), cookie.Value)
+		if err != nil {
+			writeError(response, http.StatusUnauthorized, "authentication_required", "manager authentication is required")
+			return
+		}
+		writeJSON(response, http.StatusOK, map[string]any{"manager": user})
+	}
+}
+
+func managerPassword(authenticator ManagerAuthenticator, secure bool) http.HandlerFunc {
+	return func(response http.ResponseWriter, request *http.Request) {
+		response.Header().Set("Cache-Control", "no-store")
+		if request.Header.Get("Sec-Fetch-Site") == "cross-site" {
+			writeError(response, http.StatusForbidden, "invalid_origin", "same-origin request required")
+			return
+		}
+		security, ok := authenticator.(ManagerAccountSecurity)
+		if !ok {
+			writeError(response, http.StatusNotImplemented, "account_security_unavailable", "account security is unavailable")
+			return
+		}
+		cookie, err := request.Cookie(managerSessionCookie)
+		if err != nil {
+			writeError(response, http.StatusUnauthorized, "authentication_required", "manager authentication is required")
+			return
+		}
+		user, err := authenticator.Authenticate(request.Context(), cookie.Value)
+		if err != nil {
+			writeError(response, http.StatusUnauthorized, "authentication_required", "manager authentication is required")
+			return
+		}
+		if !strings.HasPrefix(request.Header.Get("Content-Type"), "application/json") {
+			writeError(response, http.StatusUnsupportedMediaType, "invalid_content_type", "JSON required")
+			return
+		}
+		var input struct {
+			CurrentPassword string `json:"currentPassword"`
+			NewPassword     string `json:"newPassword"`
+		}
+		decoder := json.NewDecoder(http.MaxBytesReader(response, request.Body, 4096))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&input); err != nil || decoder.Decode(new(any)) != io.EOF || input.CurrentPassword == "" || input.NewPassword == "" {
+			writeError(response, http.StatusBadRequest, "invalid_request", "current and new passwords are required")
+			return
+		}
+		err = security.ChangePassword(request.Context(), user, input.CurrentPassword, input.NewPassword)
+		switch {
+		case errors.Is(err, managerauth.ErrInvalidCredentials):
+			writeError(response, http.StatusUnauthorized, "invalid_credentials", "current password is incorrect")
+			return
+		case errors.Is(err, managerauth.ErrInvalidPassword):
+			writeError(response, http.StatusBadRequest, "invalid_password", "new password must contain 12 to 72 bytes")
+			return
+		case err != nil:
+			log.Printf("change manager password: %v", err)
+			writeError(response, http.StatusInternalServerError, "internal_error", "internal server error")
+			return
+		}
+		setManagerCookie(response, "", time.Unix(0, 0), secure)
+		response.WriteHeader(http.StatusNoContent)
+	}
+}
+
+func managerSessions(authenticator ManagerAuthenticator, secure bool) http.HandlerFunc {
+	return func(response http.ResponseWriter, request *http.Request) {
+		response.Header().Set("Cache-Control", "no-store")
+		if request.Header.Get("Sec-Fetch-Site") == "cross-site" {
+			writeError(response, http.StatusForbidden, "invalid_origin", "same-origin request required")
+			return
+		}
+		security, ok := authenticator.(ManagerAccountSecurity)
+		if !ok {
+			writeError(response, http.StatusNotImplemented, "account_security_unavailable", "account security is unavailable")
+			return
+		}
+		cookie, err := request.Cookie(managerSessionCookie)
+		if err != nil {
+			writeError(response, http.StatusUnauthorized, "authentication_required", "manager authentication is required")
+			return
+		}
+		user, err := authenticator.Authenticate(request.Context(), cookie.Value)
+		if err != nil {
+			writeError(response, http.StatusUnauthorized, "authentication_required", "manager authentication is required")
+			return
+		}
+		if err := security.LogoutAll(request.Context(), user.ID); err != nil {
+			log.Printf("revoke manager sessions: %v", err)
+			writeError(response, http.StatusInternalServerError, "internal_error", "internal server error")
+			return
+		}
+		setManagerCookie(response, "", time.Unix(0, 0), secure)
+		response.WriteHeader(http.StatusNoContent)
+	}
+}
+
 func requireManager(authenticator ManagerAuthenticator, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		cookie, err := request.Cookie(managerSessionCookie)
@@ -399,6 +510,8 @@ func ready(checker ReadinessChecker) http.HandlerFunc {
 
 func listProperties(properties PropertyLister) http.HandlerFunc {
 	return func(response http.ResponseWriter, request *http.Request) {
+		// Manager updates should be visible on the next public catalogue load.
+		response.Header().Set("Cache-Control", "no-store")
 		bounds, err := parseBounds(request.URL.Query().Get("bbox"))
 		if err != nil {
 			writeError(response, http.StatusBadRequest, "invalid_bbox", "bbox must be west,south,east,north coordinates")

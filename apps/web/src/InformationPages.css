@@ -12,6 +12,7 @@
 .information-body section + section { padding-top: 32px; border-top: 1px solid var(--line); }
 .information-body h2 { margin: 0 0 16px; font-family: var(--display-font); font-weight: 400; font-size: 1.75rem; }
 .information-body p { line-height: 1.7; color: var(--muted); }
+.information-body :is(ul,ol) { display: grid; gap: 12px; padding-left: 22px; color: var(--muted); line-height: 1.6; }
 .information-notice { padding: 24px; margin-bottom: 32px; border-left: 2px solid var(--accent); border-radius: 0; background: var(--soft); }
 .information-notice p { margin-bottom: 0; }
 .information-search { display: grid; gap: 12px; }
@@ -23,5 +24,12 @@
 .information-confirm { display: flex; align-items: flex-start; gap: 12px; padding-block: 16px; line-height: 1.5; }
 .information-body button { min-height: 44px; padding: 12px 20px; border: 1px solid var(--line-strong); border-radius: var(--radius-control); font: inherit; background: var(--inverse-surface); color: var(--on-inverse); cursor: pointer; }
 .information-body button:disabled { opacity: .5; cursor: not-allowed; }
+.information-progress { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 12px 24px; margin-bottom: 32px; padding: 24px; border: 1px solid var(--line-strong); border-radius: var(--radius-panel); background: var(--control-surface); }
+.information-progress > span { align-self: end; color: var(--muted); font-family: var(--data-font); font-size: .65rem; letter-spacing: .07em; text-transform: uppercase; }
+.information-progress strong { grid-row: span 2; color: var(--accent); font-family: var(--data-font); font-size: 2.6rem; font-weight: 400; }
+.information-progress > div { height: 4px; overflow: hidden; background: var(--line); }
+.information-progress i { height: 100%; display: block; background: var(--accent); }
+.information-progress p { grid-column: 1 / -1; margin: 4px 0 0; font-size: .78rem; }
 .information-footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 24px; padding: 32px; border-top: 1px solid var(--line); }
+.information-footer nav { display: flex; flex-wrap: wrap; gap: 20px; }
 @media (max-width: 700px) { .information-layout { grid-template-columns: 1fr; gap: 32px; } .information-nav { flex-direction: row; flex-wrap: wrap; gap: 24px; } .information-intro { padding-bottom: 24px; } }

@@ -6,6 +6,7 @@ import { loadGoogleMaps } from './googleMapsLoader'
 import type { Listener, MapInstance, MarkerInstance, PolygonInstance } from './googleMapsLoader'
 import { groupPropertiesForMap } from './mapListingGroups'
 import { fitCameraImmediately } from './mapCamera'
+import { mapStyleForTheme } from './mapStyles'
 
 const irelandOverviewRestriction = {
   west: -14.4,
@@ -46,6 +47,8 @@ export function GooglePropertyMap({ properties, selectedPropertyID, selectedCoun
   const [status, setStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
   const [mapType, setMapType] = useState<'roadmap' | 'satellite'>('roadmap')
   const [isFullscreen, setIsFullscreen] = useState(false)
+  const [visualTheme, setVisualTheme] = useState<'light' | 'dark'>(() => document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light')
+  const visualThemeRef = useRef(visualTheme)
   const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string | undefined
   const attribution = selectedCounty && areas.length > 0 ? administrativeAreaAttribution : countyBoundaryAttribution
 
@@ -55,6 +58,18 @@ export function GooglePropertyMap({ properties, selectedPropertyID, selectedCoun
   useEffect(() => { onDismiss.current = onDismissProperty }, [onDismissProperty])
   useEffect(() => { selectedCountyRef.current = selectedCounty }, [selectedCounty])
   useEffect(() => { selectedAreaRef.current = selectedArea }, [selectedArea])
+
+  useEffect(() => {
+    const root = document.documentElement
+    const updateTheme = () => {
+      const theme = root.dataset.theme === 'dark' ? 'dark' : 'light'
+      visualThemeRef.current = theme
+      setVisualTheme(theme)
+    }
+    const observer = new MutationObserver(updateTheme)
+    observer.observe(root, { attributes: true, attributeFilter: ['data-theme'] })
+    return () => observer.disconnect()
+  }, [])
 
   useEffect(() => {
     if (!apiKey || !container.current) return
@@ -70,7 +85,7 @@ export function GooglePropertyMap({ properties, selectedPropertyID, selectedCoun
           // Cooperative mode supplies the tinted modifier-key hint, preserves
           // page scrolling and accepts intentional Ctrl/Command-scroll zoom.
           // Do not set scrollwheel:false: it also disables intentional zoom.
-          clickableIcons: false, gestureHandling: 'cooperative', disableDoubleClickZoom: true, zoomControl: true, styles: openHausMapStyle,
+          clickableIcons: false, gestureHandling: 'cooperative', disableDoubleClickZoom: true, zoomControl: true, styles: mapStyleForTheme(visualThemeRef.current),
           restriction: { latLngBounds: ireland.restriction, strictBounds: true },
         })
         const dragListener = map.current.addListener('dragstart', () => onDismiss.current())
@@ -93,6 +108,10 @@ export function GooglePropertyMap({ properties, selectedPropertyID, selectedCoun
       .catch(() => { if (!cancelled) setStatus('error') })
     return () => { cancelled = true }
   }, [apiKey])
+
+  useEffect(() => {
+    if (status === 'ready') map.current?.setOptions({ styles: mapStyleForTheme(visualTheme) })
+  }, [status, visualTheme])
 
   useEffect(() => {
     if (status !== 'ready' || !map.current || !window.google) return
@@ -279,10 +298,10 @@ function clearPolygons(items: Array<{ polygon: PolygonInstance; listeners: Liste
 export function countyStyle(name: string, selectedCounty: string | null | undefined, available: boolean) {
   const selected = !!selectedCounty && sameLocation(name, selectedCounty)
   return {
-    strokeColor: '#3a2d28',
+    strokeColor: selected ? '#4f4d49' : '#777873',
     strokeOpacity: selected ? .95 : available ? .5 : .26,
     strokeWeight: selected ? 3 : 1,
-    fillColor: '#d56f4b',
+    fillColor: '#8e887f',
     fillOpacity: selected ? .025 : 0,
     zIndex: selected ? 2 : 1,
   }
@@ -291,10 +310,10 @@ export function countyStyle(name: string, selectedCounty: string | null | undefi
 export function areaStyle(name: string, selectedArea: string | undefined) {
   const selected = sameLocation(name, selectedArea ?? '')
   return {
-    strokeColor: selected ? '#884531' : '#655d55',
+    strokeColor: selected ? '#4f4d49' : '#777873',
     strokeOpacity: selected ? .95 : .48,
     strokeWeight: selected ? 2 : .8,
-    fillColor: selected ? '#d56f4b' : '#eee2d7',
+    fillColor: selected ? '#8e887f' : '#d9d8d3',
     fillOpacity: selected ? .12 : .025,
   }
 }
@@ -339,9 +358,9 @@ function focusArea(map: MapInstance, area: AdministrativeArea) {
 
 function markerIcon(selected: boolean, label: string) {
   const width = Math.max(70, 30 + label.length * 9)
-  const fill = selected ? '#d56f4b' : '#211b18'
+  const fill = selected ? '#8e887f' : '#181817'
   const escapedLabel = label.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="46" viewBox="0 0 ${width} 46"><path d="M12 2h${width - 24}a10 10 0 0 1 10 10v14a10 10 0 0 1-10 10H${width / 2 + 6}L${width / 2} 44l-6-8H12A10 10 0 0 1 2 26V12A10 10 0 0 1 12 2Z" fill="${fill}" stroke="#fffdfa" stroke-width="${selected ? 3 : 2}"/><text x="${width / 2}" y="23" fill="#fffdfa" font-family="Arial,sans-serif" font-size="13" font-weight="700" text-anchor="middle">${escapedLabel}</text></svg>`
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="46" viewBox="0 0 ${width} 46"><path d="M12 2h${width - 24}a10 10 0 0 1 10 10v14a10 10 0 0 1-10 10H${width / 2 + 6}L${width / 2} 44l-6-8H12A10 10 0 0 1 2 26V12A10 10 0 0 1 12 2Z" fill="${fill}" stroke="#ffffff" stroke-width="${selected ? 3 : 2}"/><text x="${width / 2}" y="23" fill="#ffffff" font-family="Arial,sans-serif" font-size="13" font-weight="700" text-anchor="middle">${escapedLabel}</text></svg>`
   return { url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}` }
 }
 
@@ -386,25 +405,3 @@ function pointInRing(point: { lat: number; lng: number }, path: Array<{ lat: num
 }
 
 function sameLocation(left: string, right: string) { return left.localeCompare(right, undefined, { sensitivity: 'base' }) === 0 }
-
-const openHausMapStyle = [
-  { elementType: 'geometry', stylers: [{ color: '#e9e3d8' }] },
-  { elementType: 'labels.text.fill', stylers: [{ color: '#53615c' }] },
-  { elementType: 'labels.text.stroke', stylers: [{ color: '#f7f2e9' }, { weight: 3 }] },
-  { featureType: 'administrative', elementType: 'geometry.stroke', stylers: [{ color: '#aeb8b2' }] },
-  { featureType: 'administrative.province', elementType: 'geometry.stroke', stylers: [{ visibility: 'off' }] },
-  { featureType: 'administrative.country', elementType: 'labels.text.fill', stylers: [{ color: '#211b18' }] },
-  { featureType: 'administrative.locality', elementType: 'labels.text.fill', stylers: [{ color: '#3a2d28' }] },
-  { featureType: 'landscape.natural', elementType: 'geometry', stylers: [{ color: '#e9e1d7' }] },
-  { featureType: 'landscape.man_made', elementType: 'geometry', stylers: [{ color: '#eee9df' }] },
-  { featureType: 'poi', elementType: 'labels', stylers: [{ visibility: 'off' }] },
-  { featureType: 'poi.park', elementType: 'geometry', stylers: [{ color: '#dedbc9' }] },
-  { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#fffaf1' }] },
-  { featureType: 'road', elementType: 'geometry.stroke', stylers: [{ color: '#d8d0c3' }] },
-  { featureType: 'road.highway', elementType: 'geometry', stylers: [{ color: '#f2d7c9' }] },
-  { featureType: 'road.highway', elementType: 'geometry.stroke', stylers: [{ color: '#c99579' }] },
-  { featureType: 'transit', elementType: 'geometry', stylers: [{ color: '#c9c6bb' }] },
-  { featureType: 'transit.station', elementType: 'labels.icon', stylers: [{ visibility: 'off' }] },
-  { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#cbd7d8' }] },
-  { featureType: 'water', elementType: 'labels.text.fill', stylers: [{ color: '#667477' }] },
-]

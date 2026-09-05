@@ -1,5 +1,5 @@
-import { lazy, Suspense, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
-import type { MouseEvent as ReactMouseEvent, ReactNode } from 'react'
+import { lazy, memo, Suspense, useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import type { CSSProperties, MouseEvent as ReactMouseEvent, ReactNode } from 'react'
 import './App.css'
 import { SiteHeader } from './SiteHeader'
 import { ClientSignInPrompt } from './ClientSignInPrompt'
@@ -7,6 +7,7 @@ import { fetchClientSavedProperties, removeClientSavedProperty, saveClientProper
 import { fetchProperties, type Property } from './api/properties'
 import { createPropertySearchIndex } from './propertySearch'
 import { createConciergeReply, type ConciergeCriteria, type ConciergeReply } from './propertyConcierge'
+import { findSellingAgent } from './sellingAgents'
 const PropertyMap = lazy(() => import('./PropertyMap').then((module) => ({ default: module.PropertyMap })))
 const SpatialMediaViewer = lazy(() => import('./SpatialMediaViewer').then((module) => ({ default: module.SpatialMediaViewer })))
 type AreaTools = typeof import('./administrativeAreas')
@@ -41,7 +42,7 @@ function HomepageHero({ query, propertyCount, onQueryChange, onAskOpenHaus }: { 
           <input id="home-hero-search" type="search" value={query} placeholder="Address, county or local area" onChange={(event) => onQueryChange(event.target.value)} />
           <button type="submit">Search homes</button>
         </form>
-        <nav className="home-hero-actions" aria-label="Opening shortcuts"><button type="button" onClick={onAskOpenHaus}>Ask OpenHaus</button><a href="#explore">Explore the map</a><a href="#homes">View recent homes</a></nav>
+        <nav className="home-hero-actions" aria-label="Opening shortcuts"><button type="button" onClick={onAskOpenHaus}>Ask OpenHaus</button><a href="/match">Open Match Lab</a><a href="/areas">Compare areas</a></nav>
       </div>
     </div>
     <aside className="home-hero-desk" aria-label="Live property desk">
@@ -51,14 +52,14 @@ function HomepageHero({ query, propertyCount, onQueryChange, onAskOpenHaus }: { 
         <div><dt>Homes available</dt><dd>{propertyCount === undefined ? 'Loading' : propertyCount}</dd><span>LIVE</span></div>
         <div><dt>Search coverage</dt><dd>All Ireland</dd><span>26 counties</span></div>
         <div><dt>Listing detail</dt><dd>Media + plans</dd><span>CONNECTED</span></div>
-        <div><dt>Buyer tools</dt><dd>Compare + save</dd><span>READY</span></div>
+        <div><dt>Buyer tools</dt><dd>Rank + compare</dd><span>READY</span></div>
       </dl>
-      <a href="#homes">Open live catalogue <span aria-hidden="true">→</span></a>
+      <a href="/match">Build your match model <span aria-hidden="true">→</span></a>
     </aside>
     <dl className="home-hero-facts">
       <div><dt>01 / Search</dt><dd>Address and area</dd></div>
       <div><dt>02 / Inspect</dt><dd>Photography and plans</dd></div>
-      <div><dt>03 / Decide</dt><dd>Compare with context</dd></div>
+      <div><dt>03 / Decide</dt><dd>Explainable match signals</dd></div>
     </dl>
   </section>
 }
@@ -77,8 +78,11 @@ function App() {
   const [saveSearchOpen, setSaveSearchOpen] = useState(false)
   const [shortlistedPropertyIDs, setShortlistedPropertyIDs] = useState<string[]>(readShortlist)
   const [compareOpen, setCompareOpen] = useState(false)
-  const [conciergeOpen, setConciergeOpen] = useState(false)
+  const [conciergeOpen, setConciergeOpen] = useState(() => new URLSearchParams(window.location.search).get('guide') === 'open')
+  const [conciergeAnchor, setConciergeAnchor] = useState<HTMLElement | null>(null)
   const [areaTools, setAreaTools] = useState<AreaTools>()
+  const [mapReady, setMapReady] = useState(() => typeof IntersectionObserver === 'undefined')
+  const mapEntry = useRef<HTMLDivElement>(null)
   const deferredPropertyQuery = useDeferredValue(propertyQuery)
 
   useEffect(() => {
@@ -97,10 +101,22 @@ function App() {
   }, [requestKey])
 
   useEffect(() => {
+    if (!mapReady) return
     let active = true
     import('./administrativeAreas').then((module) => { if (active) setAreaTools(module) })
     return () => { active = false }
-  }, [])
+  }, [mapReady])
+
+  useEffect(() => {
+    if (mapReady || state.status !== 'success' || state.properties.length === 0 || !mapEntry.current) return
+    const observer = new IntersectionObserver((entries) => {
+      if (!entries.some((entry) => entry.isIntersecting)) return
+      setMapReady(true)
+      observer.disconnect()
+    }, { rootMargin: '120px 0px' })
+    observer.observe(mapEntry.current)
+    return () => observer.disconnect()
+  }, [mapReady, state])
 
   const retry = useCallback(() => {
     setState({ status: 'loading', properties: [] })
@@ -159,24 +175,26 @@ function App() {
   }, [areaTools, effectiveSelectedArea, selectedArea, state.status])
   const propertySearchIndex = useMemo(() => createPropertySearchIndex(state.properties), [state.properties])
   const matchingPropertyIDs = useMemo(() => propertySearchIndex.search(deferredPropertyQuery), [deferredPropertyQuery, propertySearchIndex])
-  const filteredProperties = state.properties.filter((property) => {
+  const filteredProperties = useMemo(() => state.properties.filter((property) => {
     return matchingPropertyIDs.has(property.id)
       && (!minimumBedrooms || property.bedrooms >= minimumBedrooms)
       && (propertyType === 'all' || property.propertyType === propertyType)
       && (!maximumPrice || property.priceCents <= maximumPrice * 100)
       && (!spatialToursOnly || property.media.some((item) => item.kind === 'panorama'))
-  })
-  const countyProperties = effectiveSelectedCounty
-    ? filteredProperties.filter((property) => property.county.localeCompare(effectiveSelectedCounty, undefined, { sensitivity: 'base' }) === 0)
-    : filteredProperties
-  const locationProperties = effectiveSelectedCounty && effectiveSelectedArea && areaTools
-    ? countyProperties.filter((property) => areaTools.areaForCoordinate(effectiveSelectedCounty, { lat: property.latitude, lng: property.longitude })?.name === effectiveSelectedArea)
-    : countyProperties
-  const visibleProperties = [...locationProperties].sort((left, right) => {
-    if (sortOrder === 'price-low') return left.priceCents - right.priceCents
-    if (sortOrder === 'price-high') return right.priceCents - left.priceCents
-    return 0
-  })
+  }), [matchingPropertyIDs, maximumPrice, minimumBedrooms, propertyType, spatialToursOnly, state.properties])
+  const visibleProperties = useMemo(() => {
+    const countyProperties = effectiveSelectedCounty
+      ? filteredProperties.filter((property) => property.county.localeCompare(effectiveSelectedCounty, undefined, { sensitivity: 'base' }) === 0)
+      : filteredProperties
+    const locationProperties = effectiveSelectedCounty && effectiveSelectedArea && areaTools
+      ? countyProperties.filter((property) => areaTools.areaForCoordinate(effectiveSelectedCounty, { lat: property.latitude, lng: property.longitude })?.name === effectiveSelectedArea)
+      : countyProperties
+    return [...locationProperties].sort((left, right) => {
+      if (sortOrder === 'price-low') return left.priceCents - right.priceCents
+      if (sortOrder === 'price-high') return right.priceCents - left.priceCents
+      return 0
+    })
+  }, [areaTools, effectiveSelectedArea, effectiveSelectedCounty, filteredProperties, sortOrder])
   const featuredProperty = state.status === 'success' ? state.properties[0] : undefined
   const featuredImage = featuredProperty?.media.find((item) => item.kind === 'image')
   const featuredFloorPlan = featuredProperty?.media.find((item) => item.kind === 'floor_plan')
@@ -184,7 +202,7 @@ function App() {
   const requestedTourPropertyID = propertyTourIDFromPath(window.location.pathname)
   const requestedPropertyID = propertyIDFromPath(window.location.pathname)
   const shortlistedProperties = state.properties.filter((property) => shortlistedPropertyIDs.includes(property.id))
-  const toggleShortlist = (propertyID: string) => setShortlistedPropertyIDs((current) => current.includes(propertyID) ? current.filter((id) => id !== propertyID) : current.length < 4 ? [...current, propertyID] : current)
+  const toggleShortlist = useCallback((propertyID: string) => setShortlistedPropertyIDs((current) => current.includes(propertyID) ? current.filter((id) => id !== propertyID) : current.length < 4 ? [...current, propertyID] : current), [])
 
   const applyConciergeCriteria = useCallback((criteria: ConciergeCriteria) => {
     const county = criteria.location && state.properties.find((property) => property.county.localeCompare(criteria.location!, undefined, { sensitivity: 'base' }) === 0)?.county
@@ -217,11 +235,11 @@ function App() {
   return (
     <div className="site-shell">
       <a className="skip-link" href="#explore">Skip to property search</a>
-      <SiteHeader />
+      <SiteHeader onOpenGuide={(anchor) => { setConciergeAnchor(anchor); setConciergeOpen(true) }} guideOpen={conciergeOpen} />
       <main>
       <HomepageHero query={propertyQuery} propertyCount={state.status === 'success' ? state.properties.length : undefined} onQueryChange={setPropertyQuery} onAskOpenHaus={() => setConciergeOpen(true)} />
-        <div id="explore" className="map-first">
-          {state.status === 'success' && state.properties.length > 0 && (
+        <div id="explore" className="map-first" ref={mapEntry}>
+          {state.status === 'success' && state.properties.length > 0 && (mapReady ? (
             <Suspense fallback={<div className="map-module-loading" role="status">Preparing the property map…</div>}>
             <PropertyMap
               key={requestedMapPropertyID ?? 'property-map'}
@@ -243,7 +261,7 @@ function App() {
               onAreaChange={selectArea}
             />
             </Suspense>
-          )}
+          ) : <div className="map-module-loading" role="status">The map workspace will load as you approach it.</div>)}
         </div>
         <section className="catalogue" id="homes" aria-label="Homes for sale">
           <div className="catalogue-heading">
@@ -270,8 +288,8 @@ function App() {
           )}
           {state.status === 'success' && visibleProperties.length > 0 && (
             <div className="property-grid">
-              {visibleProperties.map((property) => (
-                <PropertyCard key={property.id} property={property} shortlisted={shortlistedPropertyIDs.includes(property.id)} comparisonFull={shortlistedPropertyIDs.length >= 4} onToggleShortlist={() => toggleShortlist(property.id)} />
+              {visibleProperties.map((property, index) => (
+                <PropertyCard key={property.id} property={property} eagerMedia={index === 0} shortlisted={shortlistedPropertyIDs.includes(property.id)} comparisonFull={shortlistedPropertyIDs.length >= 4} onToggleShortlist={toggleShortlist} />
               ))}
             </div>
           )}
@@ -307,10 +325,10 @@ function App() {
       />}
       {shortlistedProperties.length > 0 && <ComparisonTray properties={shortlistedProperties} onCompare={() => setCompareOpen(true)} onRemove={(propertyID) => toggleShortlist(propertyID)} onClear={() => setShortlistedPropertyIDs([])} />}
       {compareOpen && <ComparisonDialog properties={shortlistedProperties} onRemove={(propertyID) => toggleShortlist(propertyID)} onClose={() => setCompareOpen(false)} />}
-      {conciergeOpen && <PropertyConcierge properties={state.properties} onApply={applyConciergeCriteria} onClose={() => setConciergeOpen(false)} />}
+      {conciergeOpen && <PropertyConcierge anchor={conciergeAnchor} properties={state.properties} onApply={applyConciergeCriteria} onClose={() => setConciergeOpen(false)} />}
       <footer className="site-footer">
         <div><a className="footer-monogram" href="/" aria-label="OpenHaus home"><span>OpenHaus</span><small>/ 01</small></a><span className="footer-signature" aria-hidden="true">Yours, always</span><p>Find home with the full picture.</p></div>
-        <nav aria-label="Footer navigation"><a href="#explore">Explore Ireland</a><a href="#homes">Homes for sale</a><a href="/about">About OpenHaus</a><a href="/contact">Contact</a><a href="/help">Help</a><a href="/privacy">Privacy information</a></nav>
+        <nav aria-label="Footer navigation"><a href="#explore">Explore Ireland</a><a href="#homes">Homes for sale</a><a href="/match">Match Lab</a><a href="/areas">Area Index</a><a href="/services">Services</a><a href="/buyers">For buyers</a><a href="/sellers">For sellers</a><a href="/agents">Selling agents</a><a href="/about">About OpenHaus</a><a href="/roadmap">Roadmap</a><a href="/contact">Contact</a><a href="/help">Help</a><a href="/accessibility">Accessibility</a><a href="/terms">Terms</a><a href="/privacy">Privacy information</a></nav>
         <p>Independent portfolio project · Ireland</p>
       </footer>
     </div>
@@ -369,23 +387,85 @@ function Overlay({ labelID, onClose, children }: { labelID: string; onClose: () 
   return <div className="overlay-layer" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}><div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby={labelID}>{children}</div></div>
 }
 
-function PropertyConcierge({ properties, onApply, onClose }: { properties: Property[]; onApply: (criteria: ConciergeCriteria) => void; onClose: () => void }) {
+function GuidePopover({ anchor, labelID, onClose, children }: { anchor: HTMLElement | null; labelID: string; onClose: () => void; children: ReactNode }) {
+  const dialogRef = useRef<HTMLDivElement>(null)
+  const onCloseRef = useRef(onClose)
+  const returnFocus = useRef<HTMLElement | null>(anchor ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null))
+  const [position, setPosition] = useState<CSSProperties>({ visibility: 'hidden' })
+  useEffect(() => { onCloseRef.current = onClose }, [onClose])
+
+  useLayoutEffect(() => {
+    const updatePosition = () => {
+      if (window.innerWidth <= 700) {
+        setPosition({ right: 0, bottom: 0, left: 0, width: '100%', maxHeight: 'calc(88dvh - env(safe-area-inset-bottom))' })
+        return
+      }
+      const source = anchor ?? document.querySelector<HTMLElement>('.openhaus-guide-trigger')
+      if (!source) return
+      const rect = source.getBoundingClientRect()
+      const edge = 18
+      const width = Math.min(480, window.innerWidth - edge * 2)
+      const left = Math.max(edge, Math.min(rect.right - width, window.innerWidth - width - edge))
+      const top = rect.bottom + 10
+      setPosition({ top, left, width, maxHeight: Math.max(320, window.innerHeight - top - edge) })
+    }
+    updatePosition()
+    window.addEventListener('resize', updatePosition)
+    window.addEventListener('scroll', updatePosition, true)
+    return () => {
+      window.removeEventListener('resize', updatePosition)
+      window.removeEventListener('scroll', updatePosition, true)
+    }
+  }, [anchor])
+
+  useEffect(() => {
+    const focusTarget = returnFocus.current
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') { onCloseRef.current(); return }
+      if (event.key !== 'Tab' || !dialogRef.current) return
+      const controls = [...dialogRef.current.querySelectorAll<HTMLElement>('button:not([disabled]),a[href],input:not([disabled]),[tabindex]:not([tabindex="-1"])')]
+      if (controls.length === 0) return
+      const first = controls[0]
+      const last = controls.at(-1)
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus() }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus() }
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown)
+      focusTarget?.focus({ preventScroll: true })
+    }
+  }, [])
+
+  return <div className="guide-popover-layer" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
+    <div ref={dialogRef} className="guide-popover" style={position} role="dialog" aria-modal="true" aria-labelledby={labelID}>{children}</div>
+  </div>
+}
+
+function PropertyConcierge({ anchor, properties, onApply, onClose }: { anchor: HTMLElement | null; properties: Property[]; onApply: (criteria: ConciergeCriteria) => void; onClose: () => void }) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [message, setMessage] = useState('')
+  const [submittedMessage, setSubmittedMessage] = useState('')
   const [reply, setReply] = useState<ConciergeReply | null>(null)
   const suggestions = ['Homes in Cork under €800k', '4 bedroom homes', 'Detached homes with a 360 tour']
 
-  useEffect(() => { inputRef.current?.focus() }, [])
+  useEffect(() => {
+    const focusTask = window.setTimeout(() => inputRef.current?.focus(), 0)
+    return () => window.clearTimeout(focusTask)
+  }, [])
 
   const ask = (brief: string) => {
-    setMessage(brief)
-    setReply(createConciergeReply(brief, properties))
+    const submittedBrief = brief.trim()
+    if (!submittedBrief) return
+    setSubmittedMessage(submittedBrief)
+    setMessage('')
+    setReply(createConciergeReply(submittedBrief, properties))
   }
 
-  return <Overlay labelID="concierge-title" onClose={onClose}>
-    <section className="property-concierge">
+  return <GuidePopover anchor={anchor} labelID="concierge-title" onClose={onClose}>
+    <section className="property-concierge" id="openhaus-guide-dialog">
       <header>
-        <div><p className="section-index">Property concierge · catalogue 01</p><h2 id="concierge-title">OpenHaus guide</h2></div>
+        <div><p className="section-index">Property intelligence · catalogue 01</p><h2 id="concierge-title">OpenHaus guide</h2><p className="concierge-availability"><span aria-hidden="true" />Catalogue ready · {properties.length} {properties.length === 1 ? 'home' : 'homes'} indexed</p></div>
         <button type="button" className="overlay-close" aria-label="Close OpenHaus guide" onClick={onClose}>×</button>
       </header>
       <div className="concierge-introduction">
@@ -398,14 +478,17 @@ function PropertyConcierge({ properties, onApply, onClose }: { properties: Prope
         <label htmlFor="concierge-message">What are you looking for?</label>
         <div><input ref={inputRef} id="concierge-message" value={message} onChange={(event) => setMessage(event.target.value)} placeholder="For example: 3 bedrooms under €800k in Cork" autoComplete="off" /><button type="submit" disabled={!message.trim()}>Find matching homes</button></div>
       </form>
-      {reply && <div className="concierge-reply" aria-live="polite">
-        <p>{reply.summary}</p>
-        {reply.matches.length > 0 && <ul>{reply.matches.slice(0, 3).map((property) => <li key={property.id}><a href={`/properties/${property.id}`}><span>{property.city} · {property.bedrooms} bedrooms</span><strong>{property.title}</strong><small>{euros.format(property.priceCents / 100)}</small></a></li>)}</ul>}
-        {reply.canApply && <button type="button" className="concierge-apply" onClick={() => onApply(reply.criteria)}>Apply to catalogue <span aria-hidden="true">→</span></button>}
+      {reply && <div className="concierge-thread" aria-live="polite">
+        <div className="concierge-message is-user"><span>You</span><p>{submittedMessage}</p></div>
+        <div className="concierge-message is-guide"><span>OpenHaus</span><div className="concierge-reply">
+          <p>{reply.summary}</p>
+          {reply.matches.length > 0 && <ul>{reply.matches.slice(0, 3).map((property) => <li key={property.id}><a href={`/properties/${property.id}`}><span>{property.city} · {property.bedrooms} bedrooms</span><strong>{property.title}</strong><small>{euros.format(property.priceCents / 100)}</small></a></li>)}</ul>}
+          {reply.canApply && <button type="button" className="concierge-apply" onClick={() => onApply(reply.criteria)}>Apply to catalogue <span aria-hidden="true">→</span></button>}
+        </div></div>
       </div>}
       <footer><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 3.5 7.5v5c0 4.8 3.1 7.5 8.5 8.5 5.4-1 8.5-3.7 8.5-8.5v-5L12 3Z"/><path d="m8.5 12 2.2 2.2 4.8-5"/></svg><p><strong>Private by default.</strong> Searches stay in this browser and use the current catalogue only. No personal or financial advice.</p></footer>
     </section>
-  </Overlay>
+  </GuidePopover>
 }
 
 function ComparisonTray({ properties, onCompare, onRemove, onClear }: { properties: Property[]; onCompare: () => void; onRemove: (propertyID: string) => void; onClear: () => void }) {
@@ -422,46 +505,48 @@ function ComparisonDialog({ properties, onRemove, onClose }: { properties: Prope
       <header><div><p className="section-index">Buyer workspace · comparison</p><h2 id="comparison-title">Compare selected homes</h2></div><button type="button" className="overlay-close" aria-label="Close comparison" onClick={onClose}>×</button></header>
       <div className="comparison-grid">{properties.map((property) => {
         const image = property.media.find((item) => item.kind === 'image')
-        return <article key={property.id}><div className="comparison-image">{image ? <img src={image.url} alt="" /> : <img src="/media/placeholders/architectural-home.svg" alt="" />}<button type="button" aria-label={`Remove ${property.title} from comparison`} onClick={() => onRemove(property.id)}>×</button></div><p>{property.city} · Co. {property.county}</p><h3>{property.title}</h3><dl><div><dt>Asking price</dt><dd>{euros.format(property.priceCents / 100)}</dd></div><div><dt>Bedrooms</dt><dd>{property.bedrooms}</dd></div><div><dt>Home</dt><dd>{titleCase(property.propertyType)}</dd></div><div><dt>Media</dt><dd>{property.media.length} items</dd></div></dl><a href={`/properties/${property.id}`}>View property <span aria-hidden="true">→</span></a></article>
+        return <article key={property.id}><div className="comparison-image">{image ? <img src={image.url} alt="" /> : <img src="/media/placeholders/architectural-home.svg?v=3" alt="" />}<button type="button" aria-label={`Remove ${property.title} from comparison`} onClick={() => onRemove(property.id)}>×</button></div><p>{property.city} · Co. {property.county}</p><h3>{property.title}</h3><dl><div><dt>Asking price</dt><dd>{euros.format(property.priceCents / 100)}</dd></div><div><dt>Bedrooms</dt><dd>{property.bedrooms}</dd></div><div><dt>Home</dt><dd>{titleCase(property.propertyType)}</dd></div><div><dt>Media</dt><dd>{property.media.length} items</dd></div></dl><a href={`/properties/${property.id}`}>View property <span aria-hidden="true">→</span></a></article>
       })}</div>
     </section>
   </Overlay>
 }
 
-function PropertyCard({ property, shortlisted = false, comparisonFull = false, onToggleShortlist }: { property: Property; shortlisted?: boolean; comparisonFull?: boolean; onToggleShortlist?: () => void }) {
+const PropertyCard = memo(function PropertyCard({ property, eagerMedia = false, shortlisted = false, comparisonFull = false, onToggleShortlist }: { property: Property; eagerMedia?: boolean; shortlisted?: boolean; comparisonFull?: boolean; onToggleShortlist?: (propertyID: string) => void }) {
+  const listingCode = `OH-${property.county.slice(0, 3).toUpperCase()}-${property.id.slice(0, 4).toUpperCase()}`
+  const sellingAgent = findSellingAgent(property.county)
   return (
     <article className="property-card" id={`property-${property.id}`}>
-      <PropertyGallery property={property} />
+      <PropertyGallery property={property} eager={eagerMedia} />
       <div className="property-body">
+        <div className="property-card-status"><span>{listingCode}</span><strong><i aria-hidden="true" />Live listing</strong></div>
         <div className="property-card-topline">
           <div className="property-location"><span>{property.city}</span><span aria-hidden="true">/</span><span>Co. {property.county}</span></div>
-          <div className="property-card-actions">{property.media.some((item) => item.kind === 'panorama') && <a className="spatial-card-badge" href={`/properties/${property.id}/tour`}>360° tour</a>}<button type="button" aria-pressed={shortlisted} aria-label={`${shortlisted ? 'Remove' : 'Add'} ${property.title} ${shortlisted ? 'from' : 'to'} comparison`} disabled={!shortlisted && comparisonFull} onClick={onToggleShortlist}><span aria-hidden="true">{shortlisted ? '✓' : '+'}</span>{shortlisted ? 'Selected' : comparisonFull ? 'Tray full' : 'Compare'}</button><strong className="property-price">{euros.format(property.priceCents / 100)}</strong></div>
         </div>
-        <h3>{property.title}</h3><span className="card-signature" aria-hidden="true">OpenHaus selection</span>
+        <h3>{property.title}</h3>
         <p className="address">{property.addressLine1}</p>
+        <strong className="property-price">{euros.format(property.priceCents / 100)}</strong>
+        <div className="property-card-actions">{property.media.some((item) => item.kind === 'panorama') && <a className="spatial-card-badge" href={`/properties/${property.id}/tour`}>Spatial tour</a>}<button type="button" aria-pressed={shortlisted} aria-label={`${shortlisted ? 'Remove' : 'Add'} ${property.title} ${shortlisted ? 'from' : 'to'} comparison`} disabled={!shortlisted && comparisonFull} onClick={() => onToggleShortlist?.(property.id)}><span aria-hidden="true">{shortlisted ? '✓' : '+'}</span>{shortlisted ? 'Selected' : comparisonFull ? 'Tray full' : 'Compare'}</button></div>
         <div className="property-details">
-          <span>{property.bedrooms} bedrooms</span>
-          <span>{titleCase(property.propertyType)}</span>
-          <span>Photography · plans · video</span>
+          <span data-label="Space">{property.bedrooms} bedrooms</span>
+          <span data-label="Type">{titleCase(property.propertyType)}</span>
+          <span data-label="Coverage">{property.media.length} media items</span>
           <a href={`/properties/${property.id}`} aria-label={`View details for ${property.title}`}>View home <span aria-hidden="true">→</span></a>
         </div>
+        <a className="property-agent-link" href={`/agents/${sellingAgent.slug}`}>Represented by {sellingAgent.name} <span aria-hidden="true">→</span></a>
       </div>
     </article>
   )
-}
+})
 
 export function PropertyDetailPage({ property, status, onRetry }: { property?: Property; status: CatalogueState['status']; onRetry: () => void }) {
   const [viewingOpen, setViewingOpen] = useState(false)
   const chapterIDs = useMemo(() => property?.media.some(item => item.kind === 'panorama' && item.url.startsWith('https://')) ? ['overview', 'tour', 'intelligence'] : ['overview', 'intelligence'], [property])
   const [activeChapter, setActiveChapter] = useState(() => chapterIDs.includes(window.location.hash.slice(1)) ? window.location.hash.slice(1) : 'overview')
   const requestedChapter = useRef<string | null>(null)
-  const chapterUnlockTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
   function selectChapter(event: ReactMouseEvent<HTMLAnchorElement>, chapter: string) {
     event.preventDefault()
-    clearTimeout(chapterUnlockTimer.current)
     requestedChapter.current = chapter
-    chapterUnlockTimer.current = setTimeout(() => { requestedChapter.current = null }, 800)
     setActiveChapter(chapter)
     window.history.pushState({}, '', `#${chapter}`)
     document.getElementById(chapter)?.scrollIntoView?.({
@@ -473,19 +558,29 @@ export function PropertyDetailPage({ property, status, onRetry }: { property?: P
   useEffect(() => {
     const restoreChapter = () => {
       const chapter = window.location.hash.slice(1)
-      clearTimeout(chapterUnlockTimer.current)
       requestedChapter.current = null
       setActiveChapter(chapterIDs.includes(chapter) ? chapter : 'overview')
+    }
+    const releaseRequestedChapter = () => { requestedChapter.current = null }
+    const releaseRequestedChapterFromKey = (event: KeyboardEvent) => {
+      if (['ArrowDown', 'ArrowUp', 'PageDown', 'PageUp', 'Home', 'End', ' '].includes(event.key)) releaseRequestedChapter()
     }
     restoreChapter()
     window.addEventListener('hashchange', restoreChapter)
     window.addEventListener('popstate', restoreChapter)
+    window.addEventListener('scrollend', releaseRequestedChapter)
+    window.addEventListener('wheel', releaseRequestedChapter, { passive: true })
+    window.addEventListener('touchstart', releaseRequestedChapter, { passive: true })
+    window.addEventListener('keydown', releaseRequestedChapterFromKey)
 
     if (typeof IntersectionObserver === 'undefined') {
       return () => {
-        clearTimeout(chapterUnlockTimer.current)
         window.removeEventListener('hashchange', restoreChapter)
         window.removeEventListener('popstate', restoreChapter)
+        window.removeEventListener('scrollend', releaseRequestedChapter)
+        window.removeEventListener('wheel', releaseRequestedChapter)
+        window.removeEventListener('touchstart', releaseRequestedChapter)
+        window.removeEventListener('keydown', releaseRequestedChapterFromKey)
       }
     }
 
@@ -495,8 +590,6 @@ export function PropertyDetailPage({ property, status, onRetry }: { property?: P
       if (requestedChapter.current) {
         const requested = visible.find(entry => entry.target.id === requestedChapter.current)
         if (!requested) return
-        clearTimeout(chapterUnlockTimer.current)
-        requestedChapter.current = null
         setActiveChapter(requested.target.id)
         return
       }
@@ -509,10 +602,13 @@ export function PropertyDetailPage({ property, status, onRetry }: { property?: P
       if (section) observer.observe(section)
     })
     return () => {
-      clearTimeout(chapterUnlockTimer.current)
       observer.disconnect()
       window.removeEventListener('hashchange', restoreChapter)
       window.removeEventListener('popstate', restoreChapter)
+      window.removeEventListener('scrollend', releaseRequestedChapter)
+      window.removeEventListener('wheel', releaseRequestedChapter)
+      window.removeEventListener('touchstart', releaseRequestedChapter)
+      window.removeEventListener('keydown', releaseRequestedChapterFromKey)
     }
   }, [chapterIDs])
 
@@ -527,7 +623,6 @@ export function PropertyDetailPage({ property, status, onRetry }: { property?: P
         {status === 'success' && property && <>
           <div className="property-page-nav"><a href="/" aria-label="Back to property search"><span aria-hidden="true">←</span> Back to property search</a><span>{property.city} · Co. {property.county}</span></div>
           <nav className="property-chapters" aria-label="Property sections">
-            <span className="property-chapters-label">On this page</span>
             <a href="#overview" aria-current={activeChapter === 'overview' ? 'location' : undefined} onClick={(event) => selectChapter(event, 'overview')}>Overview & media</a>
             {property.media.some(item => item.kind === 'panorama' && item.url.startsWith('https://')) && <a href="#tour" aria-current={activeChapter === 'tour' ? 'location' : undefined} onClick={(event) => selectChapter(event, 'tour')}>360° tour</a>}
             <a href="#intelligence" aria-current={activeChapter === 'intelligence' ? 'location' : undefined} onClick={(event) => selectChapter(event, 'intelligence')}>Property insights</a>
@@ -535,16 +630,15 @@ export function PropertyDetailPage({ property, status, onRetry }: { property?: P
             <button type="button" onClick={() => setViewingOpen(true)}>Request viewing</button>
           </nav>
           <article className="property-page-layout" id="overview">
-            <div className="property-page-hero" id="media"><PropertyGallery property={property} /></div>
+            <div className="property-page-hero" id="media"><PropertyGallery property={property} eager /></div>
             <div className="property-page-summary">
               <div className="property-page-identity"><p className="eyebrow">Property for sale</p><h1>{property.title}</h1><p className="property-page-address">{property.addressLine1}, Co. {property.county}</p></div>
               <strong className="property-page-price"><span>Asking price</span>{euros.format(property.priceCents / 100)}</strong>
               <ClientPropertySaveAction property={property} />
               {property.media.some(item => item.kind === 'panorama' && item.url.startsWith('https://')) && <a className="property-summary-tour" href={`/properties/${property.id}/tour`}>Open full-window 360° tour <span aria-hidden="true">↗</span></a>}
               <dl><div><dt>Home</dt><dd>{titleCase(property.propertyType)}</dd></div><div><dt>Bedrooms</dt><dd>{property.bedrooms}</dd></div><div><dt>Property media</dt><dd>{property.media.length} items</dd></div></dl>
-              <aside className="property-contact-card" aria-label="Arrange a viewing"><p className="eyebrow">OpenHaus viewings</p><h2>See this home in person</h2><p>Request details or arrange a private viewing with the listing team.</p><button className="viewing-link" type="button" onClick={() => setViewingOpen(true)}>Arrange a viewing <span aria-hidden="true">→</span></button></aside>
+              <SellingAgentCard property={property} onRequestViewing={() => setViewingOpen(true)} />
             </div>
-            <div className="property-page-note"><strong>The complete picture</strong><p>Photography, floor plans and video are presented together so you can understand the home before arranging a visit.</p></div>
           </article>
           <PropertySpatialTour property={property} />
           <PropertyDecisionPanel property={property} />
@@ -553,6 +647,16 @@ export function PropertyDetailPage({ property, status, onRetry }: { property?: P
       </main>
     </div>
   )
+}
+
+function SellingAgentCard({ property, onRequestViewing }: { property: Property; onRequestViewing: () => void }) {
+  const agent = findSellingAgent(property.county)
+  return <aside className="property-contact-card selling-agent-card" aria-label="Selling agent">
+    <div className="selling-agent-heading"><span className="selling-agent-monogram" aria-hidden="true">{agent.initials}</span><div><p className="eyebrow">Selling agent</p><h2>{agent.name}</h2><p>{agent.role} · {agent.agency}</p></div></div>
+    <p className="selling-agent-disclosure"><i aria-hidden="true" />Demonstration profile</p>
+    <p>{agent.summary}</p>
+    <div className="selling-agent-actions"><a href={`/agents/${agent.slug}`} aria-label={`View ${agent.name}’s profile`}>View profile <span aria-hidden="true">→</span></a><button className="viewing-link" type="button" onClick={onRequestViewing}>Arrange a viewing <span aria-hidden="true">→</span></button></div>
+  </aside>
 }
 
 function ClientPropertySaveAction({ property }: { property: Property }) {
@@ -762,14 +866,14 @@ function PropertyNotesDialog({ property, value, error, onSave, onClose }: { prop
   </Overlay>
 }
 
-function PropertyGallery({ property }: { property: Property }) {
+function PropertyGallery({ property, eager = false }: { property: Property; eager?: boolean }) {
   const [selectedIndex, setSelectedIndex] = useState(0)
   const thumbnailRail = useRef<HTMLDivElement>(null)
   const galleryMedia = useMemo(() => {
     const galleryItems = property.media.filter((item) => item.kind !== 'panorama')
     const media = galleryItems.length > 0
       ? [...galleryItems].sort((left, right) => left.position - right.position)
-      : [{ url: '/media/placeholders/architectural-home.svg', kind: 'image' as const, altText: `Architectural study for ${property.title}`, position: 0 }]
+      : [{ url: '/media/placeholders/architectural-home.svg?v=3', kind: 'image' as const, altText: `Architectural study for ${property.title}`, position: 0 }]
     if (!media.some((item) => item.kind === 'floor_plan')) {
       media.push({ url: '/media/placeholders/sample-floor-plan.png', kind: 'floor_plan', altText: `Illustrative floor plan for ${property.title}`, position: media.length })
     }
@@ -817,7 +921,8 @@ function PropertyGallery({ property }: { property: Property }) {
             className="gallery-image"
             src={selected.url}
             alt={selected.altText}
-            fetchPriority={selectedIndex === 0 ? 'high' : 'auto'}
+            loading={eager && selectedIndex === 0 ? 'eager' : 'lazy'}
+            fetchPriority={eager && selectedIndex === 0 ? 'high' : 'auto'}
           />
         )}
         <p className="gallery-count" aria-live="polite">
@@ -825,13 +930,13 @@ function PropertyGallery({ property }: { property: Property }) {
         </p>
         <p className="gallery-kind">{mediaLabel(selected.kind)}</p>
         {galleryMedia.length > 1 && <div className="gallery-navigation" aria-label="Property photographs">
-          <button type="button" aria-label="Previous image" onClick={showPrevious}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14.5 5-7 7 7 7"/></svg></button>
-          <button type="button" aria-label="Next image" onClick={showNext}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9.5 5 7 7-7 7"/></svg></button>
+          <button type="button" aria-label="Previous image" onClick={showPrevious}><svg viewBox="0 0 18 52" aria-hidden="true"><path d="M14 4 4 26l10 22"/></svg></button>
+          <button type="button" aria-label="Next image" onClick={showNext}><svg viewBox="0 0 18 52" aria-hidden="true"><path d="m4 4 10 22L4 48"/></svg></button>
         </div>}
       </div>
 
       {galleryMedia.length > 1 && <div className="gallery-filmstrip" aria-label={`Media for ${property.title}`}>
-        <button className="gallery-strip-button is-previous" type="button" aria-label="Earlier media thumbnails" onClick={showPrevious}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14.5 5-7 7 7 7"/></svg></button>
+        <button className="gallery-strip-button is-previous" type="button" aria-label="Earlier media thumbnails" onClick={showPrevious}><svg viewBox="0 0 18 52" aria-hidden="true"><path d="M14 4 4 26l10 22"/></svg></button>
         <div className="gallery-thumbnails" ref={thumbnailRail}>
           {galleryMedia.map((item, index) => (
             <button
@@ -848,7 +953,7 @@ function PropertyGallery({ property }: { property: Property }) {
             </button>
           ))}
         </div>
-        <button className="gallery-strip-button is-next" type="button" aria-label="Later media thumbnails" onClick={showNext}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9.5 5 7 7-7 7"/></svg></button>
+        <button className="gallery-strip-button is-next" type="button" aria-label="Later media thumbnails" onClick={showNext}><svg viewBox="0 0 18 52" aria-hidden="true"><path d="m4 4 10 22L4 48"/></svg></button>
       </div>}
 
     </div>

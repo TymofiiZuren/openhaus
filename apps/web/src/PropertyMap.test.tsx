@@ -1,11 +1,14 @@
 import { render, screen } from '@testing-library/react'
+import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import type { Property } from './api/properties'
 
+let googleMapRenderCount = 0
 vi.mock('./GooglePropertyMap', () => ({
-  GooglePropertyMap: ({ properties, selectedPropertyID }: { properties: Property[]; selectedPropertyID?: string }) => (
-    <div data-testid="map-properties" data-selected-property={selectedPropertyID}>{properties.map((property) => property.title).join(',')}</div>
-  ),
+  GooglePropertyMap: ({ properties, selectedPropertyID }: { properties: Property[]; selectedPropertyID?: string }) => {
+    googleMapRenderCount += 1
+    return <div data-testid="map-properties" data-selected-property={selectedPropertyID}>{properties.map((property) => property.title).join(',')}</div>
+  },
 }))
 
 import { PropertyMap } from './PropertyMap'
@@ -37,6 +40,21 @@ const sharedProps = {
 }
 
 describe('property map listing visibility', () => {
+  it('does not redraw the map while typing into the search field', async () => {
+    const user = (await import('@testing-library/user-event')).default.setup()
+    googleMapRenderCount = 0
+    const properties = [dublinProperty, corkProperty]
+    function SearchHarness() {
+      const [query, setQuery] = useState('')
+      return <PropertyMap {...sharedProps} properties={properties} selectedCounty={null} propertyQuery={query} onPropertyQueryChange={setQuery} />
+    }
+
+    render(<SearchHarness />)
+    expect(googleMapRenderCount).toBe(1)
+    await user.type(screen.getByRole('searchbox', { name: 'Search homes' }), 'cork')
+    expect(googleMapRenderCount).toBe(1)
+  })
+
   it('offers every property type supported by the listing editor', () => {
     render(<PropertyMap {...sharedProps} properties={[dublinProperty]} selectedCounty={null} />)
 

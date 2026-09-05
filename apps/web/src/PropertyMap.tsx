@@ -1,9 +1,11 @@
-import { useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { Property } from './api/properties'
 import { areaForCoordinate, areasForCounty } from './administrativeAreas'
 import { GooglePropertyMap } from './GooglePropertyMap'
 import { PropertyImageCarousel } from './PropertyImageCarousel'
+
+const StableGooglePropertyMap = memo(GooglePropertyMap)
 
 type PropertyMapProps = {
   properties: Property[]
@@ -35,7 +37,7 @@ export function PropertyMap({ properties, selectedCounty, selectedArea, property
   const [showAllAreas, setShowAllAreas] = useState(false)
   const [propertySelection, setPropertySelection] = useState<{ touched: boolean; id?: string }>({ touched: false })
   const selectedPropertyID = propertySelection.touched ? propertySelection.id : linkedPropertyID
-  const setSelectedPropertyID = (id?: string) => setPropertySelection({ touched: true, id })
+  const setSelectedPropertyID = useCallback((id?: string) => setPropertySelection({ touched: true, id }), [])
   const [cameraRequestKey, setCameraRequestKey] = useState(0)
   const [locationPanelOpen, setLocationPanelOpen] = useState(false)
   const groups = useMemo(() => groupByCounty(properties), [properties])
@@ -60,7 +62,7 @@ export function PropertyMap({ properties, selectedCounty, selectedArea, property
   const mapProperties = visibleProperties
   const selectedProperty = visibleProperties.find((property) => property.id === selectedPropertyID)
 
-  function chooseCounty(county: string | null) {
+  const chooseCounty = useCallback((county: string | null) => {
     if (county !== null && countyControl.current?.contains(document.activeElement)) {
       countyControl.current.querySelector<HTMLButtonElement>('[aria-controls="county-options"]')?.focus({ preventScroll: true })
     }
@@ -69,27 +71,28 @@ export function PropertyMap({ properties, selectedCounty, selectedArea, property
     setCountyDropdownOpen(county === null)
     setShowAllAreas(county !== null)
     onCountyChange(county)
-  }
+  }, [onCountyChange, setSelectedPropertyID])
 
-  function chooseArea(area?: string) {
+  const chooseArea = useCallback((area?: string) => {
     setSelectedPropertyID(undefined)
     onAreaChange(area)
     if (area) setLocationPanelOpen(false)
-  }
+  }, [onAreaChange, setSelectedPropertyID])
 
-  function showWholeCounty() {
+  const showWholeCounty = useCallback(() => {
     chooseArea(undefined)
     setCameraRequestKey((key) => key + 1)
-  }
+  }, [chooseArea])
 
-  function showPropertyOnMap(property: Property) {
+  const showPropertyOnMap = useCallback((property: Property) => {
     setLocationPanelOpen(false)
     setCameraRequestKey(key => key + 1)
     const propertyArea = areaForCoordinate(property.county, { lat: property.latitude, lng: property.longitude })
     if (!sameLocation(property.county, selectedCounty ?? '')) onCountyChange(property.county)
     if (propertyArea) onAreaChange(propertyArea.name)
     setSelectedPropertyID(property.id)
-  }
+  }, [onAreaChange, onCountyChange, selectedCounty, setSelectedPropertyID])
+  const dismissProperty = useCallback(() => setSelectedPropertyID(undefined), [setSelectedPropertyID])
 
   return (
     <section className="location-explorer" aria-label="Explore homes by location">
@@ -144,7 +147,7 @@ export function PropertyMap({ properties, selectedCounty, selectedArea, property
             <button className="map-back-button" type="button" aria-label="All Ireland" onClick={() => chooseCounty(null)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14.5 6-6 6 6 6" /></svg><span>All Ireland</span></button>
             {activeArea && <button className="map-focus-button" type="button" aria-label={`Back to all ${selectedCounty}`} onClick={showWholeCounty}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14.5 6-6 6 6 6" /></svg><span>Back</span></button>}
           </div>}
-          <GooglePropertyMap properties={mapProperties} selectedPropertyID={selectedProperty?.id} selectedCounty={selectedCounty} selectedArea={activeArea} cameraRequestKey={cameraRequestKey} areas={countyAreas} availableCounties={availableCounties} onSelectCounty={(county) => chooseCounty(county)} onSelectArea={(area) => chooseArea(area)} onSelectProperty={showPropertyOnMap} onDismissProperty={() => setSelectedPropertyID(undefined)} />
+          <StableGooglePropertyMap properties={mapProperties} selectedPropertyID={selectedProperty?.id} selectedCounty={selectedCounty} selectedArea={activeArea} cameraRequestKey={cameraRequestKey} areas={countyAreas} availableCounties={availableCounties} onSelectCounty={chooseCounty} onSelectArea={chooseArea} onSelectProperty={showPropertyOnMap} onDismissProperty={dismissProperty} />
           {selectedProperty && <article className="map-property-preview map-selection-preview" aria-label={`Preview ${selectedProperty.title}`}>
             <PropertyImageCarousel property={selectedProperty} className="map-preview-gallery" />
             <div className="map-preview-copy"><button type="button" className="map-preview-close" aria-label={`Close preview for ${selectedProperty.title}`} onClick={() => setSelectedPropertyID(undefined)}>×</button><small>Asking price</small><b>{euros(selectedProperty.priceCents)}</b><strong>{selectedProperty.title}</strong><span className="map-preview-location">{selectedProperty.city} · Co. {selectedProperty.county}</span><a className="map-preview-action" href={`/properties/${selectedProperty.id}`} aria-label={`View details for ${selectedProperty.title}`}>View property <span aria-hidden="true">→</span></a></div>

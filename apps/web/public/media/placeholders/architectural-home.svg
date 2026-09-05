@@ -1,32 +1,32 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 800" role="img" aria-labelledby="title description">
   <title id="title">Architectural concept placeholder</title>
-  <desc id="description">An abstract elevation drawing of a contemporary Irish home on warm drafting paper.</desc>
+  <desc id="description">An abstract elevation drawing of a contemporary Irish home on cool technical paper.</desc>
   <defs>
     <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
-      <path d="M40 0H0V40" fill="none" stroke="#d8d0c2" stroke-width="1" opacity=".55"/>
+      <path d="M40 0H0V40" fill="none" stroke="#d1d1cd" stroke-width="1" opacity=".55"/>
     </pattern>
     <pattern id="smallGrid" width="8" height="8" patternUnits="userSpaceOnUse">
-      <path d="M8 0H0V8" fill="none" stroke="#ddd6ca" stroke-width=".7" opacity=".35"/>
+      <path d="M8 0H0V8" fill="none" stroke="#e5e5e1" stroke-width=".7" opacity=".4"/>
     </pattern>
   </defs>
-  <rect width="1200" height="800" fill="#f5f0e7"/>
+  <rect width="1200" height="800" fill="#fafafa"/>
   <rect width="1200" height="800" fill="url(#smallGrid)"/>
   <rect width="1200" height="800" fill="url(#grid)"/>
-  <g fill="none" stroke="#263a34" stroke-linecap="square" stroke-linejoin="miter">
+  <g fill="none" stroke="#1d1d1b" stroke-linecap="square" stroke-linejoin="miter">
     <path d="M120 616h960M178 616V354l246-156 204 122 144-92 250 148v240" stroke-width="7"/>
     <path d="M178 354h596M424 198v418M628 320v296M772 228v388" stroke-width="4"/>
     <path d="M230 430h130v186H230zm248-32h98v124h-98zm200 38h72v180h-72zm142-60h142v240H820z" stroke-width="4"/>
     <path d="M246 466h98m183-68v124m-49-62h98m258-24h114M892 376v240" stroke-width="2"/>
-    <path d="M120 646h960M150 664h900" stroke="#b4664b" stroke-width="3"/>
+    <path d="M120 646h960M150 664h900" stroke="#777772" stroke-width="3"/>
     <path d="M135 335v-88m-12 0h24m-12 0 24 34m-24-34-24 34M1045 350v-94m-12 0h24m-12 0 24 34m-24-34-24 34" stroke-width="2"/>
   </g>
-  <g fill="#263a34" font-family="Arial, Helvetica, sans-serif">
+  <g fill="#1d1d1b" font-family="Arial, Helvetica, sans-serif">
     <text x="120" y="104" font-size="24" font-weight="700" letter-spacing="5">OPENHAUS CONCEPT STUDY</text>
     <text x="120" y="140" font-size="16" letter-spacing="3" opacity=".68">SAMPLE LISTING · IMAGERY COMING SOON</text>
     <text x="1080" y="704" font-size="15" text-anchor="end" letter-spacing="2">ELEVATION 01</text>
     <text x="1080" y="732" font-size="13" text-anchor="end" opacity=".62">NOT FOR CONSTRUCTION</text>
   </g>
-  <g fill="#b4664b">
+  <g fill="#777772">
     <circle cx="120" cy="704" r="5"/><circle cx="141" cy="704" r="5"/><circle cx="162" cy="704" r="5"/>
   </g>
 </svg>

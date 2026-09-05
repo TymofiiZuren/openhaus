@@ -124,7 +124,7 @@ export function ClientApp({ pathname = '/client' }: { pathname?: string }) {
 
   return <div className="site-shell">
     <a className="skip-link" href="#client-content">Skip to content</a>
-    <SiteHeader pathname={pathname} client={client} clientSessionStatus={status} />
+    <SiteHeader pathname={pathname} client={client} clientSessionStatus={status} onClientSignOut={() => void logout()} />
     <main className="client-main" id="client-content">
       <header className="client-intro"><p className="eyebrow">OpenHaus / {register ? 'Registration' : 'Sign in'}</p><h1>{status === 'authenticated' ? 'Your client account.' : register ? 'Make room for what’s next.' : 'Welcome back.'}</h1><a href="/#explore">Continue browsing without signing in</a></header>
       <section className="client-panel" aria-label="Client account" aria-busy={status === 'loading' || busy}>
@@ -132,7 +132,7 @@ export function ClientApp({ pathname = '/client' }: { pathname?: string }) {
         {status === 'disabled' && <><h2>Client accounts are not enabled.</h2><p>Sign-in is unavailable on this installation. Browsing, comparisons and property notes work without an account.</p><a href="/#explore">Return to the property map</a></>}
         {status === 'unavailable' && <><h2>Account services are unavailable.</h2><p>Check your connection and try again. Your saved browser notes are unaffected.</p><button onClick={() => { setStatus('loading'); setAttempt(value => value + 1) }}>Try again</button></>}
         {status === 'authenticated' && client && <><p className="eyebrow">Signed in</p><h2>{client.email}</h2><p>Your saved properties now follow this account. Private notes remain in this browser until the next account-data stage.</p><div className="client-account-actions"><button type="button" disabled={busy} onClick={() => void importBrowserShortlist()}>Import browser comparison</button><button type="button" disabled={busy} onClick={() => void logout()}>{busy ? 'Please wait…' : 'Sign out'}</button></div><div className="client-links"><a href="/#explore">Continue your property search</a><a href="/privacy">Manage browser data</a></div><section className="client-saved" aria-labelledby="saved-properties-title"><div><p className="eyebrow">Buyer workspace</p><h3 id="saved-properties-title">Saved properties</h3></div>{savedStatus === 'loading' && <p role="status">Loading saved properties…</p>}{savedStatus === 'error' && <p role="alert">Saved properties are temporarily unavailable.</p>}{savedStatus === 'ready' && savedProperties.length === 0 && <p>No account-saved homes yet. Save a home from its property page or import your browser comparison.</p>}{savedProperties.map(property => {
-          const cover = property.media.find(item => item.kind === 'image')?.url ?? '/media/placeholders/architectural-home.svg'
+          const cover = property.media.find(item => item.kind === 'image')?.url ?? '/media/placeholders/architectural-home.svg?v=3'
           return <article key={property.id}><img src={cover} alt="" loading="lazy" /><div><span>{property.city} · Co. {property.county}</span><strong>{property.title}</strong><small>{euros.format(property.priceCents / 100)} · {property.bedrooms} bedrooms</small></div><div><a href={`/properties/${property.id}`}>View home</a><button type="button" disabled={busy} onClick={() => void removeSaved(property.id)}>Remove</button></div></article>
         })}</section></>}
         {status === 'anonymous' && <><h2>{register ? 'Create your account' : 'Sign in to OpenHaus'}</h2>

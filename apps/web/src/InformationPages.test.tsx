@@ -38,6 +38,18 @@ it('does not invent contact details or claim a final privacy policy', () => {
   expect(screen.getByText(/Contact details are not configured/)).toBeVisible()
 })
 
+it.each([
+  ['services', 'Property decisions, connected.'],
+  ['buyers', 'A clearer path to the right home.'],
+  ['sellers', 'Present every home with precision.'],
+  ['accessibility', 'Open to more ways of browsing.'],
+  ['terms', 'The boundaries of this demonstration.'],
+  ['roadmap', 'Building the complete property workspace.'],
+] as const)('renders the %s information page', (page, heading) => {
+  render(<InformationPages page={page} />)
+  expect(screen.getByRole('heading', { level: 1, name: heading })).toBeVisible()
+})
+
 it('reports blocked storage without claiming deletion succeeded', async () => {
   render(<InformationPages page="privacy" />)
   vi.spyOn(Storage.prototype, 'removeItem').mockImplementation(() => { throw new Error('blocked') })

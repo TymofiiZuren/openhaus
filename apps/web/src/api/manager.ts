@@ -5,10 +5,12 @@ export type ManagedProperty = Property & {
 }
 
 export type ManagedPropertyInput = Omit<ManagedProperty, 'id' | 'media'>
+export type ManagerIdentity = { id: string; email: string }
 
 type ManagedPropertiesResponse = { properties: ManagedProperty[] }
 
 export class ManagerAuthenticationError extends Error {}
+export class ManagerPasswordError extends Error {}
 
 export async function fetchManagedProperties(signal?: AbortSignal): Promise<ManagedProperty[]> {
   const response = await fetch('/api/v1/manager/properties', signal ? { signal } : undefined)
@@ -19,7 +21,7 @@ export async function fetchManagedProperties(signal?: AbortSignal): Promise<Mana
   return body.properties
 }
 
-export async function loginManager(email: string, password: string): Promise<void> {
+export async function loginManager(email: string, password: string): Promise<ManagerIdentity> {
   const response = await fetch('/api/v1/manager/session', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
@@ -27,11 +29,45 @@ export async function loginManager(email: string, password: string): Promise<voi
   })
   if (response.status === 401) throw new ManagerAuthenticationError('Email or password is incorrect')
   if (!response.ok) throw new Error(`Manager login failed with status ${response.status}`)
+  const body = await response.json() as { manager?: ManagerIdentity }
+  if (typeof body.manager?.id !== 'string' || typeof body.manager.email !== 'string') throw new Error('Manager session response is invalid')
+  return body.manager
+}
+
+export async function fetchManagerSession(signal?: AbortSignal): Promise<ManagerIdentity> {
+  const response = await fetch('/api/v1/manager/session', { credentials: 'same-origin', cache: 'no-store', signal })
+  if (response.status === 401) throw new ManagerAuthenticationError('Manager authentication is required')
+  if (!response.ok) throw new Error(`Manager session request failed with status ${response.status}`)
+  const body = await response.json() as { manager?: ManagerIdentity }
+  if (typeof body.manager?.id !== 'string' || typeof body.manager.email !== 'string') throw new Error('Manager session response is invalid')
+  return body.manager
 }
 
 export async function logoutManager(): Promise<void> {
   const response = await fetch('/api/v1/manager/session', { method: 'DELETE' })
   if (!response.ok) throw new Error(`Manager logout failed with status ${response.status}`)
+}
+
+export async function changeManagerPassword(currentPassword: string, newPassword: string): Promise<void> {
+  const response = await fetch('/api/v1/manager/password', {
+    method: 'PUT',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({ currentPassword, newPassword }),
+  })
+  if (response.status === 401) throw new ManagerPasswordError('The current password is incorrect.')
+  if (response.status === 400) throw new ManagerPasswordError('Use a password between 12 and 72 characters.')
+  if (!response.ok) throw new Error(`Manager password update failed with status ${response.status}`)
+}
+
+export async function logoutAllManagerSessions(): Promise<void> {
+  const response = await fetch('/api/v1/manager/sessions', {
+    method: 'DELETE',
+    credentials: 'same-origin',
+    headers: { Accept: 'application/json' },
+  })
+  if (response.status === 401) throw new ManagerAuthenticationError('Manager authentication is required')
+  if (!response.ok) throw new Error(`Manager session revocation failed with status ${response.status}`)
 }
 
 export async function createManagedProperty(input: ManagedPropertyInput): Promise<ManagedProperty> {

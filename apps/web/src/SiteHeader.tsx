@@ -2,17 +2,24 @@ import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { ThemeControl } from './ThemeControl'
 import { HeaderAccountLinks } from './HeaderAccountLinks'
+import { OpenHausGuideButton } from './OpenHausGuideButton'
 import './App.css'
 import './SiteHeader.css'
 
-const links = [['Find homes', '/#explore'], ['About', '/about'], ['Contact', '/contact'], ['Help', '/help'], ['Privacy', '/privacy']] as const
+const links = [['Find homes', '/#explore'], ['Match Lab', '/match'], ['Area Index', '/areas'], ['Services', '/services'], ['Agents', '/agents'], ['About', '/about'], ['Contact', '/contact'], ['Help', '/help'], ['Privacy', '/privacy']] as const
 
 export type ClientSessionStatus = 'loading' | 'anonymous' | 'authenticated' | 'disabled' | 'unavailable'
 export type HeaderClient = { id: string; email: string }
 export const clientSessionHintKey = 'openhaus:client-session:v1'
+export const managerSessionHintKey = 'openhaus:manager-session:v1'
 
 function hasClientSessionHint() {
   try { return localStorage.getItem(clientSessionHintKey) === 'active' }
+  catch { return false }
+}
+
+function hasManagerSessionHint() {
+  try { return localStorage.getItem(managerSessionHintKey) === 'active' }
   catch { return false }
 }
 
@@ -20,13 +27,21 @@ type SiteHeaderProps = {
   pathname?: string
   client?: HeaderClient | null
   clientSessionStatus?: ClientSessionStatus
+  onClientSignOut?: () => void
+  onOpenGuide?: (anchor: HTMLElement) => void
+  guideOpen?: boolean
 }
 
-export function SiteHeader({ pathname = window.location.pathname, client, clientSessionStatus }: SiteHeaderProps) {
+export function SiteHeader({ pathname = window.location.pathname, client, clientSessionStatus, onClientSignOut, onOpenGuide, guideOpen = false }: SiteHeaderProps) {
   const current = pathname.replace(/\/$/, '') || '/'
+  const isCurrent = (href: string) => href === '/#explore'
+    ? current === '/'
+    : current === href || current.startsWith(`${href}/`)
   const [menuOpen, setMenuOpen] = useState(false)
   const [discoveredClient, setDiscoveredClient] = useState<HeaderClient | null>(null)
   const [discoveredStatus, setDiscoveredStatus] = useState<ClientSessionStatus>(() => hasClientSessionHint() ? 'loading' : 'anonymous')
+  const [managerIdentity, setManagerIdentity] = useState<HeaderClient | null>(null)
+  const [managerPending, setManagerPending] = useState(() => hasManagerSessionHint())
   const menuId = useId()
   const menuTrigger = useRef<HTMLButtonElement>(null)
   const menuClose = useRef<HTMLButtonElement>(null)
@@ -36,6 +51,7 @@ export function SiteHeader({ pathname = window.location.pathname, client, client
   const sessionClient = controlledSession ? client ?? null : discoveredClient
   const signedIn = sessionStatus === 'authenticated' && sessionClient !== null
   const shouldDiscoverSession = !controlledSession && hasClientSessionHint()
+  const shouldDiscoverManager = !controlledSession && !shouldDiscoverSession && hasManagerSessionHint()
 
   useEffect(() => {
     if (!shouldDiscoverSession) return
@@ -66,6 +82,50 @@ export function SiteHeader({ pathname = window.location.pathname, client, client
     void discoverClientSession()
     return () => controller.abort()
   }, [shouldDiscoverSession])
+
+  useEffect(() => {
+    if (!shouldDiscoverManager) return
+    const controller = new AbortController()
+    async function discoverManagerSession() {
+      try {
+        const response = await fetch('/api/v1/manager/session', { credentials: 'same-origin', cache: 'no-store', signal: controller.signal })
+        if (controller.signal.aborted) return
+        if (response.ok) {
+          const data = await response.json()
+          if (typeof data?.manager?.id === 'string' && typeof data?.manager?.email === 'string') setManagerIdentity(data.manager)
+        }
+        else if (response.status === 401) localStorage.removeItem(managerSessionHintKey)
+      } catch { /* The public catalogue remains available if manager status cannot be checked. */ }
+      finally { if (!controller.signal.aborted) setManagerPending(false) }
+    }
+    void discoverManagerSession()
+    return () => controller.abort()
+  }, [shouldDiscoverManager])
+
+  const managerSignedIn = managerIdentity !== null
+
+  async function signOut() {
+    try {
+      if (signedIn) {
+        if (onClientSignOut) onClientSignOut()
+        else {
+          const response = await fetch('/api/v1/client/session', { method: 'DELETE', credentials: 'same-origin' })
+          if (response.status === 204) {
+            localStorage.removeItem(clientSessionHintKey)
+            setDiscoveredClient(null)
+            setDiscoveredStatus('anonymous')
+          }
+        }
+        return
+      }
+      if (!managerSignedIn) return
+      const response = await fetch('/api/v1/manager/session', { method: 'DELETE', credentials: 'same-origin' })
+      if (response.status === 204) {
+        localStorage.removeItem(managerSessionHintKey)
+        setManagerIdentity(null)
+      }
+    } catch { /* Keep the verified identity visible until the server confirms sign out. */ }
+  }
 
   function closeMenu() {
     setMenuOpen(false)
@@ -103,16 +163,16 @@ export function SiteHeader({ pathname = window.location.pathname, client, client
   return <><header className="public-header">
       <a className="public-header-brand" href="/" aria-label="OpenHaus home">OpenHaus<span aria-hidden="true">.</span></a>
       <nav className="public-header-navigation" aria-label="Primary navigation">
-        {links.map(([label, href]) => <a key={href} href={href} aria-current={current === href ? 'page' : undefined}>{label}</a>)}
+        {links.map(([label, href]) => <a key={href} href={href} aria-current={isCurrent(href) ? 'page' : undefined}>{label}</a>)}
       </nav>
-      <div className="public-header-actions"><ThemeControl /><HeaderAccountLinks signedIn={signedIn} pending={sessionStatus === 'loading'} /><button ref={menuTrigger} className="public-menu-trigger" type="button" aria-label="Open navigation" aria-expanded={menuOpen} aria-controls={menuId} onClick={() => setMenuOpen(true)}><span aria-hidden="true" /><span aria-hidden="true" /></button></div>
+      <div className="public-header-actions"><OpenHausGuideButton open={guideOpen} onOpen={onOpenGuide} /><ThemeControl /><HeaderAccountLinks signedIn={signedIn} managerSignedIn={!signedIn && managerSignedIn} identity={signedIn ? sessionClient : managerIdentity} pending={sessionStatus === 'loading' || managerPending} onSignOut={signedIn || managerSignedIn ? () => void signOut() : undefined} /><button ref={menuTrigger} className="public-menu-trigger" type="button" aria-label="Open navigation" aria-expanded={menuOpen} aria-controls={menuId} onClick={() => setMenuOpen(true)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" /></svg></button></div>
     </header>
     {menuOpen && createPortal(<div className="public-drawer-layer" onKeyDown={handleMenuKeyDown}>
       <button className="public-menu-scrim" type="button" tabIndex={-1} aria-label="Close navigation backdrop" onClick={closeMenu} />
       <aside ref={menuPanel} className="public-side-menu" id={menuId} role="dialog" aria-modal="true" aria-labelledby={`${menuId}-title`}>
         <header><div><span>Navigation</span><h2 id={`${menuId}-title`}>Explore OpenHaus</h2></div><button ref={menuClose} type="button" aria-label="Close navigation" onClick={closeMenu}>×</button></header>
-        <nav aria-label="Mobile navigation">{links.map(([label, href], index) => <a key={href} href={href} aria-current={current === href ? 'page' : undefined}><span aria-hidden="true">{String(index + 1).padStart(2, '0')}</span>{label}</a>)}</nav>
-        <div className="public-side-menu-account"><p>Your OpenHaus</p><a href="/client/login">{signedIn ? 'Client account' : 'Client sign in'}</a>{!signedIn && <><a href="/manager/login">Manager sign in</a><a className="public-side-menu-listing" href="/manager/login">List a property</a></>}</div>
+        <nav aria-label="Mobile navigation">{links.map(([label, href], index) => <a key={href} href={href} aria-current={isCurrent(href) ? 'page' : undefined}><span aria-hidden="true">{String(index + 1).padStart(2, '0')}</span>{label}</a>)}</nav>
+        <div className="public-side-menu-account"><p>Your OpenHaus</p><a href="/?guide=open">OpenHaus guide</a><a href="/contact">Contact</a><a href="/privacy">Privacy information</a>{managerSignedIn ? <><a href="/manager/analytics">Analytics overview</a><a href="/manager">Property portfolio</a><a href="/manager/profile">Account profile</a><button type="button" onClick={() => void signOut()}>Log out</button></> : <><a href="/client/login">{signedIn ? 'Client account' : 'Client sign in'}</a>{signedIn && <button type="button" onClick={() => void signOut()}>Log out</button>}{!signedIn && <><a href="/manager/login">Manager sign in</a><a className="public-side-menu-listing" href="/manager/login">List a property</a></>}</>}</div>
       </aside>
     </div>, document.body)}
   </>

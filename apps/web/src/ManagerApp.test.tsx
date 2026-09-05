@@ -2,7 +2,7 @@ import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ManagerApp } from './ManagerApp'
-import { clientSessionHintKey } from './SiteHeader'
+import { clientSessionHintKey, managerSessionHintKey } from './SiteHeader'
 
 const managedProperty = {
   id: '11111111-1111-4111-8111-111111111111',
@@ -19,7 +19,15 @@ const managedProperty = {
   status: 'draft',
 }
 
-afterEach(() => { vi.restoreAllMocks(); localStorage.removeItem(clientSessionHintKey); window.history.replaceState({}, '', '/') })
+const managerIdentity = { id: 'manager-1', email: 'manager@example.test' }
+
+function managerWorkspaceResponse(input: RequestInfo | URL, properties: unknown[]) {
+  if (String(input) === '/api/v1/client/session') return Promise.resolve(new Response(null, { status: 401 }))
+  if (String(input) === '/api/v1/manager/session') return Promise.resolve(Response.json({ manager: managerIdentity }))
+  return Promise.resolve(Response.json({ properties }))
+}
+
+afterEach(() => { vi.restoreAllMocks(); localStorage.removeItem(clientSessionHintKey); localStorage.removeItem(managerSessionHintKey); window.history.replaceState({}, '', '/') })
 
 describe('manager application', () => {
   it('does not expose manager sign in while a client account is active', async () => {
@@ -34,16 +42,126 @@ describe('manager application', () => {
     expect(screen.queryByRole('heading', { name: 'Manager sign in' })).not.toBeInTheDocument()
     expect(fetchMock).not.toHaveBeenCalledWith('/api/v1/manager/properties', expect.anything())
   })
-  it('keeps the home logo without a redundant View website link', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({ properties: [] }))
+
+  it('updates the manager boundary immediately after the active client logs out', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
+      if (String(input) === '/api/v1/client/session' && init?.method === 'DELETE') return Promise.resolve(new Response(null, { status: 204 }))
+      if (String(input) === '/api/v1/client/session') return Promise.resolve(Response.json({ client: { id: 'buyer', email: 'buyer@example.test' } }))
+      return Promise.resolve(new Response(null, { status: 401 }))
+    })
+
+    render(<ManagerApp />)
+    expect(await screen.findByRole('heading', { name: 'Your client account is active.' })).toBeVisible()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Log out' }))
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/v1/client/session', expect.objectContaining({ method: 'DELETE' }))
+    expect(await screen.findByRole('heading', { name: 'Manager sign in' })).toBeVisible()
+  })
+  it('uses an account menu instead of a standalone live-site button', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(input => managerWorkspaceResponse(input, []))
     render(<ManagerApp />)
     await waitFor(() => expect(screen.queryByText('Loading manager workspace…')).not.toBeInTheDocument())
     expect(screen.getByRole('link', { name: 'OpenHaus home' })).toHaveAttribute('href', '/')
-    expect(screen.queryByRole('link', { name: 'View website' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'View live site' })).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Manager account options' }))
+    expect(screen.getByRole('link', { name: 'Analytics overview' })).toHaveAttribute('href', '/manager/analytics')
+  })
+  it('shows authenticated portfolio analytics from live manager data', async () => {
+    window.history.replaceState({}, '', '/manager/analytics')
+    vi.spyOn(globalThis, 'fetch').mockImplementation(input => managerWorkspaceResponse(input, [managedProperty, { ...managedProperty, id: 'published', status: 'published', media: [{ kind: 'image', url: '/photo.jpg', altText: 'Front', position: 0 }] }]))
+    render(<ManagerApp />)
+    expect(await screen.findByRole('heading', { name: 'Portfolio analytics' })).toBeVisible()
+    expect(screen.getByText('2', { selector: '.manager-analytics-value' })).toBeVisible()
+    expect(screen.getByText('1 published')).toBeVisible()
+    expect(screen.getByText('1 with photography')).toBeVisible()
+  })
+
+  it('shows authenticated manager information on the profile page', async () => {
+    window.history.replaceState({}, '', '/manager/profile')
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async input => String(input) === '/api/v1/manager/session'
+      ? Response.json({ manager: { id: 'manager-1', email: 'manager@example.test' } })
+      : Response.json({ properties: [managedProperty] }))
+
+    render(<ManagerApp />)
+
+    expect(await screen.findByRole('heading', { name: 'Account profile' })).toBeVisible()
+    expect(screen.getByText('manager@example.test')).toBeVisible()
+    expect(screen.getByText('manager-1')).toBeVisible()
+    expect(screen.getByText('Manager', { selector: 'dd' })).toBeVisible()
+    expect(screen.queryByText('Session security')).not.toBeInTheDocument()
+  })
+
+  it('changes the manager password and requires a fresh sign in', async () => {
+    window.history.replaceState({}, '', '/manager/profile')
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      if (String(input) === '/api/v1/client/session') return new Response(null, { status: 401 })
+      if (String(input) === '/api/v1/manager/session') return Response.json({ manager: managerIdentity })
+      if (String(input) === '/api/v1/manager/password' && init?.method === 'PUT') return new Response(null, { status: 204 })
+      return Response.json({ properties: [managedProperty] })
+    })
+    const user = userEvent.setup()
+    render(<ManagerApp />)
+
+    await user.type(await screen.findByLabelText('Current password'), 'current password phrase')
+    await user.type(screen.getByLabelText('New password'), 'new password phrase')
+    await user.type(screen.getByLabelText('Confirm new password'), 'new password phrase')
+    await user.click(screen.getByRole('button', { name: 'Update password' }))
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/v1/manager/password', expect.objectContaining({
+      method: 'PUT',
+      body: JSON.stringify({ currentPassword: 'current password phrase', newPassword: 'new password phrase' }),
+    }))
+    expect(await screen.findByText('Password updated. Sign in again with your new password.')).toBeVisible()
+    expect(screen.getByRole('heading', { name: 'Manager sign in' })).toBeVisible()
+  })
+
+  it('keeps the manager signed in when a password update is rejected', async () => {
+    window.history.replaceState({}, '', '/manager/profile')
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      if (String(input) === '/api/v1/client/session') return new Response(null, { status: 401 })
+      if (String(input) === '/api/v1/manager/session') return Response.json({ manager: managerIdentity })
+      if (String(input) === '/api/v1/manager/password' && init?.method === 'PUT') return new Response(null, { status: 401 })
+      return Response.json({ properties: [managedProperty] })
+    })
+    const user = userEvent.setup()
+    render(<ManagerApp />)
+
+    await user.type(await screen.findByLabelText('Current password'), 'incorrect password')
+    await user.type(screen.getByLabelText('New password'), 'new password phrase')
+    await user.type(screen.getByLabelText('Confirm new password'), 'different password phrase')
+    await user.click(screen.getByRole('button', { name: 'Update password' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('The new passwords do not match.')
+    expect(fetchMock.mock.calls.some(([input]) => String(input) === '/api/v1/manager/password')).toBe(false)
+
+    await user.clear(screen.getByLabelText('Confirm new password'))
+    await user.type(screen.getByLabelText('Confirm new password'), 'new password phrase')
+    await user.click(screen.getByRole('button', { name: 'Update password' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('The current password is incorrect.')
+    expect(screen.getByRole('heading', { name: 'Account profile' })).toBeVisible()
+  })
+
+  it('confirms before signing out every manager session', async () => {
+    window.history.replaceState({}, '', '/manager/profile')
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      if (String(input) === '/api/v1/client/session') return new Response(null, { status: 401 })
+      if (String(input) === '/api/v1/manager/session') return Response.json({ manager: managerIdentity })
+      if (String(input) === '/api/v1/manager/sessions' && init?.method === 'DELETE') return new Response(null, { status: 204 })
+      return Response.json({ properties: [managedProperty] })
+    })
+    const user = userEvent.setup()
+    render(<ManagerApp />)
+
+    await user.click(await screen.findByRole('button', { name: 'Sign out everywhere' }))
+    expect(fetchMock).not.toHaveBeenCalledWith('/api/v1/manager/sessions', expect.anything())
+    await user.click(screen.getByRole('button', { name: 'Confirm sign out everywhere' }))
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/v1/manager/sessions', expect.objectContaining({ method: 'DELETE' }))
+    expect(await screen.findByText('Every manager session has been signed out.')).toBeVisible()
   })
   it('provides a consistent cover preview for photographed and empty listings', async () => {
     const photographed = { ...managedProperty, id: 'photographed', title: 'Photographed home', media: [{ kind: 'image', url: '/photo.jpg', altText: 'House exterior', position: 0 }] }
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({ properties: [managedProperty, photographed] }))
+    vi.spyOn(globalThis, 'fetch').mockImplementation(input => managerWorkspaceResponse(input, [managedProperty, photographed]))
     render(<ManagerApp />)
     await screen.findByRole('heading', { name: photographed.title })
     for (const article of screen.getAllByRole('article')) {
@@ -51,11 +169,11 @@ describe('manager application', () => {
     }
     expect(screen.getByAltText('House exterior')).toBeVisible()
     expect(screen.getByText('Architectural concept · example only')).toBeVisible()
-    expect(screen.getByAltText('Architectural concept illustration — not a photograph of this property')).toHaveAttribute('src', '/media/placeholders/architectural-home.svg')
+    expect(screen.getByAltText('Architectural concept illustration — not a photograph of this property')).toHaveAttribute('src', '/media/placeholders/architectural-home.svg?v=3')
     expect(screen.getByAltText('Cover preview for Photographed home')).toHaveAttribute('src', '/photo.jpg')
   })
   it('shows a quiet missing-photo status instead of a placeholder card', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({ properties: [managedProperty] }))
+    vi.spyOn(globalThis, 'fetch').mockImplementation(input => managerWorkspaceResponse(input, [managedProperty]))
     render(<ManagerApp />)
     expect(await screen.findByText('No photos added')).toBeVisible()
     expect(screen.queryByText('Property photography')).not.toBeInTheDocument()
@@ -63,7 +181,7 @@ describe('manager application', () => {
   })
   it('sorts listings without discarding media input or changing the active filter', async () => {
     const second = { ...managedProperty, id: 'second', title: 'Alder house', priceCents: 10000000, media: [{kind:'image',url:'/photo.jpg',altText:'Front',position:0}] }
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({ properties: [managedProperty, second] }))
+    vi.spyOn(globalThis, 'fetch').mockImplementation(input => managerWorkspaceResponse(input, [managedProperty, second]))
     const user = userEvent.setup()
     render(<ManagerApp />)
     const sort = await screen.findByLabelText('Sort listings')
@@ -81,7 +199,7 @@ describe('manager application', () => {
     expect(screen.getByLabelText('Filter listings by stage')).toHaveValue('media-capture')
   })
   it('switches to a compact portfolio without discarding unfinished media input', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({ properties: [managedProperty] }))
+    vi.spyOn(globalThis, 'fetch').mockImplementation(input => managerWorkspaceResponse(input, [managedProperty]))
     const user = userEvent.setup()
     render(<ManagerApp />)
     await user.type(await screen.findByLabelText('Image description'), 'Garden at sunset')
@@ -93,14 +211,14 @@ describe('manager application', () => {
     expect(screen.getByRole('button', { name: 'Upload image' })).toBeVisible()
   })
   it('offers authenticated publication previews for draft listings', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({ properties: [managedProperty] }))
+    vi.spyOn(globalThis, 'fetch').mockImplementation(input => managerWorkspaceResponse(input, [managedProperty]))
     render(<ManagerApp />)
     expect(await screen.findByRole('link', { name: 'Preview listing' })).toHaveAttribute('href', `/manager/preview/${managedProperty.id}`)
   })
 
   it('switches preview widths without publishing the draft', async () => {
     window.history.replaceState({}, '', `/manager/preview/${managedProperty.id}`)
-    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({ properties: [managedProperty] }))
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(input => managerWorkspaceResponse(input, [managedProperty]))
     const user = userEvent.setup()
     render(<ManagerApp />)
     const frame = await screen.findByTitle('Listing publication preview')
@@ -112,7 +230,7 @@ describe('manager application', () => {
 
   it('renders saved draft media through the protected preview image route', async () => {
     window.history.replaceState({}, '', `/manager/preview/${managedProperty.id}?frame=1`)
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({ properties: [{ ...managedProperty, media: [{ kind: 'image', url: '/api/v1/property-images/test.png', altText: 'Front of the house', position: 0 }] }] }))
+    vi.spyOn(globalThis, 'fetch').mockImplementation(input => managerWorkspaceResponse(input, [{ ...managedProperty, media: [{ kind: 'image', url: '/api/v1/property-images/test.png', altText: 'Front of the house', position: 0 }] }]))
     render(<ManagerApp />)
     expect(await screen.findByRole('heading', { name: managedProperty.title })).toBeVisible()
     expect(screen.getByRole('main', { name: 'Property details' })).toBeVisible()
@@ -129,7 +247,7 @@ describe('manager application', () => {
   })
   it('searches across listing facts and combines search with the stage filter', async () => {
     const other = { ...managedProperty, id: 'second', title: 'Harbour house', addressLine1: 'Pier Road', city: 'Kinsale', county: 'Cork', status: 'published' }
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({ properties: [managedProperty, other] }))
+    vi.spyOn(globalThis, 'fetch').mockImplementation(input => managerWorkspaceResponse(input, [managedProperty, other]))
     const user = userEvent.setup()
     render(<ManagerApp />)
     const search = await screen.findByRole('searchbox', { name: 'Search your listings' })
@@ -149,7 +267,7 @@ describe('manager application', () => {
   })
 
   it('preserves an unfinished image description while filtering a listing out and back in', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({ properties: [managedProperty] }))
+    vi.spyOn(globalThis, 'fetch').mockImplementation(input => managerWorkspaceResponse(input, [managedProperty]))
     const user = userEvent.setup()
     render(<ManagerApp />)
     await user.type(await screen.findByLabelText('Image description'), 'Living room facing the garden')
@@ -161,6 +279,7 @@ describe('manager application', () => {
     let reads = 0
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
       if (String(input) === '/api/v1/client/session') return new Response(null, { status: 401 })
+      if (String(input) === '/api/v1/manager/session') return Response.json({ manager: { id: 'manager-1', email: 'manager@example.test' } })
       if (String(input).endsWith('/videos')) return Response.json({ id: 'job-1', status: 'pending' })
       if (String(input).includes('/media-jobs/')) return Response.json({ id: 'job-1', status: 'ready' })
       reads++
@@ -180,6 +299,8 @@ describe('manager application', () => {
   it('refreshes readiness after video processing without reloading the workspace', async () => {
     let ready = false
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      if (String(input) === '/api/v1/client/session') return new Response(null, { status: 401 })
+      if (String(input) === '/api/v1/manager/session') return Response.json({ manager: managerIdentity })
       if (String(input).endsWith('/videos')) return Response.json({ id: 'job-1', status: 'pending' })
       if (String(input).includes('/media-jobs/')) { ready = true; return Response.json({ id: 'job-1', status: 'ready' }) }
       return Response.json({ properties: [{ ...managedProperty, media: ready ? [{ kind: 'video', url: '/media/tour.mp4', position: 0, altText: 'Video' }] : [] }] })
@@ -193,7 +314,7 @@ describe('manager application', () => {
     expect(screen.getByText('Review checklist · 2 missing')).toBeVisible()
   })
   it('explains the readiness score with missing media and completed facts', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({ properties: [managedProperty] }))
+    vi.spyOn(globalThis, 'fetch').mockImplementation(input => managerWorkspaceResponse(input, [managedProperty]))
     const user = userEvent.setup()
     render(<ManagerApp />)
 
@@ -208,7 +329,7 @@ describe('manager application', () => {
 
   it('previews a saved tour on a draft without making the listing public', async () => {
     const draft = { ...managedProperty, media: [{ url: 'https://kuula.co/share/LTPpc', kind: 'panorama', altText: 'Tour', position: 0 }] }
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({ properties: [draft] }))
+    vi.spyOn(globalThis, 'fetch').mockImplementation(input => managerWorkspaceResponse(input, [draft]))
     const user = userEvent.setup()
     render(<ManagerApp />)
 
@@ -251,7 +372,7 @@ describe('manager application', () => {
   })
 
   it('filters the listing pipeline by workflow stage', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({ properties: [managedProperty] }))
+    vi.spyOn(globalThis, 'fetch').mockImplementation(input => managerWorkspaceResponse(input, [managedProperty]))
     const user = userEvent.setup()
 
     render(<ManagerApp />)
@@ -277,15 +398,17 @@ describe('manager application', () => {
 
   it('logs out and returns to the login form', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      if (String(input) === '/api/v1/client/session') return new Response(null, { status: 401 })
       if (String(input) === '/api/v1/manager/session' && init?.method === 'DELETE') {
         return new Response(null, { status: 204 })
       }
+      if (String(input) === '/api/v1/manager/session') return Response.json({ manager: managerIdentity })
       return Response.json({ properties: [managedProperty] })
     })
     const user = userEvent.setup()
 
     render(<ManagerApp />)
-    await user.click(await screen.findByRole('button', { name: 'Sign out' }))
+    await user.click(await screen.findByRole('button', { name: 'Log out' }))
 
     expect(await screen.findByRole('heading', { name: 'Manager sign in' })).toBeVisible()
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/v1/manager/session', { method: 'DELETE' }))
@@ -294,6 +417,8 @@ describe('manager application', () => {
   it('creates a draft listing from the manager workspace', async () => {
 	const properties = [managedProperty]
 	const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+		if (String(input) === '/api/v1/client/session') return new Response(null, { status: 401 })
+		if (String(input) === '/api/v1/manager/session') return Response.json({ manager: managerIdentity })
 		if (String(input) === '/api/v1/manager/properties' && init?.method === 'POST') {
 			const submitted = JSON.parse(String(init.body))
 			const created = { ...submitted, id: 'new-property', status: 'draft', media: [] }
@@ -324,6 +449,8 @@ describe('manager application', () => {
   it('edits and publishes an existing listing', async () => {
 	let current = { ...managedProperty }
 	const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+		if (String(input) === '/api/v1/client/session') return new Response(null, { status: 401 })
+		if (String(input) === '/api/v1/manager/session') return Response.json({ manager: managerIdentity })
 		if (String(input).endsWith(`/manager/properties/${managedProperty.id}`) && init?.method === 'PUT') {
 			current = { ...current, ...JSON.parse(String(init.body)) }
 			return Response.json(current)
@@ -348,6 +475,8 @@ describe('manager application', () => {
 	let processed = false
 	const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
 		const url = String(input)
+		if (url === '/api/v1/client/session') return new Response(null, { status: 401 })
+		if (url === '/api/v1/manager/session') return Response.json({ manager: managerIdentity })
 		if (url.endsWith('/videos') && init?.method === 'POST') return Response.json({ id: 'job-1', propertyId: managedProperty.id, status: 'pending', attempts: 0, createdAt: '2026-08-28T00:00:00Z' }, { status: 202 })
 		if (url.endsWith('/media-jobs/job-1')) { processed = true; return Response.json({ id: 'job-1', propertyId: managedProperty.id, status: 'ready', attempts: 1, createdAt: '2026-08-28T00:00:00Z' }) }
 		return Response.json({ properties: [{ ...managedProperty, media: processed ? [{ kind: 'video', url: '/media/tour.mp4', altText: 'Video tour', position: 0 }] : [] }] })
@@ -362,6 +491,8 @@ describe('manager application', () => {
 
   it('attaches a Kuula tour to a listing record', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      if (String(input) === '/api/v1/client/session') return new Response(null, { status: 401 })
+      if (String(input) === '/api/v1/manager/session') return Response.json({ manager: managerIdentity })
       if (String(input).endsWith('/panorama') && init?.method === 'PUT') return Response.json({ url: 'https://kuula.co/share/LTPpc?fs=1', kind: 'panorama', altText: `360° tour of ${managedProperty.title}`, position: 0 })
       return Response.json({ properties: [managedProperty] })
     })
@@ -376,6 +507,8 @@ describe('manager application', () => {
   it('confirms before removing a panorama from a listing', async () => {
     const propertyWithTour = { ...managedProperty, media: [...managedProperty.media, { url: 'https://kuula.co/share/LTPpc', kind: 'panorama' as const, altText: '360 tour', position: 4 }] }
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      if (String(input) === '/api/v1/client/session') return new Response(null, { status: 401 })
+      if (String(input) === '/api/v1/manager/session') return Response.json({ manager: managerIdentity })
       if (String(input).endsWith('/panorama') && init?.method === 'DELETE') return new Response(null, { status: 204 })
       return Response.json({ properties: [propertyWithTour] })
     })

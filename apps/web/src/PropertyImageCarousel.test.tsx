@@ -14,7 +14,7 @@ describe('PropertyImageCarousel', () => {
 
     expect(screen.getByRole('img', { name: 'Architectural study for Sample home; photography coming soon' })).toHaveAttribute(
       'src',
-      '/media/placeholders/architectural-home.svg',
+      '/media/placeholders/architectural-home.svg?v=3',
     )
   })
 

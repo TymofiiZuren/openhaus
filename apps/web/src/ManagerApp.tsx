@@ -3,15 +3,22 @@ import './App.css'
 import { PropertyDetailPage } from './App'
 import { ManagerImages } from './ManagerImages'
 import { ThemeControl } from './ThemeControl'
+import { HeaderAccountLinks } from './HeaderAccountLinks'
+import { OpenHausGuideButton } from './OpenHausGuideButton'
 import { AuthFields } from './AuthFields'
-import { clientSessionHintKey, SiteHeader, type HeaderClient } from './SiteHeader'
+import { clientSessionHintKey, managerSessionHintKey, SiteHeader, type HeaderClient } from './SiteHeader'
 import { uploadPropertyVideo, waitForMediaJob, type MediaJob } from './api/mediaJobs'
 import {
   fetchManagedProperties,
+  fetchManagerSession,
   createManagedProperty,
+  changeManagerPassword,
   loginManager,
+  logoutAllManagerSessions,
   logoutManager,
   ManagerAuthenticationError,
+  ManagerPasswordError,
+  type ManagerIdentity,
   type ManagedProperty,
   type ManagedPropertyInput,
   updateManagedProperty,
@@ -21,10 +28,10 @@ import {
 
 type ManagerState =
   | { status: 'checking' }
-  | { status: 'signed-out' }
+  | { status: 'signed-out'; notice?: string }
   | { status: 'loading' }
   | { status: 'client-active'; client: HeaderClient }
-  | { status: 'ready'; properties: ManagedProperty[] }
+  | { status: 'ready'; properties: ManagedProperty[]; manager: ManagerIdentity }
   | { status: 'error'; message: string }
 
 const SpatialMediaViewer = lazy(() => import('./SpatialMediaViewer').then((module) => ({ default: module.SpatialMediaViewer })))
@@ -38,16 +45,26 @@ function clearClientHint() {
   catch { /* Server sessions remain authoritative when browser storage is unavailable. */ }
 }
 
+function setManagerHint(active: boolean) {
+  try {
+    if (active) localStorage.setItem(managerSessionHintKey, 'active')
+    else localStorage.removeItem(managerSessionHintKey)
+  } catch { /* The server session remains authoritative when browser storage is unavailable. */ }
+}
+
 export function ManagerApp() {
   const [state, setState] = useState<ManagerState>({ status: 'checking' })
 
-  async function loadProperties(signal?: AbortSignal) {
+  async function loadProperties(signal?: AbortSignal, manager?: ManagerIdentity) {
     try {
       const properties = await fetchManagedProperties(signal)
-      setState({ status: 'ready', properties })
+      const identity = manager === undefined ? await fetchManagerSession(signal) : manager
+      setManagerHint(true)
+      setState({ status: 'ready', properties, manager: identity })
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') return
       if (error instanceof ManagerAuthenticationError) {
+        setManagerHint(false)
         setState({ status: 'signed-out' })
         return
       }
@@ -69,11 +86,16 @@ export function ManagerApp() {
         } else if (response.status === 401 || response.status === 404) {
           clearClientHint()
         }
-        const properties = await fetchManagedProperties(controller.signal)
-        setState({ status: 'ready', properties })
+        const [properties, manager] = await Promise.all([
+          fetchManagedProperties(controller.signal),
+          fetchManagerSession(controller.signal),
+        ])
+        setManagerHint(true)
+        setState({ status: 'ready', properties, manager })
       } catch (error: unknown) {
         if (error instanceof DOMException && error.name === 'AbortError') return
         if (error instanceof ManagerAuthenticationError) {
+          setManagerHint(false)
           setState({ status: 'signed-out' })
           return
         }
@@ -87,8 +109,8 @@ export function ManagerApp() {
   async function signIn(email: string, password: string) {
     setState({ status: 'loading' })
     try {
-      await loginManager(email, password)
-      await loadProperties()
+      const manager = await loginManager(email, password)
+      await loadProperties(undefined, manager)
     } catch (error) {
       if (error instanceof ManagerAuthenticationError) {
         setState({ status: 'error', message: error.message })
@@ -101,6 +123,18 @@ export function ManagerApp() {
   async function signOut() {
     try {
       await logoutManager()
+      setManagerHint(false)
+      setState({ status: 'signed-out' })
+    } catch {
+      setState({ status: 'error', message: 'Sign out failed. Please try again.' })
+    }
+  }
+
+  async function signOutClient() {
+    try {
+      const response = await fetch('/api/v1/client/session', { method: 'DELETE', credentials: 'same-origin' })
+      if (response.status !== 204) throw new Error('Client sign out failed')
+      clearClientHint()
       setState({ status: 'signed-out' })
     } catch {
       setState({ status: 'error', message: 'Sign out failed. Please try again.' })
@@ -109,23 +143,25 @@ export function ManagerApp() {
 
   const isSignedIn = state.status === 'ready'
   const previewID = window.location.pathname.match(/^\/manager\/preview\/([^/]+)$/)?.[1]
-  if (state.status === 'client-active') return <div className="site-shell"><SiteHeader pathname={window.location.pathname} client={state.client} clientSessionStatus="authenticated" /><main className="manager-client-guard"><p className="eyebrow">Account boundary</p><h1>Your client account is active.</h1><p>Manager tools stay separate from buyer accounts. Sign out from your client account before opening the property workspace.</p><a href="/client/login">Return to your client account <span aria-hidden="true">→</span></a></main></div>
+  const analytics = window.location.pathname.replace(/\/$/, '') === '/manager/analytics'
+  const profile = window.location.pathname.replace(/\/$/, '') === '/manager/profile'
+  if (state.status === 'client-active') return <div className="site-shell"><SiteHeader pathname={window.location.pathname} client={state.client} clientSessionStatus="authenticated" onClientSignOut={() => void signOutClient()} /><main className="manager-client-guard"><p className="eyebrow">Account boundary</p><h1>Your client account is active.</h1><p>Manager tools stay separate from buyer accounts. Sign out from your client account before opening the property workspace.</p><a href="/client/login">Return to your client account <span aria-hidden="true">→</span></a></main></div>
   if (previewID && state.status === 'ready') return <ManagerPublicationPreview property={state.properties.find((property) => property.id === previewID)} />
   return (
     <div className="manager-shell">
       <header className="site-header manager-header">
         <a className="wordmark" href="/" aria-label="OpenHaus home">OpenHaus<span aria-hidden="true">.</span></a>
         <span className="manager-workspace-label">Property workspace</span>
-        <div className="header-actions"><ThemeControl />{isSignedIn && <button className="manager-text-button" type="button" onClick={signOut}>Sign out</button>}</div>
+        <div className="header-actions"><OpenHausGuideButton /><ThemeControl />{isSignedIn && <HeaderAccountLinks managerSignedIn identity={state.manager} onSignOut={() => void signOut()} />}</div>
       </header>
       <main className="manager-main">
         {state.status === 'checking' && (
           <div className="manager-centred" role="status"><span className="spinner" />Loading manager workspace…</div>
         )}
         {(state.status === 'signed-out' || state.status === 'error' || state.status === 'loading') && (
-          <ManagerLogin onSubmit={signIn} busy={state.status === 'loading'} error={state.status === 'error' ? state.message : undefined} />
+          <ManagerLogin onSubmit={signIn} busy={state.status === 'loading'} error={state.status === 'error' ? state.message : undefined} notice={state.status === 'signed-out' ? state.notice : undefined} />
         )}
-        {state.status === 'ready' && <ManagerDashboard properties={state.properties} />}
+        {state.status === 'ready' && (analytics ? <ManagerAnalytics properties={state.properties} /> : profile ? <ManagerProfile manager={state.manager} onSignedOut={(notice) => { setManagerHint(false); setState({ status: 'signed-out', notice }) }} /> : <ManagerDashboard properties={state.properties} />)}
       </main>
     </div>
   )
@@ -151,7 +187,7 @@ function ManagerPublicationPreview({ property }: { property?: ManagedProperty })
   </main>
 }
 
-function ManagerLogin({ onSubmit, error, busy }: { onSubmit: (email: string, password: string) => void; error?: string; busy?: boolean }) {
+function ManagerLogin({ onSubmit, error, notice, busy }: { onSubmit: (email: string, password: string) => void; error?: string; notice?: string; busy?: boolean }) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
 
@@ -175,6 +211,7 @@ function ManagerLogin({ onSubmit, error, busy }: { onSubmit: (email: string, pas
       <p className="manager-login-copy">A focused workspace for reviewing listings, media and publication status.</p>
       <form onSubmit={submit} aria-busy={busy}>
         <AuthFields prefix="manager" email={email} password={password} onEmail={setEmail} onPassword={setPassword} disabled={busy} />
+        {notice && <p className="manager-form-notice" role="status">{notice}</p>}
         {error && <p className="manager-form-error" role="alert">{error}</p>}
         <button type="submit" disabled={busy}>{busy ? 'Signing in…' : 'Sign in'}</button>
       </form>
@@ -182,6 +219,116 @@ function ManagerLogin({ onSubmit, error, busy }: { onSubmit: (email: string, pas
     </section>
     </div>
   )
+}
+
+function ManagerAnalytics({ properties }: { properties: ManagedProperty[] }) {
+  const total = properties.length
+  const published = properties.filter((property) => property.status === 'published').length
+  const drafts = properties.filter((property) => property.status === 'draft').length
+  const archived = properties.filter((property) => property.status === 'archived').length
+  const photographed = properties.filter((property) => property.media.some((media) => media.kind === 'image' && !media.url.includes('/placeholders/'))).length
+  const immersive = properties.filter((property) => property.media.some((media) => media.kind === 'panorama' || media.kind === 'video')).length
+  const averageReadiness = total ? Math.round(properties.reduce((sum, property) => sum + completeness(property), 0) / total) : 0
+  const portfolioValue = properties.reduce((sum, property) => sum + property.priceCents, 0)
+  const stages = [
+    ['Published', published],
+    ['Draft', drafts],
+    ['Archived', archived],
+  ] as const
+
+  return <section className="manager-analytics" aria-labelledby="manager-analytics-title">
+    <header className="manager-analytics-heading">
+      <div><p className="eyebrow">Manager intelligence</p><h1 id="manager-analytics-title">Portfolio analytics</h1><p>Operational signals calculated from the listings in your workspace. Audience and enquiry tracking will appear here when verified event data is available.</p></div>
+      <a href="/manager">Open property portfolio <span aria-hidden="true">→</span></a>
+    </header>
+    <div className="manager-analytics-grid" aria-label="Portfolio metrics">
+      <article><span>Total inventory</span><strong className="manager-analytics-value">{total}</strong><p>{published} published</p></article>
+      <article><span>Average readiness</span><strong className="manager-analytics-value">{averageReadiness}%</strong><p>Across every listing stage</p></article>
+      <article><span>Photography coverage</span><strong className="manager-analytics-value">{total ? Math.round((photographed / total) * 100) : 0}%</strong><p>{photographed} with photography</p></article>
+      <article><span>Portfolio asking value</span><strong className="manager-analytics-value">{euros.format(portfolioValue / 100)}</strong><p>Current asking prices</p></article>
+    </div>
+    <div className="manager-analytics-panels">
+      <section aria-labelledby="pipeline-title"><p className="section-index">01 / Pipeline</p><h2 id="pipeline-title">Listing stages</h2><div className="manager-stage-chart">{stages.map(([label, value]) => <div key={label}><span>{label}</span><i><b style={{ width: `${total ? (value / total) * 100 : 0}%` }} /></i><strong>{value}</strong></div>)}</div></section>
+      <section aria-labelledby="coverage-title"><p className="section-index">02 / Coverage</p><h2 id="coverage-title">Media readiness</h2><dl><div><dt>Photography</dt><dd>{photographed} / {total}</dd></div><div><dt>Immersive tour or video</dt><dd>{immersive} / {total}</dd></div><div><dt>Needs attention</dt><dd>{properties.filter((property) => completeness(property) < 88).length}</dd></div></dl></section>
+    </div>
+  </section>
+}
+
+function ManagerProfile({ manager, onSignedOut }: { manager: ManagerIdentity; onSignedOut: (notice: string) => void }) {
+  const [currentPassword, setCurrentPassword] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmation, setConfirmation] = useState('')
+  const [error, setError] = useState<string>()
+  const [busy, setBusy] = useState(false)
+  const [showPasswords, setShowPasswords] = useState(false)
+  const [confirmLogoutAll, setConfirmLogoutAll] = useState(false)
+
+  async function updatePassword(event: FormEvent) {
+    event.preventDefault()
+    setError(undefined)
+    if (newPassword !== confirmation) {
+      setError('The new passwords do not match.')
+      return
+    }
+    if (new TextEncoder().encode(newPassword).length < 12 || new TextEncoder().encode(newPassword).length > 72) {
+      setError('Use a password between 12 and 72 characters.')
+      return
+    }
+    setBusy(true)
+    try {
+      await changeManagerPassword(currentPassword, newPassword)
+      onSignedOut('Password updated. Sign in again with your new password.')
+    } catch (reason) {
+      setError(reason instanceof ManagerPasswordError ? reason.message : 'The password could not be updated. Please try again.')
+      setBusy(false)
+    }
+  }
+
+  async function signOutEverywhere() {
+    if (!confirmLogoutAll) {
+      setConfirmLogoutAll(true)
+      return
+    }
+    setBusy(true)
+    setError(undefined)
+    try {
+      await logoutAllManagerSessions()
+      onSignedOut('Every manager session has been signed out.')
+    } catch {
+      setError('Sessions could not be signed out. Please try again.')
+      setBusy(false)
+    }
+  }
+
+  return <section className="manager-profile" aria-labelledby="manager-profile-title">
+    <header><p className="eyebrow">Manager workspace</p><h1 id="manager-profile-title">Account profile</h1><p>Your authenticated account information and workspace access.</p></header>
+    <dl>
+      <div><dt>Email address</dt><dd>{manager.email}</dd></div>
+      <div><dt>Account role</dt><dd>Manager</dd></div>
+      <div><dt>Account identifier</dt><dd>{manager.id}</dd></div>
+    </dl>
+    <section className="manager-security" aria-labelledby="manager-security-title">
+      <div className="manager-security-heading"><p className="section-index">Account security</p><h2 id="manager-security-title">Password and sessions</h2><p>Changing your password signs out every manager session, including this one.</p></div>
+      <form onSubmit={updatePassword} aria-busy={busy}>
+        <label htmlFor="manager-current-password">Current password</label>
+        <input id="manager-current-password" type={showPasswords ? 'text' : 'password'} autoComplete="current-password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} disabled={busy} required />
+        <label htmlFor="manager-new-password">New password</label>
+        <input id="manager-new-password" type={showPasswords ? 'text' : 'password'} autoComplete="new-password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} disabled={busy} minLength={12} maxLength={72} required aria-describedby="manager-password-help" />
+        <label htmlFor="manager-confirm-password">Confirm new password</label>
+        <input id="manager-confirm-password" type={showPasswords ? 'text' : 'password'} autoComplete="new-password" value={confirmation} onChange={(event) => setConfirmation(event.target.value)} disabled={busy} minLength={12} maxLength={72} required />
+        <button className="manager-password-visibility" type="button" aria-pressed={showPasswords} onClick={() => setShowPasswords((visible) => !visible)}>{showPasswords ? 'Hide passwords' : 'Show passwords'}</button>
+        <p id="manager-password-help">Use 12–72 characters. Password managers and paste are supported.</p>
+        {error && <p className="manager-form-error" role="alert">{error}</p>}
+        <button type="submit" disabled={busy}>{busy ? 'Updating…' : 'Update password'}</button>
+      </form>
+      <div className="manager-session-action">
+        <div><strong>Sign out every session</strong><p>Use this if you no longer trust a device where your manager account was used.</p></div>
+        <button type="button" disabled={busy} onClick={() => void signOutEverywhere()}>{confirmLogoutAll ? 'Confirm sign out everywhere' : 'Sign out everywhere'}</button>
+        {confirmLogoutAll && <button className="manager-session-cancel" type="button" disabled={busy} onClick={() => setConfirmLogoutAll(false)}>Cancel</button>}
+      </div>
+    </section>
+    <footer><p>Names and additional contact details are not stored for manager accounts yet, so OpenHaus does not infer or display them.</p><a href="/manager">Open property portfolio <span aria-hidden="true">→</span></a></footer>
+  </section>
 }
 
 function ManagerDashboard({ properties }: { properties: ManagedProperty[] }) {
@@ -249,7 +396,7 @@ function ManagerDashboard({ properties }: { properties: ManagedProperty[] }) {
                 {!property.media.some((media) => media.kind === 'image' && !media.url.includes('/placeholders/')) && <span className="manager-photo-status">No photos added</span>}
                 </div></div>
                 <figure className="manager-cover-preview">
-                  {property.media.filter(item => item.kind === 'image' && !item.url.includes('/placeholders/')).sort((a, b) => a.position - b.position)[0] ? <img src={property.media.filter(item => item.kind === 'image' && !item.url.includes('/placeholders/')).sort((a, b) => a.position - b.position)[0].url.replace('/api/v1/property-images/', '/api/v1/manager/property-images/')} alt={`Cover preview for ${property.title}`} loading="lazy" /> : <img className="manager-cover-concept" src="/media/placeholders/architectural-home.svg" alt="Architectural concept illustration — not a photograph of this property" loading="lazy" />}
+                  {property.media.filter(item => item.kind === 'image' && !item.url.includes('/placeholders/')).sort((a, b) => a.position - b.position)[0] ? <img src={property.media.filter(item => item.kind === 'image' && !item.url.includes('/placeholders/')).sort((a, b) => a.position - b.position)[0].url.replace('/api/v1/property-images/', '/api/v1/manager/property-images/')} alt={`Cover preview for ${property.title}`} loading="lazy" /> : <img className="manager-cover-concept" src="/media/placeholders/architectural-home.svg?v=3" alt="Architectural concept illustration — not a photograph of this property" loading="lazy" />}
                   <figcaption>{property.media.some(item => item.kind === 'image' && !item.url.includes('/placeholders/')) ? 'Listing cover preview' : <><span>Architectural concept · example only</span><small>Add your cover photo in the media library below.</small></>}</figcaption>
                 </figure>
                 {compact && <div className="manager-compact-actions"><span>{euros.format(property.priceCents / 100)} · {property.bedrooms} bedrooms</span><button type="button" aria-expanded={expandedID === property.id} aria-controls={`manager-tools-${property.id}`} aria-label={`${expandedID === property.id ? 'Collapse' : 'Manage'} ${property.title}`} onClick={() => setExpandedID(expandedID === property.id ? undefined : property.id)}>{expandedID === property.id ? 'Collapse tools' : 'Manage listing'} <span aria-hidden="true">↗</span></button></div>}

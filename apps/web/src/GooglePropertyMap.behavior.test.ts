@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { applyCamera, areaStyle, countyStyle } from './GooglePropertyMap'
+import { mapStyleForTheme } from './mapStyles'
 import { mapViewport } from './countyBoundaries'
 import type { MapInstance } from './googleMapsLoader'
 import type { Property } from './api/properties'
@@ -31,8 +32,15 @@ describe('regional map presentation', () => {
     const neighbour = countyStyle('Mayo', 'Galway', true)
     expect(selected.strokeWeight).toBeGreaterThan(neighbour.strokeWeight)
     expect(selected.fillOpacity).toBeLessThan(.05)
+    expect(selected.fillColor).toBe('#8e887f')
     expect(areaStyle('Tuam', 'Tuam').strokeWeight).toBeGreaterThan(areaStyle('Tuam', undefined).strokeWeight)
     expect(areaStyle('Tuam', 'Tuam').fillOpacity).toBeLessThan(.15)
+    expect(areaStyle('Tuam', 'Tuam').fillColor).toBe('#8e887f')
+  })
+
+  it('uses a dark basemap with the dark site theme', () => {
+    expect(mapStyleForTheme('light')[0]).toEqual({ elementType: 'geometry', stylers: [{ color: '#f0f0ed' }] })
+    expect(mapStyleForTheme('dark')[0]).toEqual({ elementType: 'geometry', stylers: [{ color: '#10100f' }] })
   })
 })
 

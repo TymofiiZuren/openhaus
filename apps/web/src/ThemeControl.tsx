@@ -18,9 +18,6 @@ export function ThemeControl() {
   const container = useRef<HTMLDivElement>(null)
   const trigger = useRef<HTMLButtonElement>(null)
   const panelId = useId()
-  const initialized = useRef(false)
-  const transition = useRef<ViewTransition | null>(null)
-  const requestedTheme = useRef('')
   useEffect(() => {
     if (!open) return
     const dismiss = (event: PointerEvent) => {
@@ -33,22 +30,13 @@ export function ThemeControl() {
     const media = window.matchMedia?.('(prefers-color-scheme: dark)')
     const apply = () => {
       const theme = appearance === 'system' ? (media?.matches ? 'dark' : 'light') : appearance
-      requestedTheme.current = theme
-      transition.current?.skipTransition()
-      const update = () => { document.documentElement.dataset.theme = requestedTheme.current }
-      if (initialized.current && document.documentElement.dataset.theme !== theme && document.startViewTransition && !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
-        const next = document.startViewTransition(update)
-        transition.current = next
-        void next.ready.catch(() => { /* Interrupted transitions still apply the requested theme. */ })
-        void next.finished.finally(() => { if (transition.current === next) transition.current = null }).catch(() => {})
-      } else update()
-      initialized.current = true
+      document.documentElement.dataset.theme = theme
+      document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')?.setAttribute('content', theme === 'dark' ? '#000000' : '#ffffff')
     }
     apply()
     media?.addEventListener('change', apply)
     return () => media?.removeEventListener('change', apply)
   }, [appearance])
-  useEffect(() => () => transition.current?.skipTransition(), [])
   useEffect(() => {
     const sync = (event: StorageEvent) => { if (event.key === preferenceKey || event.key === null) setAppearance(readAppearance()) }
     window.addEventListener('storage', sync)
@@ -73,7 +61,7 @@ export function ThemeControl() {
         try { localStorage.setItem(preferenceKey, option) } catch { /* Storage is optional. */ }
         setOpen(false)
         trigger.current?.focus()
-      }}><span>{option === 'system' ? 'System' : option === 'light' ? 'Light' : 'Dark'}</span>{' '}<span className="theme-option-detail">{option === 'system' ? 'Follow device' : option === 'light' ? 'Warm daylight' : 'After hours'}</span><span className="theme-option-check" aria-hidden="true">{appearance === option ? '✓' : ''}</span></button>)}
+      }}><span>{option === 'system' ? 'System' : option === 'light' ? 'Light' : 'Dark'}</span>{' '}<span className="theme-option-detail">{option === 'system' ? 'Follow device' : option === 'light' ? 'White interface' : 'Black interface'}</span><span className="theme-option-check" aria-hidden="true">{appearance === option ? '✓' : ''}</span></button>)}
     </div>}
   </div>
 }

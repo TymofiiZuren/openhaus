@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
@@ -12,6 +12,10 @@ it('provides actionable property navigation without unavailable tour links', asy
   expect(within(nav).queryByRole('link', { name: 'Your notes' })).not.toBeInTheDocument()
   expect(within(nav).queryByRole('link', { name: '360° tour' })).not.toBeInTheDocument()
   expect(within(nav).getByRole('link', { name: 'Show on map' })).toHaveAttribute('href', `/?county=Dublin&property=${property.id}#explore`)
+  const agent = await screen.findByRole('complementary', { name: 'Selling agent' })
+  expect(within(agent).getByRole('heading', { name: 'Aoife Byrne' })).toBeVisible()
+  expect(within(agent).getByRole('link', { name: 'View Aoife Byrne’s profile' })).toHaveAttribute('href', '/agents/aoife-byrne')
+  expect(within(agent).getByText('Demonstration profile')).toBeVisible()
   for (const link of within(nav).getAllByRole('link')) {
     const href = link.getAttribute('href')!
     if (href.startsWith('#')) expect(document.getElementById(href.slice(1))).not.toBeNull()
@@ -90,6 +94,50 @@ it('does not let a stale scroll observation undo a rapid property chapter select
 
   expect(within(nav).getByRole('link', { name: 'Property insights' })).toHaveAttribute('aria-current', 'location')
   expect(within(nav).getByRole('link', { name: 'Overview & media' })).not.toHaveAttribute('aria-current')
+})
+
+it('keeps overview selected while smooth scrolling settles past the tour section', async () => {
+  let notify: IntersectionObserverCallback | undefined
+  vi.stubGlobal('IntersectionObserver', vi.fn(function (callback: IntersectionObserverCallback) {
+    notify = callback
+    return { observe: vi.fn(), unobserve: vi.fn(), disconnect: vi.fn(), takeRecords: () => [], root: null, rootMargin: '', thresholds: [] }
+  }))
+  const panoramaProperty = { ...property, media: [...property.media, { url: 'https://kuula.co/share/LTPpc', kind: 'panorama' as const, altText: 'Tour', position: 4 }] }
+  window.history.replaceState({}, '', `/properties/${property.id}#tour`)
+  mockResponse({ properties: [panoramaProperty] })
+  render(<App />)
+
+  const nav = await screen.findByRole('navigation', { name: 'Property sections' })
+  vi.useFakeTimers()
+  fireEvent.click(within(nav).getByRole('link', { name: 'Overview & media' }))
+  act(() => vi.advanceTimersByTime(1_200))
+
+  const overview = document.getElementById('overview')!
+  const tour = document.getElementById('tour')!
+  const overviewBounds = overview.getBoundingClientRect()
+  const tourBounds = tour.getBoundingClientRect()
+  act(() => notify?.([{
+    boundingClientRect: overviewBounds,
+    intersectionRatio: 1,
+    intersectionRect: overviewBounds,
+    isIntersecting: true,
+    rootBounds: null,
+    target: overview,
+    time: 0,
+  }], {} as IntersectionObserver))
+  act(() => notify?.([{
+    boundingClientRect: tourBounds,
+    intersectionRatio: 1,
+    intersectionRect: tourBounds,
+    isIntersecting: true,
+    rootBounds: null,
+    target: tour,
+    time: 1,
+  }], {} as IntersectionObserver))
+
+  expect(within(nav).getByRole('link', { name: 'Overview & media' })).toHaveAttribute('aria-current', 'location')
+  expect(within(nav).getByRole('link', { name: '360° tour' })).not.toHaveAttribute('aria-current')
+  vi.useRealTimers()
 })
 
 it('offers a direct full-window tour from the property summary', async () => {
@@ -190,11 +238,39 @@ const kinsaleProperty = {
 afterEach(() => {
   vi.restoreAllMocks()
   vi.unstubAllEnvs()
+  vi.unstubAllGlobals()
   window.localStorage.clear()
   window.history.replaceState({}, '', '/')
 })
 
 describe('property catalogue', () => {
+  it('defers the heavy map workspace until it approaches the viewport', async () => {
+    let notify: IntersectionObserverCallback | undefined
+    vi.stubGlobal('IntersectionObserver', vi.fn(function (callback: IntersectionObserverCallback) {
+      notify = callback
+      return { observe: vi.fn(), unobserve: vi.fn(), disconnect: vi.fn(), takeRecords: () => [], root: null, rootMargin: '', thresholds: [] }
+    }))
+    mockResponse({ properties: [property] })
+
+    render(<App />)
+    await screen.findByRole('heading', { name: property.title })
+    expect(screen.queryByRole('region', { name: 'Explore homes by location' })).not.toBeInTheDocument()
+
+    const target = document.getElementById('explore')!
+    const bounds = target.getBoundingClientRect()
+    act(() => notify?.([{
+      boundingClientRect: bounds,
+      intersectionRatio: 1,
+      intersectionRect: bounds,
+      isIntersecting: true,
+      rootBounds: null,
+      target,
+      time: 0,
+    }], {} as IntersectionObserver))
+
+    expect(await screen.findByRole('region', { name: 'Explore homes by location' })).toBeVisible()
+  })
+
   it('restores a buyer comparison after returning to the website', async () => {
     mockResponse({ properties: [property] })
     const view = render(<App />)
@@ -252,6 +328,31 @@ describe('property catalogue', () => {
     await waitFor(() => expect(launcher).toHaveFocus())
   })
 
+  it('keeps the OpenHaus guide reachable and returns focus after closing it', async () => {
+    mockResponse({ properties: [property, corkProperty] })
+    const user = userEvent.setup()
+
+    render(<App />)
+
+    const launcher = await screen.findByRole('button', { name: 'Open OpenHaus guide' })
+    expect(launcher).toHaveClass('openhaus-guide-trigger')
+    expect(document.querySelector('.concierge-launcher')).not.toBeInTheDocument()
+    await user.click(launcher)
+
+    const guide = screen.getByRole('dialog', { name: 'OpenHaus guide' })
+    expect(guide).toBeVisible()
+    expect(guide).toHaveClass('guide-popover')
+    expect(guide.closest('.guide-popover-layer')).not.toBeNull()
+    await waitFor(() => expect(within(guide).getByLabelText('What are you looking for?')).toHaveFocus())
+    expect(launcher).toHaveAttribute('aria-expanded', 'true')
+
+    await user.keyboard('{Escape}')
+
+    expect(screen.queryByRole('dialog', { name: 'OpenHaus guide' })).not.toBeInTheDocument()
+    expect(launcher).toHaveAttribute('aria-expanded', 'false')
+    await waitFor(() => expect(launcher).toHaveFocus())
+  })
+
   it('sorts the catalogue by price', async () => {
     mockResponse({ properties: [property, corkProperty] })
     const user = userEvent.setup()
@@ -263,6 +364,15 @@ describe('property catalogue', () => {
     const cards = document.querySelectorAll('.property-grid .property-card h3')
     expect(cards[0]).toHaveTextContent(corkProperty.title)
     expect(cards[1]).toHaveTextContent(property.title)
+  })
+
+  it('prioritises only the first catalogue image and lazily loads later homes', async () => {
+    mockResponse({ properties: [property, corkProperty] })
+
+    render(<App />)
+
+    expect(await screen.findByAltText('Front exterior of the home')).toHaveAttribute('loading', 'eager')
+    expect(screen.getByAltText('Exterior of the Cork property')).toHaveAttribute('loading', 'lazy')
   })
 
   it('filters the catalogue and map to homes with a 360 degree tour', async () => {
@@ -391,6 +501,8 @@ describe('property catalogue', () => {
     render(<App />)
 
     expect(await screen.findByRole('heading', { name: property.title })).toBeVisible()
+    expect(screen.getByText('Live listing')).toBeVisible()
+    expect(screen.getByText(`${property.media.length} media items`)).toBeVisible()
     expect(screen.getAllByText('€895,000').some((price) => price.classList.contains('property-price'))).toBe(true)
     expect(screen.getByText('4 bedrooms')).toBeVisible()
     expect(screen.getAllByText('Terraced').some((type) => type.tagName === 'SPAN')).toBe(true)

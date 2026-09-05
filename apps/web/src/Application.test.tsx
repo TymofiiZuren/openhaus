@@ -2,7 +2,7 @@ import { render, screen } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import { Application, ApplicationBoundary } from './Application'
 
-const loaded = vi.hoisted(() => ({ public: vi.fn(), manager: vi.fn() }))
+const loaded = vi.hoisted(() => ({ public: vi.fn(), manager: vi.fn(), discovery: vi.fn(), agents: vi.fn() }))
 vi.mock('./App', () => {
   loaded.public()
   return { default: () => <h1>Public catalogue</h1> }
@@ -10,6 +10,14 @@ vi.mock('./App', () => {
 vi.mock('./ManagerApp', () => {
   loaded.manager()
   return { ManagerApp: () => <h1>Staff workspace</h1> }
+})
+vi.mock('./DiscoveryApp', () => {
+  loaded.discovery()
+  return { DiscoveryApp: ({ page }: { page: string }) => <h1>{page === 'match' ? 'Match workspace' : 'Area workspace'}</h1> }
+})
+vi.mock('./AgentPages', () => {
+  loaded.agents()
+  return { AgentPages: ({ slug }: { slug?: string }) => <h1>{slug ? `Agent ${slug}` : 'Agent directory'}</h1> }
 })
 afterEach(() => { vi.restoreAllMocks() })
 
@@ -32,9 +40,31 @@ it.each([
   ['/contact', 'Start a conversation.'],
   ['/help', 'A little clarity.'],
   ['/privacy/', 'Your information, explained.'],
+  ['/services', 'Property decisions, connected.'],
+  ['/buyers', 'A clearer path to the right home.'],
+  ['/sellers', 'Present every home with precision.'],
+  ['/accessibility', 'Open to more ways of browsing.'],
+  ['/terms', 'The boundaries of this demonstration.'],
+  ['/roadmap', 'Building the complete property workspace.'],
 ])('opens the information route %s', async (pathname, title) => {
   render(<Application pathname={pathname} />)
   expect(await screen.findByRole('heading', { level: 1, name: title })).toBeInTheDocument()
+})
+
+it.each([
+  ['/agents', 'Agent directory'],
+  ['/agents/aoife-byrne', 'Agent aoife-byrne'],
+])('opens the agent route %s', async (pathname, title) => {
+  render(<Application pathname={pathname} />)
+  expect(await screen.findByRole('heading', { name: title })).toBeInTheDocument()
+})
+
+it.each([
+  ['/match', 'Match workspace'],
+  ['/areas/', 'Area workspace'],
+])('opens the discovery route %s', async (pathname, title) => {
+  render(<Application pathname={pathname} />)
+  expect(await screen.findByRole('heading', { name: title })).toBeInTheDocument()
 })
 
 it('loads the public catalogue without importing staff tools', async () => {
@@ -44,8 +74,8 @@ it('loads the public catalogue without importing staff tools', async () => {
   expect(loaded.manager).not.toHaveBeenCalled()
 })
 
-it('loads staff tools for a manager deep link', async () => {
-  render(<Application pathname="/manager/login" />)
+it.each(['/manager/login', '/manager/analytics', '/manager/profile'])('loads staff tools for the manager route %s', async pathname => {
+  render(<Application pathname={pathname} />)
   expect(await screen.findByRole('heading', { name: 'Staff workspace' })).toBeInTheDocument()
 })
 

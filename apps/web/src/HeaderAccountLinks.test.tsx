@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, within } from '@testing-library/react'
-import { expect, it } from 'vitest'
+import { expect, it, vi } from 'vitest'
 import { HeaderAccountLinks } from './HeaderAccountLinks'
 
 it('groups client and manager sign-in without hiding information pages in a menu', () => {
@@ -17,4 +17,19 @@ it('closes sign-in with Escape and returns focus to its trigger', () => {
   fireEvent.keyDown(screen.getByRole('navigation', { name: 'Sign-in options' }), { key: 'Escape' })
   expect(screen.queryByRole('navigation', { name: 'Sign-in options' })).not.toBeInTheDocument()
   expect(screen.getByRole('button', { name: 'Sign in options' })).toHaveFocus()
+})
+
+it('replaces sign-in choices with manager workspace links for a manager session', () => {
+  const signOut = vi.fn()
+  render(<HeaderAccountLinks managerSignedIn identity={{ id: 'manager-1', email: 'manager@example.test' }} onSignOut={signOut} />)
+  fireEvent.click(screen.getByRole('button', { name: 'Manager account options' }))
+  const accounts = screen.getByRole('navigation', { name: 'Manager account options' })
+  expect(within(accounts).getByText('manager@example.test')).toBeVisible()
+  expect(within(accounts).getByRole('link', { name: 'Analytics overview' })).toHaveAttribute('href', '/manager/analytics')
+  expect(within(accounts).getByRole('link', { name: 'Property portfolio' })).toHaveAttribute('href', '/manager')
+  expect(within(accounts).getByRole('link', { name: 'Account profile' })).toHaveAttribute('href', '/manager/profile')
+  expect(within(accounts).getByRole('link', { name: 'Public site' })).toHaveAttribute('href', '/')
+  fireEvent.click(screen.getByRole('button', { name: 'Log out' }))
+  expect(signOut).toHaveBeenCalledOnce()
+  expect(within(accounts).queryByRole('link', { name: 'Client sign in' })).not.toBeInTheDocument()
 })
