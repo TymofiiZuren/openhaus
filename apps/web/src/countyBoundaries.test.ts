@@ -1,8 +1,21 @@
 import { describe, expect, it } from 'vitest'
 import { boundariesForSelection, boundaryBounds, countyBoundaries, mapViewport } from './countyBoundaries'
 import countyJSON from './data/irelandCounties.json?raw'
+import topologyJSON from './data/irelandCountyTopology.json?raw'
+import { decodeBoundary } from './boundaryCodec'
+import { unpackBoundaries } from './boundaryTopology'
 
 describe('county boundaries', () => {
+  it('reconstructs every original coordinate, ring order and viewport losslessly', () => {
+    const source = JSON.parse(countyJSON)
+    const restored = unpackBoundaries(JSON.parse(topologyJSON))
+    expect(restored.length).toBe(source.counties.length)
+    for (let i = 0; i < restored.length; i++) {
+      expect(restored[i].name).toBe(source.counties[i].name)
+      expect(restored[i].paths).toEqual(source.counties[i].paths.map(decodeBoundary))
+      expect(countyBoundaries[i].paths).toEqual(restored[i].paths.map(path => path.map(([lat, lng]) => ({ lat, lng }))))
+    }
+  })
   it('uses geographic county data with six-decimal precision and preserved rings', () => {
     const data = JSON.parse(countyJSON)
     expect(data.encoding).toBe('polyline6')

@@ -1,6 +1,6 @@
-import countyJSON from './data/irelandCounties.json?raw'
+import countyJSON from './data/irelandCountyTopology.json?raw'
 import type { Coordinate } from './googleMapsLoader'
-import { decodeBoundary } from './boundaryCodec'
+import { unpackBoundaries, type BoundaryTopology } from './boundaryTopology'
 
 export type CountyBoundary = {
   name: string
@@ -8,9 +8,9 @@ export type CountyBoundary = {
   bounds: { west: number; south: number; east: number; north: number }
 }
 
-const countyData = JSON.parse(countyJSON) as { source: string; attribution: string; counties: { name: string; paths: string[] }[] }
-export const countyBoundaries: CountyBoundary[] = countyData.counties.map((county) => {
-  const paths = county.paths.map(path => decodeBoundary(path).map(([lat, lng]) => ({ lat, lng })))
+const countyData = JSON.parse(countyJSON) as BoundaryTopology & { source: string; attribution: string }
+export const countyBoundaries: CountyBoundary[] = unpackBoundaries(countyData).map((county) => {
+  const paths = county.paths.map(path => path.map(([lat, lng]) => ({ lat, lng })))
   return { name: county.name, paths, bounds: boundaryBounds({ paths }) }
 })
 

@@ -36,3 +36,4 @@ await writeFile(new URL('../src/data/irelandCounties.json', import.meta.url), `$
   attribution: 'Tailte Éireann · CC BY 4.0',
   encoding: 'polyline6', geometryPrecision: 6, maxAllowableOffset: 0.0001, counties,
 })}\n`)
+await import('./pack-county-boundaries.mjs')

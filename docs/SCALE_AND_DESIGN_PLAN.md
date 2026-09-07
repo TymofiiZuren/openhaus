@@ -51,3 +51,5 @@ Browser checks: actual All Ireland → Dublin selection; Pembroke deep link at 3
 Updated preview: `http://127.0.0.1:5194/`, using the existing isolated API on 8088. Prior previews and development processes were not stopped.
 
 Final checks: `npm test` passed 240 tests; `npm run lint` passed with the three existing Fast Refresh warnings; `npm run build` passed with the remaining national-outline chunk warning; `git diff --check` passed. Primary download-reduction and county navigation signals are met. Whole-site latency and every device/theme combination were not benchmarked. Checkpoint `a18f254` contains the preceding accumulated work; this follow-up is left uncommitted for review.
+
+The county-detail follow-up was subsequently committed as `a9369a4`. The next iteration implements exact shared-arc county geometry: see [boundary topology](BOUNDARY_TOPOLOGY.md) for the algorithm, regeneration, measured bandwidth saving and decoding tradeoff. Its preview is on port 5195.
