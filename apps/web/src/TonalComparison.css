@@ -1,0 +1,25 @@
+.tonal-comparison { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1.1fr); gap: 48px; padding: 40px; margin-top: 48px; background: var(--surface); border-radius: var(--radius-panel); }
+.tonal-comparison h2 { font-size: clamp(1.8rem,3vw,2.7rem); line-height: 1.15; max-width: 18ch; margin-block: 16px; }
+.tonal-comparison-actions { display: flex; flex-wrap: wrap; gap: 8px; padding-block: 16px; }
+.tonal-reference { display: flex; align-items: center; gap: 16px; margin: 16px 0; }
+.tonal-reference img { width: 112px; aspect-ratio: 3/2; object-fit: cover; border-radius: var(--radius-control); }
+.tonal-reference figcaption { display: grid; gap: 8px; }
+.tonal-reference span,.tonal-comparison-note { color: var(--muted); font-size: .8rem; }
+.tonal-comparison-result { min-width: 0; }
+.tonal-comparison-empty { min-height: 320px; display: flex; flex-direction: column; justify-content: center; gap: 8px; }
+.tonal-comparison-empty > span { font-family: var(--data-font); font-size: 3rem; color: var(--muted); }
+.tonal-distance { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.tonal-distance strong { font-family: var(--data-font); font-size: clamp(2rem,4vw,3rem); font-weight: 400; }
+.tonal-distance small { font-family: var(--body-font); font-size: .85rem; color: var(--muted); }
+.tonal-distance > span { font-family: var(--data-font); color: var(--muted); }
+.tonal-comparison svg { display: block; width: 100%; height: auto; padding-block: 16px; }
+.tonal-grid { stroke: var(--line); stroke-width: .5; }
+.tonal-curve { fill: none; stroke: var(--ink); stroke-width: 2; }
+.tonal-curve-reference { stroke: var(--accent); stroke-dasharray: 5 4; }
+.tonal-axis,.tonal-legend { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; font-size: .75rem; color: var(--muted); padding-bottom: 16px; }
+.tonal-comparison summary { cursor: pointer; min-height: 44px; display: list-item; padding-block: 12px; }
+.tonal-table { max-height: 280px; overflow: auto; }
+.tonal-table table { width: 100%; border-collapse: collapse; font-family: var(--data-font); font-size: .8rem; }
+.tonal-table :is(th,td) { text-align: right; padding: 8px; border-bottom: 1px solid var(--line); }
+.tonal-table caption { text-align: left; padding-block: 8px; }
+@media(max-width:800px) { .tonal-comparison { grid-template-columns: minmax(0,1fr); padding: 24px; gap: 24px; }.tonal-comparison-empty { min-height: 160px; } }

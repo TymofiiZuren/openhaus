@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { SiteHeader } from './SiteHeader'
 import { MediaAudit } from './MediaAudit'
+import { TonalComparison } from './TonalComparison'
 import { analysisDimensions, analysisReport, type MediaAnalysis } from './mediaAnalysis'
 import './MediaLab.css'
 
@@ -61,7 +62,8 @@ export function MediaLab() {
   return <div className="site-shell"><SiteHeader pathname="/media-lab" /><main className="media-lab">
     <header><p className="eyebrow">OpenHaus / Engineering demonstration</p><h1>See beyond the image.</h1><p>Real pixel measurements, explained. A small browser-based companion to the listing media pipeline.</p><a href="/services">All services →</a></header>
     <div className="media-lab-workbench"><section aria-label="Sample image analysis">
-      <div className="media-lab-controls">{samples.map((item, index) => <button key={item.src} aria-pressed={sample === index} onClick={() => { if (sample !== index) { setResult(undefined); setError(''); setSample(index) } }}>{item.name}</button>)}<button disabled={!result} aria-pressed={edgeView} onClick={() => setEdgeView(!edgeView)}>Sobel edges</button></div>
+      <div className="media-lab-toolbar"><p className="eyebrow">01 / Image workbench</p><button disabled={!result} aria-pressed={edgeView} onClick={() => setEdgeView(!edgeView)}>Sobel edges</button></div>
+      <div className="media-lab-controls">{samples.map((item, index) => <button key={item.src} aria-pressed={sample === index} onClick={() => { if (sample !== index) { setResult(undefined); setError(''); setSample(index) } }}><span aria-hidden="true">0{index + 1}</span>{item.name}</button>)}</div>
       <div className="media-lab-stage"><img src={samples[sample].src} alt={`AI-generated fictional ${samples[sample].name.toLowerCase()}`} hidden={edgeView && !!result} /><canvas ref={canvas} hidden={!edgeView || !result} aria-label="Sobel edge magnitude visualisation" role="img" /></div>
       <p className="media-lab-caption">AI-generated concept imagery · fictional property · not for sale</p>
     </section><aside aria-label="Image measurements">
@@ -73,6 +75,7 @@ export function MediaLab() {
         <a className="media-lab-export" download={`openhaus-${samples[sample].src.split('/').pop()}-analysis.json`} href={`data:application/json;charset=utf-8,${encodeURIComponent(JSON.stringify(analysisReport(result, samples[sample].src), null, 2))}`}>Download analysis report ↓</a>
       </>}
     </aside></div>
+    <TonalComparison current={result && !error ? { ...samples[sample], histogram: result.histogram } : undefined} />
     <section className="media-lab-method"><div><p className="eyebrow">The algorithm</p><h2>Pixels → signal → explanation.</h2><p>Canvas fits the sample within a 640px longest edge before allocating its pixel buffer. Very narrow images use a minimum 3px axis for the Sobel kernel. An RGBA buffer is transferred to a TypeScript Web Worker. A single luma pass builds the histogram; 3 × 3 Sobel kernels reveal horizontal and vertical gradients. Results return without uploading the image to an analysis service.</p><p>Luma uses a gamma-encoded Rec.709 approximation. Threshold counts indicate possible clipping, not proof of lost detail. No AI model judges the home.</p></div><div><p className="eyebrow">FFmpeg / H.264 / 24 fps</p><h2>A photographic study.</h2><video controls playsInline preload="none" poster={samples[0].src} src="/media-demo/coastal-study.mp4" aria-label="Seven-second photo sequence made from two AI-generated images" /><p>A seven-second dissolve between generated stills—not recorded footage or a 3D walkthrough. No audio. Playback is always your choice.</p></div></section>
     <MediaAudit filename={samples[sample].src.split('/').pop()!} />
     <section className="media-lab-method" aria-label="Fictional showcase listings"><div><p className="eyebrow">Connected catalogue</p><h2>Explore the concept homes.</h2><p>These demonstration listings are served by the property API and local PostgreSQL database. Prices and map positions are illustrative, and every home is labelled as fictional.</p></div><div><p><a href="/properties/d3000000-0000-4000-8000-000000000001">Coastal retreat →</a></p><p><a href="/properties/d3000000-0000-4000-8000-000000000002">Limestone courtyard →</a></p><p><a href="/properties/d3000000-0000-4000-8000-000000000003">Harbour townhouse →</a></p></div></section>
