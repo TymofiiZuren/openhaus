@@ -35,3 +35,19 @@ Compare production-build browser navigation metrics and resource sizes, not deve
 - The national map bundles remain roughly 798 KB and 957 KB compressed. Lazy decoding reduces work, not their transfer size. County asset splitting and responsive thumbnails remain the next loading priorities.
 
 Preview for this iteration: `http://127.0.0.1:5193/`, isolated API port 8088. Existing development processes were left running unchanged.
+
+## County-detail delivery follow-up
+
+The administrative geometry now ships as 26 independent, lossless county chunks. The All Ireland map does not request any of them. Selecting Dublin requests Dublin only. The separate national **county outlines** remain in the map bundle and are not optimized by this change.
+
+Regenerate locally with `cd apps/web && node scripts/split-administrative-areas.mjs`. The existing upstream boundary-download script also invokes this step. Edit the generator/source dataset, never the derived files in `src/data/areas/`. A test compares the complete derived set with all 166 original areas, including every encoded ring.
+
+Contract: await `loadAreasForCounty(county)` before synchronous `areasForCounty` or `areaForCoordinate` calls for that county. The catalogue owns loading/retry state, ignores late responses after selection changes, and retains deep-link area parameters until validation can complete. The map remains mounted while hidden during a switch to preserve selected-home state. Concurrent requests share one promise; failed requests are removed from the in-flight cache. Only known county filenames can load. No persistent cache or Redis dependency was added.
+
+Measured production output: administrative module 956.60 KB → 1.57 KB gzip; Dublin chunk 28.29 KB gzip. Browser resource entries on the new preview showed 1,867 bytes for the module (including HTTP overhead), zero county-detail requests in All Ireland, then 28,588 bytes for Dublin after selection. This removes roughly 955 KB from the initial map-detail transfer, not 955 KB from every page load. No timing percentage is claimed.
+
+Browser checks: actual All Ireland → Dublin selection; Pembroke deep link at 390×844 with document width 390. Retry, stale completion, import coalescing, failed-promise eviction, coordinate classification and geometry equality are covered by tests. Earlier selected-home regression was caught and corrected before completion. A first browser probe used an incorrect accessible-label selector and timed out; the subsequent observed text selector completed the interaction.
+
+Updated preview: `http://127.0.0.1:5194/`, using the existing isolated API on 8088. Prior previews and development processes were not stopped.
+
+Final checks: `npm test` passed 240 tests; `npm run lint` passed with the three existing Fast Refresh warnings; `npm run build` passed with the remaining national-outline chunk warning; `git diff --check` passed. Primary download-reduction and county navigation signals are met. Whole-site latency and every device/theme combination were not benchmarked. Checkpoint `a18f254` contains the preceding accumulated work; this follow-up is left uncommitted for review.

@@ -88,7 +88,10 @@ function App() {
   const [compareOpen, setCompareOpen] = useState(false)
   const [conciergeOpen, setConciergeOpen] = useState(() => new URLSearchParams(window.location.search).get('guide') === 'open')
   const [conciergeAnchor, setConciergeAnchor] = useState<HTMLElement | null>(null)
-  const [areaTools, setAreaTools] = useState<AreaTools>()
+  const [areaAttempt, setAreaAttempt] = useState(0)
+  const [areaLoad, setAreaLoad] = useState<{ county: string | null; attempt: number; tools?: AreaTools; failed?: boolean }>()
+  const currentAreaLoad = areaLoad?.county === selectedCounty && areaLoad.attempt === areaAttempt ? areaLoad : undefined
+  const areaTools = currentAreaLoad?.tools
   const [mapReady, setMapReady] = useState(() => window.location.hash === '#explore' || typeof IntersectionObserver === 'undefined')
   const mapEntry = useRef<HTMLDivElement>(null)
   const deferredPropertyQuery = useDeferredValue(propertyQuery)
@@ -124,11 +127,14 @@ function App() {
   }, [requestKey])
 
   useEffect(() => {
-    if (!mapReady) return
+    if (!mapReady && !selectedArea) return
     let active = true
-    import('./administrativeAreas').then((module) => { if (active) setAreaTools(module) })
+    import('./administrativeAreas')
+      .then(async module => { await module.loadAreasForCounty(selectedCounty); return module })
+      .then(tools => { if (active) setAreaLoad({ county: selectedCounty, attempt: areaAttempt, tools }) })
+      .catch(() => { if (active) setAreaLoad({ county: selectedCounty, attempt: areaAttempt, failed: true }) })
     return () => { active = false }
-  }, [mapReady])
+  }, [mapReady, selectedCounty, selectedArea, areaAttempt])
 
   useEffect(() => {
     if (mapReady || state.status !== 'success' || state.properties.length === 0 || !mapEntry.current) return
@@ -263,11 +269,16 @@ function App() {
       <HomepageHero query={propertyQuery} propertyCount={state.status === 'success' ? state.properties.length : undefined} onQueryChange={setPropertyQuery} onAskOpenHaus={() => setConciergeOpen(true)} />
         <div id="explore" className="map-first" ref={mapEntry}>
           {state.status === 'success' && state.properties.length > 0 && (mapReady ? (
+            <>
+            {!areaTools && <div className="map-module-loading" role={currentAreaLoad?.failed ? 'alert' : 'status'}>
+              {currentAreaLoad?.failed ? <>Local map detail could not load. <button type="button" onClick={() => setAreaAttempt(value => value + 1)}>Retry map detail</button></> : 'Preparing local map detail…'}
+            </div>}
+            <div hidden={!areaTools}>
             <Suspense fallback={<div className="map-module-loading" role="status">Preparing the property map…</div>}>
             <PropertyMap
               key={requestedMapPropertyID ?? 'property-map'}
               properties={filteredProperties}
-              selectedCounty={effectiveSelectedCounty}
+              selectedCounty={areaTools ? effectiveSelectedCounty : null}
               selectedArea={effectiveSelectedArea}
               propertyQuery={propertyQuery}
               minimumBedrooms={minimumBedrooms}
@@ -284,6 +295,8 @@ function App() {
               onAreaChange={selectArea}
             />
             </Suspense>
+            </div>
+            </>
           ) : <div className="map-module-loading" role="status">The map workspace will load as you approach it.</div>)}
         </div>
         <section className="catalogue" id="homes" aria-label="Homes for sale">
@@ -309,7 +322,8 @@ function App() {
               <button type="button" onClick={() => selectCounty(null)}>Show all homes</button>
             </div>
           )}
-          {state.status === 'success' && visibleProperties.length > 0 && (
+          {state.status === 'success' && selectedArea && !areaTools && <p role="status">Loading the selected area's homes…</p>}
+          {state.status === 'success' && (!selectedArea || areaTools) && visibleProperties.length > 0 && (
             <div className="property-grid">
               {visibleProperties.map((property, index) => (
                 <PropertyCard key={property.id} property={property} eagerMedia={index === 0} shortlisted={shortlistedPropertyIDs.includes(property.id)} comparisonFull={shortlistedPropertyIDs.length >= 4} onToggleShortlist={toggleShortlist} />

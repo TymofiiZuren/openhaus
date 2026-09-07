@@ -1,4 +1,4 @@
-import { memo, useCallback, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { Property } from './api/properties'
 import { areaForCoordinate, areasForCounty } from './administrativeAreas'
@@ -69,6 +69,12 @@ export function PropertyMap({ properties, selectedCounty, selectedArea, property
   const mapProperties = visibleProperties
   const selectedProperty = visibleProperties.find((property) => property.id === selectedPropertyID)
 
+  useEffect(() => {
+    if (!selectedCounty || !selectedProperty || activeArea) return
+    const group = areaGroups.find(item => item.properties.some(property => property.id === selectedProperty.id))
+    if (group) onAreaChange(group.area.name)
+  }, [selectedCounty, selectedProperty, activeArea, areaGroups, onAreaChange])
+
   const chooseCounty = useCallback((county: string | null) => {
     if (county !== null && countyControl.current?.contains(document.activeElement)) {
       countyControl.current.querySelector<HTMLButtonElement>('[aria-controls="county-options"]')?.focus({ preventScroll: true })
@@ -94,9 +100,10 @@ export function PropertyMap({ properties, selectedCounty, selectedArea, property
   const showPropertyOnMap = useCallback((property: Property) => {
     setLocationPanelOpen(false)
     setCameraRequestKey(key => key + 1)
-    const propertyArea = areaForCoordinate(property.county, { lat: property.latitude, lng: property.longitude })
-    if (!sameLocation(property.county, selectedCounty ?? '')) onCountyChange(property.county)
-    if (propertyArea) onAreaChange(propertyArea.name)
+    if (!sameLocation(property.county, selectedCounty ?? '')) {
+      onCountyChange(property.county)
+      onAreaChange(undefined)
+    }
     setSelectedPropertyID(property.id)
   }, [onAreaChange, onCountyChange, selectedCounty, setSelectedPropertyID])
   const dismissProperty = useCallback(() => setSelectedPropertyID(undefined), [setSelectedPropertyID])

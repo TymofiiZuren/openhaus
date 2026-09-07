@@ -3,6 +3,41 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
 
+it('preserves an area deep link through a failed geometry load and explicit retry', async () => {
+  const geometry = await import('./administrativeAreas')
+  const load = vi.spyOn(geometry, 'loadAreasForCounty').mockRejectedValueOnce(new Error('offline'))
+  window.history.replaceState({}, '', '/?county=Dublin&area=Pembroke#explore')
+  mockResponse({ properties: [property] })
+  render(<App />)
+  const retry = await screen.findByRole('button', { name: 'Retry map detail' })
+  expect(new URLSearchParams(location.search).get('area')).toBe('Pembroke')
+  expect(screen.queryByRole('article', { name: property.title })).not.toBeInTheDocument()
+  await userEvent.click(retry)
+  expect(await screen.findByRole('heading', { name: 'Homes in Pembroke' })).toBeVisible()
+  expect(load).toHaveBeenCalledTimes(2)
+})
+
+it('ignores a late geometry response after navigating to another county', async () => {
+  const geometry = await import('./administrativeAreas')
+  const original = geometry.loadAreasForCounty
+  let finish!: () => void
+  vi.spyOn(geometry, 'loadAreasForCounty').mockImplementationOnce(() => new Promise<void>(resolve => { finish = resolve }))
+  window.history.replaceState({}, '', '/?county=Dublin&area=Pembroke#explore')
+  mockResponse({ properties: [property, { ...property, id: 'cork', county: 'Cork', city: 'Cork', longitude: -8.4932, latitude: 51.9045 }] })
+  render(<App />)
+  await waitFor(() => expect(finish).toBeDefined())
+  act(() => {
+    window.history.pushState({}, '', '/?county=Cork#explore')
+    window.dispatchEvent(new PopStateEvent('popstate'))
+  })
+  await waitFor(() => expect(screen.queryByText('Preparing local map detail…')).not.toBeInTheDocument())
+  expect(screen.getAllByRole('heading', { name: 'Homes in Cork', level: 2 }).length).toBeGreaterThan(0)
+  await act(async () => { await original('Dublin'); finish() })
+  expect(new URLSearchParams(location.search).get('county')).toBe('Cork')
+  expect(screen.queryByRole('heading', { name: 'Homes in Pembroke' })).not.toBeInTheDocument()
+  expect(screen.queryByText('Preparing local map detail…')).not.toBeInTheDocument()
+})
+
 it('labels showcase homes without promising a future real tour', async () => {
   const demo = {...property,id:'d3000000-0000-4000-8000-000000000003',title:'Demo listing · Harbour townhouse'}
   window.history.replaceState({}, '', `/properties/${demo.id}`)

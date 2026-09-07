@@ -1,6 +1,8 @@
 import { render, screen } from '@testing-library/react'
 import { useState } from 'react'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeAll, describe, expect, it, vi } from 'vitest'
+import { loadAreasForCounty } from './administrativeAreas'
+beforeAll(() => Promise.all(['Dublin', 'Cork'].map(loadAreasForCounty)))
 import type { Property } from './api/properties'
 
 let googleMapRenderCount = 0

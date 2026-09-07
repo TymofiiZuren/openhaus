@@ -1,4 +1,3 @@
-import areaJSON from './data/irelandSubregions.json?raw'
 import type { Coordinate } from './googleMapsLoader'
 import { decodeBoundary } from './boundaryCodec'
 
@@ -9,22 +8,31 @@ export type AdministrativeArea = {
 }
 
 type EncodedArea = { name: string; county: string; paths: string[] }
-// Parse data as JSON rather than compiling thousands of coordinates as JavaScript.
-const areaData = JSON.parse(areaJSON) as { areas: EncodedArea[]; attribution: string; source: string }
+const countyAssets = import.meta.glob<string>('./data/areas/*.json', { query: '?raw', import: 'default' })
+const pendingByCounty = new Map<string, Promise<void>>()
 const encodedByCounty = new Map<string, EncodedArea[]>()
-for (const area of areaData.areas) {
-  const key = area.county.toLocaleLowerCase()
-  const group = encodedByCounty.get(key) ?? []
-  group.push(area)
-  encodedByCounty.set(key, group)
-}
 const decodedByCounty = new Map<string, AdministrativeArea[]>()
 type Bounds = { north: number; south: number; east: number; west: number }
 const pathBounds = new WeakMap<Coordinate[], Bounds>()
 
 export const administrativeAreaAttribution = {
-  label: areaData.attribution,
-  url: areaData.source,
+  label: 'Tailte Éireann · CC BY 4.0',
+  url: 'https://data.gov.ie/dataset/local-electoral-areas-national-statutory-boundaries-2019',
+}
+
+// The page owns loading/error state. Concurrent requests share one import;
+// failures are evicted so an explicit retry can try the asset again.
+export function loadAreasForCounty(county: string | null | undefined): Promise<void> {
+  const key = county?.toLocaleLowerCase() ?? ''
+  const loader = countyAssets[`./data/areas/${key}.json`]
+  if (!loader || encodedByCounty.has(key)) return Promise.resolve()
+  const pending = pendingByCounty.get(key)
+  if (pending) return pending
+  const request = loader().then(raw => {
+    encodedByCounty.set(key, JSON.parse(raw) as EncodedArea[])
+  }).finally(() => pendingByCounty.delete(key))
+  pendingByCounty.set(key, request)
+  return request
 }
 
 export function areasForCounty(county: string | null | undefined): AdministrativeArea[] {
@@ -33,7 +41,10 @@ export function areasForCounty(county: string | null | undefined): Administrativ
   const existing = decodedByCounty.get(key)
   if (existing) return existing
   const encoded = encodedByCounty.get(key)
-  if (!encoded) return [] // Do not grow the cache with arbitrary search strings.
+  if (!encoded) {
+    if (countyAssets[`./data/areas/${key}.json`]) throw new Error(`County geometry not loaded: ${county}`)
+    return [] // Do not grow the cache with arbitrary search strings.
+  }
   const decoded = encoded.map(area => ({name: area.name, county: area.county, paths: area.paths.map(path => {
     const points = decodeBoundary(path).map(([lat,lng])=>({lat,lng}))
     const bounds = {north:-Infinity,south:Infinity,east:-Infinity,west:Infinity}

@@ -45,6 +45,7 @@ await writeFile(new URL('../src/data/irelandSubregions.json', import.meta.url), 
   encoding: 'polyline6',
   areas,
 })}\n`)
+await import('./split-administrative-areas.mjs')
 
 function polygonPaths(geometry) {
   const polygons = geometry.type === 'Polygon' ? [geometry.coordinates] : geometry.coordinates

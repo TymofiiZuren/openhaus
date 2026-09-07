@@ -1,4 +1,6 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
+import { loadAreasForCounty } from './administrativeAreas'
+beforeAll(() => Promise.all(['Dublin', 'Cork'].map(loadAreasForCounty)))
 import { applyCamera, areaStyle, countyStyle } from './GooglePropertyMap'
 import { mapStyleForTheme } from './mapStyles'
 import { mapViewport } from './countyBoundaries'
