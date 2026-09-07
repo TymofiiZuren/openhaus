@@ -1,11 +1,22 @@
 export type MediaJob = {
   id: string
-  propertyId: string
-  outputPath?: string
   status: 'pending' | 'processing' | 'ready' | 'failed'
-  attempts: number
   errorMessage?: string
-  createdAt: string
+}
+
+const validJobID = /^[a-zA-Z0-9-]{1,128}$/
+
+// Decode only the fields consumed by this client. Extra server metadata is not
+// required for polling and must not be mistaken for validated client state.
+function parseMediaJob(value: unknown, expectedID?: string): MediaJob {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Invalid video job response')
+  const data = value as Record<string, unknown>
+  if (typeof data.id !== 'string' || !validJobID.test(data.id) || (expectedID !== undefined && data.id !== expectedID)
+    || (data.status !== 'pending' && data.status !== 'processing' && data.status !== 'ready' && data.status !== 'failed')
+    || (data.errorMessage !== undefined && typeof data.errorMessage !== 'string')) {
+    throw new Error('Invalid video job response')
+  }
+  return { id: data.id, status: data.status, ...(data.errorMessage === undefined ? {} : { errorMessage: data.errorMessage }) }
 }
 
 export class VideoUploadInterruptedError extends Error {
@@ -29,7 +40,7 @@ export async function uploadPropertyVideo(
   })
   if (response.status === 408) throw new VideoUploadInterruptedError()
   if (!response.ok) throw new Error(`Video upload failed with status ${response.status}`)
-  return (await response.json()) as MediaJob
+  return parseMediaJob(await response.json())
 }
 
 export async function waitForMediaJob(
@@ -37,6 +48,7 @@ export async function waitForMediaJob(
   onUpdate: (job: MediaJob) => void,
   signal?: AbortSignal,
 ): Promise<MediaJob> {
+  if (!validJobID.test(jobId)) throw new Error('Invalid video job ID')
   let failures = 0
   while (!signal?.aborted) {
     const { status, job } = await readMediaJob(jobId, signal)
@@ -73,7 +85,7 @@ async function readMediaJob(jobId: string, signal?: AbortSignal) {
       await response.body?.cancel()
       return { status: response.status, job: undefined }
     }
-    const job = (await response.json()) as MediaJob
+    const job = parseMediaJob(await response.json(), jobId)
     return { status: response.status, job }
   } catch (error) {
     // Keep timeouts distinct from user cancellation so the UI offers recovery.

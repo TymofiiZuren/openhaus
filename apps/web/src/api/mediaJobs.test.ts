@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { waitForMediaJob } from './mediaJobs'
+import { uploadPropertyVideo, waitForMediaJob } from './mediaJobs'
 
 afterEach(() => {
   vi.restoreAllMocks()
@@ -7,6 +7,46 @@ afterEach(() => {
 })
 
 describe('video processing status recovery', () => {
+  it('rejects a mismatched job before notifying the interface', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({ id: 'another-job', status: 'ready' }))
+    const update = vi.fn()
+    await expect(waitForMediaJob('job-1', update)).rejects.toThrow('Invalid video job response')
+    expect(update).not.toHaveBeenCalled()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it.each([
+    null, [], {},
+    { id: 'job-1', status: 'unknown' },
+    { id: 'job-1', status: null },
+    { id: 'job-1', status: 'failed', errorMessage: { message: 'not text' } },
+  ])('rejects malformed status data %j without polling again', async payload => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json(payload))
+    const update = vi.fn()
+    await expect(waitForMediaJob('job-1', update)).rejects.toThrow('Invalid video job response')
+    expect(update).not.toHaveBeenCalled()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it.each(['../unexpected', '', 'job?query=1'])('rejects an unsafe requested job ID %j before fetching', async id => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+    await expect(waitForMediaJob(id, vi.fn())).rejects.toThrow('Invalid video job ID')
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('validates upload receipts before they can be saved for recovery', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({ id: '../wrong', status: 'pending' }, { status: 202 }))
+    await expect(uploadPropertyVideo('home-1', new File(['video'], 'tour.mp4'))).rejects.toThrow('Invalid video job response')
+  })
+
+  it('accepts the server job shape while exposing only validated workflow fields', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({
+      id: 'job-1', propertyId: 'home-1', status: 'pending', attempts: 0,
+      createdAt: '2026-09-07T12:00:00Z', outputPath: '',
+    }, { status: 202 }))
+    await expect(uploadPropertyVideo('home-1', new File(['video'], 'tour.mp4'))).resolves.toEqual({ id: 'job-1', status: 'pending' })
+  })
+
   it.each(['headers', 'body'])('times out a stalled response %s after 15 seconds', async stage => {
     vi.useFakeTimers()
     let requestSignal: AbortSignal | undefined
