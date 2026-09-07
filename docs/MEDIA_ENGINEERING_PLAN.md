@@ -9,7 +9,7 @@ Use neutral white/grey and charcoal for the main surfaces. Reserve champagne for
 - React/TypeScript, lazy route loading and the shared account/navigation system.
 - Trigram candidate indexing plus exact county recognition in `propertySearch.ts`.
 - Go authenticated image decode/re-encode and protected draft previews; see `MANAGER_IMAGES.md`.
-- Go video worker invokes FFmpeg for 30 fps, 1920px-wide H.264/AAC MP4 with fast-start metadata. This currently scales every input to that width, including smaller inputs; avoiding upscaling is follow-up work.
+- Go video worker invokes FFmpeg for 30 fps H.264/AAC MP4 with fast-start metadata. Encoded frames fit within 1920×1080 without enlarging smaller sources. Dimensions are even for yuv420p; sample aspect ratio preserves the displayed proportions, including anamorphic inputs. This bounds output pixels, not source decoding memory or total encoding time.
 - PostgreSQL queue claims use `FOR UPDATE SKIP LOCKED`. Claiming exists; robust stale-job recovery, progress reporting and operational metrics must not be advertised as complete without further verification.
 - `/media-lab`: Canvas sampling, transferable RGBA buffers, a dedicated TypeScript Worker, 32-bin luma histogram and 3×3 Sobel edge magnitude. O(width × height) time and memory, bounded to a 640px longest edge in this UI. Source algorithm caps input at one megapixel. No third-party analysis upload. This demo is not yet wired into manager upload validation.
 - Six generated JPEGs and three 7-second H.264/24 fps dissolve sequences across three fictional packs. They are concept assets, not real listing photography, video capture or reconstructed 3D.
@@ -29,11 +29,13 @@ Add manager-upload media diagnostics as advisory metadata, calculated server-sid
 
 Implemented reliability slice: FFmpeg writes to a unique staging file on the output filesystem and publishes by atomic rename only after successful encoding and a nonempty regular-file check. Encoding has a 20-minute deadline. Encoder output is discarded rather than buffered or leaked into logs; failures retain process exit/context errors. Cancellation records a sanitized failed state using a separate five-second database context, and removes staging output. Successful publication uses a separate five-second completion context. Source deletion still happens only after confirmed completion.
 
-Failure boundary: this is atomic file visibility, not a filesystem/database transaction or crash recovery. If database completion is uncertain, source and published output are retained and the error is surfaced; do not mark failed or delete potentially committed media. A process crash can still leave processing jobs and staging files. Disk quotas, stale artifact reconciliation, no-upscale encoding and authoritative media probing remain open.
+Failure boundary: this is atomic file visibility, not a filesystem/database transaction or crash recovery. If database completion is uncertain, source and published output are retained and the error is surfaced; do not mark failed or delete potentially committed media. A process crash can still leave processing jobs and staging files. Disk quotas, stale artifact reconciliation and authoritative media probing remain open.
 
 Next extend the pipeline with stage-specific progress, retry policy, lease/heartbeat and stale-job recovery. Test duplicate claims, worker crashes and idempotent completion before adding more workers. Begin with polling; consider Server-Sent Events for progress only after the job contract is stable. No new broker is needed just to demonstrate concurrency.
 
 Validation: `go test -race ./internal/mediajob` covers atomic publication, empty output, cancellation cleanup, sanitized failures and uncertain database completion. Set `MEDIA_TEST_VIDEO` to an absolute local video path to additionally run a real FFmpeg encode and decode the entire output. The fixture is copied; the original is never consumed. Download follow-up: authenticated range requests, resumable client downloads and content-integrity checks must preserve draft-media access controls; arbitrary remote URL downloading needs an explicit SSRF-safe source policy first.
+
+Encoding boundary validation: from `services/api`, run `MEDIA_TEST_FFMPEG=1 go test ./internal/mediajob -run TestProcessorEncodingBounds -count=1`. Requires local FFmpeg and ffprobe (no additional production dependency). Synthetic small, portrait, 4K, odd-dimension and anamorphic MOV fixtures exercise the real worker. Tests inspect output size, displayed aspect ratio, codec, pixel format and frame rate, then decode every frame. Ordinary test runs skip this opt-in integration test; they do not establish encoder compatibility by themselves.
 
 ### 3. Strong photo/video algorithms
 

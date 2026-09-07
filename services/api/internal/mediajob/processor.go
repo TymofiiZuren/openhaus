@@ -68,8 +68,10 @@ func (processor *Processor) ProcessNext(ctx context.Context) error {
 	}
 	encodeCtx, cancel := context.WithTimeout(ctx, 20*time.Minute)
 	defer cancel()
+	// Bound both encoded dimensions without enlarging small sources. Even sizes
+	// support yuv420p; scale preserves display aspect ratio through sample aspect ratio.
 	command := exec.CommandContext(encodeCtx, processor.ffmpegPath,
-		"-nostdin", "-hide_banner", "-loglevel", "error", "-y", "-i", job.SourcePath, "-vf", "fps=30,scale=1920:-2:flags=lanczos",
+		"-nostdin", "-hide_banner", "-loglevel", "error", "-y", "-i", job.SourcePath, "-vf", "fps=30,scale=w='min(1920,iw)':h='min(1080,ih)':force_original_aspect_ratio=decrease:force_divisible_by=2:flags=lanczos",
 		"-c:v", "libx264", "-preset", "medium", "-crf", "24", "-pix_fmt", "yuv420p",
 		"-movflags", "+faststart", "-c:a", "aac", "-b:a", "128k", stagingPath)
 	// Encoder diagnostics may include private paths or malicious metadata. Do not
