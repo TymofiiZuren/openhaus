@@ -1,3 +1,14 @@
+// Bound canvas allocation before decoding pixels or transferring a worker buffer.
+// Preserve aspect ratio except for a minimum 3px axis required by Sobel's kernel.
+export function analysisDimensions(sourceWidth: number, sourceHeight: number) {
+  if (!Number.isSafeInteger(sourceWidth) || !Number.isSafeInteger(sourceHeight) || sourceWidth < 1 || sourceHeight < 1) throw new Error('Invalid source dimensions')
+  const scale = Math.min(1, 640 / Math.max(sourceWidth, sourceHeight))
+  return {
+    width: Math.max(3, Math.round(sourceWidth * scale)),
+    height: Math.max(3, Math.round(sourceHeight * scale)),
+  }
+}
+
 export function analysePixels(rgba: Uint8ClampedArray, width: number, height: number) {
   if (!Number.isInteger(width) || !Number.isInteger(height) || width < 3 || height < 3 || width * height > 1024 * 1024 || rgba.length !== width * height * 4) throw new Error('Invalid analysis dimensions')
   const count = width * height

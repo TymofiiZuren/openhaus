@@ -11,7 +11,7 @@ Use neutral white/grey and charcoal for the main surfaces. Reserve champagne for
 - Go authenticated image decode/re-encode and protected draft previews; see `MANAGER_IMAGES.md`.
 - Go video worker invokes FFmpeg for 30 fps, 1920px-wide H.264/AAC MP4 with fast-start metadata. This currently scales every input to that width, including smaller inputs; avoiding upscaling is follow-up work.
 - PostgreSQL queue claims use `FOR UPDATE SKIP LOCKED`. Claiming exists; robust stale-job recovery, progress reporting and operational metrics must not be advertised as complete without further verification.
-- `/media-lab`: Canvas sampling, transferable RGBA buffers, a dedicated TypeScript Worker, 32-bin luma histogram and 3×3 Sobel edge magnitude. O(width × height) time and memory, bounded to a 640px-wide sample in this UI. Source algorithm caps input at one megapixel. No third-party analysis upload. This demo is not yet wired into manager upload validation.
+- `/media-lab`: Canvas sampling, transferable RGBA buffers, a dedicated TypeScript Worker, 32-bin luma histogram and 3×3 Sobel edge magnitude. O(width × height) time and memory, bounded to a 640px longest edge in this UI. Source algorithm caps input at one megapixel. No third-party analysis upload. This demo is not yet wired into manager upload validation.
 - Six generated JPEGs and three 7-second H.264/24 fps dissolve sequences across three fictional packs. They are concept assets, not real listing photography, video capture or reconstructed 3D.
 - Go `media-audit`: box-averaged dHash, BK-tree Hamming-radius candidate retrieval, SHA-256 identity and a versioned JSON report consumed by Media Lab. Offline only; manager-upload integration remains future work. See `SHOWCASE_MEDIA.md` for limits and tests.
 
@@ -64,3 +64,7 @@ Record repeatable p50/p95 timings with hardware, browser, sample dimensions, war
 - [OpenCV image gradients](https://docs.opencv.org/4.13.0/d5/d0f/tutorial_py_gradients.html) — Sobel, Scharr and Laplacian derivatives.
 
 No additional production dependencies or paid services were installed for this first slice.
+
+## Analysis allocation guard
+
+The Media Lab now calculates dimensions before allocating its analysis canvas: the longest edge is at most 640px, with a minimum 3px axis for the Sobel kernel. This bounds the RGBA analysis buffer to 1,638,400 bytes, including extreme portrait or panoramic aspect ratios. Small images are not enlarged except to meet the kernel minimum. Invalid, non-finite and fractional source dimensions fail explicitly. This bounds the analysis canvas/worker buffer, not the browser's original image-decoding memory.

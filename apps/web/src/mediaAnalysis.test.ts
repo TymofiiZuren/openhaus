@@ -1,5 +1,19 @@
 import { expect, it } from 'vitest'
-import { analysePixels, analysisReport } from './mediaAnalysis'
+import { analysePixels, analysisReport, analysisDimensions } from './mediaAnalysis'
+
+it('bounds analysis allocation for portrait, landscape and extreme aspect ratios', () => {
+  expect(analysisDimensions(1536, 1024)).toEqual({ width: 640, height: 427 })
+  expect(analysisDimensions(1024, 1536)).toEqual({ width: 427, height: 640 })
+  expect(analysisDimensions(1, 100_000)).toEqual({ width: 3, height: 640 })
+  expect(analysisDimensions(100_000, 1)).toEqual({ width: 640, height: 3 })
+  expect(analysisDimensions(32, 16)).toEqual({ width: 32, height: 16 })
+  expect(analysisDimensions(1, 1)).toEqual({ width: 3, height: 3 })
+})
+
+it.each([0, -1, NaN, Infinity, 1.5])('rejects invalid source dimensions: %s', value => {
+  expect(() => analysisDimensions(value, 10)).toThrow('Invalid source dimensions')
+  expect(() => analysisDimensions(10, value)).toThrow('Invalid source dimensions')
+})
 
 it('measures flat black and white without inventing detail', () => {
   const black = new Uint8ClampedArray(36)

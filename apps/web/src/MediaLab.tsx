@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { SiteHeader } from './SiteHeader'
 import { MediaAudit } from './MediaAudit'
-import { analysisReport, type MediaAnalysis } from './mediaAnalysis'
+import { analysisDimensions, analysisReport, type MediaAnalysis } from './mediaAnalysis'
 import './MediaLab.css'
 
 const samples = [
@@ -31,7 +31,7 @@ export function MediaLab() {
     image.onload = () => {
       if (!active) return
       try {
-        const width = 640, height = Math.max(3, Math.round(image.naturalHeight / image.naturalWidth * width))
+        const { width, height } = analysisDimensions(image.naturalWidth, image.naturalHeight)
         const staging = document.createElement('canvas')
         staging.width = width; staging.height = height
         const context = staging.getContext('2d')
@@ -73,7 +73,7 @@ export function MediaLab() {
         <a className="media-lab-export" download={`openhaus-${samples[sample].src.split('/').pop()}-analysis.json`} href={`data:application/json;charset=utf-8,${encodeURIComponent(JSON.stringify(analysisReport(result, samples[sample].src), null, 2))}`}>Download analysis report ↓</a>
       </>}
     </aside></div>
-    <section className="media-lab-method"><div><p className="eyebrow">The algorithm</p><h2>Pixels → signal → explanation.</h2><p>Canvas decodes a 640px-wide sample. An RGBA buffer is transferred to a TypeScript Web Worker. A single luma pass builds the histogram; 3 × 3 Sobel kernels reveal horizontal and vertical gradients. Results return without uploading the image to an analysis service.</p><p>Luma uses a gamma-encoded Rec.709 approximation. Threshold counts indicate possible clipping, not proof of lost detail. No AI model judges the home.</p></div><div><p className="eyebrow">FFmpeg / H.264 / 24 fps</p><h2>A photographic study.</h2><video controls playsInline preload="none" poster={samples[0].src} src="/media-demo/coastal-study.mp4" aria-label="Seven-second photo sequence made from two AI-generated images" /><p>A seven-second dissolve between generated stills—not recorded footage or a 3D walkthrough. No audio. Playback is always your choice.</p></div></section>
+    <section className="media-lab-method"><div><p className="eyebrow">The algorithm</p><h2>Pixels → signal → explanation.</h2><p>Canvas fits the sample within a 640px longest edge before allocating its pixel buffer. Very narrow images use a minimum 3px axis for the Sobel kernel. An RGBA buffer is transferred to a TypeScript Web Worker. A single luma pass builds the histogram; 3 × 3 Sobel kernels reveal horizontal and vertical gradients. Results return without uploading the image to an analysis service.</p><p>Luma uses a gamma-encoded Rec.709 approximation. Threshold counts indicate possible clipping, not proof of lost detail. No AI model judges the home.</p></div><div><p className="eyebrow">FFmpeg / H.264 / 24 fps</p><h2>A photographic study.</h2><video controls playsInline preload="none" poster={samples[0].src} src="/media-demo/coastal-study.mp4" aria-label="Seven-second photo sequence made from two AI-generated images" /><p>A seven-second dissolve between generated stills—not recorded footage or a 3D walkthrough. No audio. Playback is always your choice.</p></div></section>
     <MediaAudit filename={samples[sample].src.split('/').pop()!} />
     <section className="media-lab-method" aria-label="Fictional showcase listings"><div><p className="eyebrow">Connected catalogue</p><h2>Explore the concept homes.</h2><p>These demonstration listings are served by the property API and local PostgreSQL database. Prices and map positions are illustrative, and every home is labelled as fictional.</p></div><div><p><a href="/properties/d3000000-0000-4000-8000-000000000001">Coastal retreat →</a></p><p><a href="/properties/d3000000-0000-4000-8000-000000000002">Limestone courtyard →</a></p><p><a href="/properties/d3000000-0000-4000-8000-000000000003">Harbour townhouse →</a></p></div></section>
   </main></div>
