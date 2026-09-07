@@ -52,6 +52,10 @@ func NewUploadService(root string, creator Creator) *UploadService {
 }
 
 func (service *UploadService) AcceptUpload(ctx context.Context, propertyID, filename string, source io.Reader) (Job, error) {
+	if err := ctx.Err(); err != nil {
+		return Job{}, err
+	}
+	source = uploadReader{ctx: ctx, source: source}
 	if err := os.MkdirAll(service.root, 0o750); err != nil {
 		return Job{}, fmt.Errorf("create upload directory: %w", err)
 	}
@@ -90,6 +94,9 @@ func (service *UploadService) AcceptUpload(ctx context.Context, propertyID, file
 	if _, err := io.Copy(temporary, io.MultiReader(strings.NewReader(string(header)), source)); err != nil {
 		return Job{}, fmt.Errorf("store upload: %w", err)
 	}
+	if err := ctx.Err(); err != nil {
+		return Job{}, err
+	}
 	if err := temporary.Sync(); err != nil {
 		return Job{}, fmt.Errorf("sync upload: %w", err)
 	}
@@ -104,11 +111,33 @@ func (service *UploadService) AcceptUpload(ctx context.Context, propertyID, file
 	temporaryPath = finalPath
 
 	job := Job{ID: id, PropertyID: propertyID, SourcePath: finalPath, Status: StatusPending, CreatedAt: time.Now().UTC()}
+	if err := ctx.Err(); err != nil {
+		return Job{}, err
+	}
 	if err := service.creator.Create(ctx, job); err != nil {
 		return Job{}, fmt.Errorf("create media job: %w", err)
 	}
 	keep = true
 	return job, nil
+}
+
+// Check around every read, including EOF, so buffered uploads cannot keep
+// copying after cancellation. The source must unblock any in-flight Read;
+// this wrapper cannot interrupt an arbitrary reader that blocks indefinitely.
+type uploadReader struct {
+	ctx    context.Context
+	source io.Reader
+}
+
+func (reader uploadReader) Read(p []byte) (int, error) {
+	if err := reader.ctx.Err(); err != nil {
+		return 0, err
+	}
+	n, err := reader.source.Read(p)
+	if contextErr := reader.ctx.Err(); contextErr != nil {
+		return 0, contextErr
+	}
+	return n, err
 }
 
 func isMP4Family(header []byte) bool {

@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 
 	"github.com/TymofiiZuren/openhaus/services/api/internal/httpapi"
@@ -32,8 +34,126 @@ type jobGetterStub struct {
 	err error
 }
 
-func authenticatedMediaRouter(uploader *uploadStub, jobs jobGetterStub) http.Handler {
+func authenticatedMediaRouter(uploader httpapi.VideoUploader, jobs jobGetterStub) http.Handler {
 	return httpapi.NewRouter(httpapi.Dependencies{Readiness: readinessStub{}, Properties: &propertyListerStub{}, Videos: uploader, Jobs: jobs, ManagerAuth: managerAuthStub{validToken: "session-token"}})
+}
+
+type uploadFunc func(context.Context, string, string, io.Reader) (mediajob.Job, error)
+
+func (fn uploadFunc) AcceptUpload(ctx context.Context, id, name string, source io.Reader) (mediajob.Job, error) {
+	return fn(ctx, id, name, source)
+}
+
+type observedUploadBody struct {
+	io.Reader
+	rejected            bool
+	readsAfterRejection int
+	reads               int
+	cancel              context.CancelFunc
+}
+
+func (body *observedUploadBody) Read(p []byte) (int, error) {
+	if body.rejected {
+		body.readsAfterRejection++
+	}
+	body.reads++
+	n, err := body.Reader.Read(p)
+	if body.cancel != nil && body.reads == 2 {
+		body.cancel()
+		body.rejected = true
+	}
+	return n, err
+}
+
+type uploadCreator struct{ called bool }
+
+func (creator *uploadCreator) Create(context.Context, mediajob.Job) error {
+	creator.called = true
+	return nil
+}
+
+func TestCancelledVideoRequestCleansUpWithoutQueueing(t *testing.T) {
+	buffer := &bytes.Buffer{}
+	writer := multipart.NewWriter(buffer)
+	part, err := writer.CreateFormFile("video", "tour.mov")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = part.Write(append([]byte("\x00\x00\x00\x18ftypqt  "), bytes.Repeat([]byte("video"), 16<<10)...))
+	_ = writer.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	body := &observedUploadBody{Reader: buffer, cancel: cancel}
+	root := t.TempDir()
+	creator := &uploadCreator{}
+	uploader := mediajob.NewUploadService(root, creator)
+	request := managerRequest(http.MethodPost, "/api/v1/manager/properties/property-1/videos", body).WithContext(ctx)
+	request.Header.Set("Content-Type", writer.FormDataContentType())
+	response := httptest.NewRecorder()
+	authenticatedMediaRouter(uploader, jobGetterStub{}).ServeHTTP(response, request)
+	if response.Code != http.StatusRequestTimeout {
+		t.Fatalf("status = %d", response.Code)
+	}
+	var result struct{ Error struct{ Code string } }
+	if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.Error.Code != "upload_interrupted" {
+		t.Fatalf("code = %q", result.Error.Code)
+	}
+	if creator.called {
+		t.Fatal("interrupted upload queued a job")
+	}
+	if body.readsAfterRejection != 0 {
+		t.Fatalf("read %d times after cancellation", body.readsAfterRejection)
+	}
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("retained %d upload files", len(entries))
+	}
+}
+
+func TestRejectedVideoUploadDoesNotDrainRemainingBody(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		err    error
+		status int
+	}{
+		{"cancelled", context.Canceled, http.StatusRequestTimeout},
+		{"deadline", context.DeadlineExceeded, http.StatusRequestTimeout},
+		{"unsupported", mediajob.ErrUnsupportedMedia, http.StatusUnsupportedMediaType},
+		{"oversized", &http.MaxBytesError{Limit: 1}, http.StatusRequestEntityTooLarge},
+		{"failed", errors.New("upload unavailable"), http.StatusInternalServerError},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			buffer := &bytes.Buffer{}
+			writer := multipart.NewWriter(buffer)
+			part, err := writer.CreateFormFile("video", "tour.mp4")
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, _ = part.Write(bytes.Repeat([]byte("x"), 64<<10))
+			_ = writer.Close()
+			body := &observedUploadBody{Reader: buffer}
+			uploader := uploadFunc(func(context.Context, string, string, io.Reader) (mediajob.Job, error) {
+				body.rejected = true
+				return mediajob.Job{}, tc.err
+			})
+			request := managerRequest(http.MethodPost, "/api/v1/manager/properties/property-1/videos", body)
+			request.Header.Set("Content-Type", writer.FormDataContentType())
+			response := httptest.NewRecorder()
+			authenticatedMediaRouter(uploader, jobGetterStub{}).ServeHTTP(response, request)
+			if body.readsAfterRejection != 0 {
+				t.Errorf("read body %d times after rejection", body.readsAfterRejection)
+			}
+			if response.Code != tc.status {
+				t.Errorf("status = %d, want %d", response.Code, tc.status)
+			}
+		})
+	}
 }
 
 func managerRequest(method, target string, body io.Reader) *http.Request {
