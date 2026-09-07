@@ -20,6 +20,7 @@ type Repository interface {
 	managerauth.Repository
 	CreateUser(context.Context, string, string) error
 	AllowAttempt(context.Context, []byte, time.Time, int) (bool, error)
+	DeleteUser(context.Context, string, string) (bool, error)
 }
 type Service struct {
 	repository Repository
@@ -75,4 +76,30 @@ func (s *Service) Authenticate(ctx context.Context, token string) (managerauth.U
 }
 func (s *Service) Logout(ctx context.Context, token string) error {
 	return s.sessions.Logout(ctx, token)
+}
+
+// ChangePassword verifies the current credential and atomically revokes every
+// session owned by this client account when the credential changes.
+func (s *Service) ChangePassword(ctx context.Context, user managerauth.User, currentPassword, newPassword string) error {
+	return s.sessions.ChangePassword(ctx, user, currentPassword, newPassword)
+}
+
+// DeleteAccount re-verifies the buyer's current credential before deleting
+// the identity. Database foreign keys cascade owned sessions and buyer data.
+func (s *Service) DeleteAccount(ctx context.Context, user managerauth.User, currentPassword, address string) error {
+	if err := s.limit(ctx, strings.ToLower(strings.TrimSpace(user.Email)), address); err != nil {
+		return err
+	}
+	verifiedUser, passwordHash, err := s.repository.FindUserByEmail(ctx, strings.ToLower(strings.TrimSpace(user.Email)))
+	if err != nil || verifiedUser.ID != user.ID || managerauth.ComparePassword(passwordHash, currentPassword) != nil {
+		return managerauth.ErrInvalidCredentials
+	}
+	deleted, err := s.repository.DeleteUser(ctx, user.ID, passwordHash)
+	if err != nil {
+		return err
+	}
+	if !deleted {
+		return managerauth.ErrInvalidCredentials
+	}
+	return nil
 }

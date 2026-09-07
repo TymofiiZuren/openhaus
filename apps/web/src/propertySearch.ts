@@ -22,6 +22,9 @@ function trigrams(value: string) {
   return values
 }
 
+const countyNames = new Set('antrim,armagh,carlow,cavan,clare,cork,derry,donegal,down,dublin,fermanagh,galway,kerry,kildare,kilkenny,laois,leitrim,limerick,longford,louth,mayo,meath,monaghan,offaly,roscommon,sligo,tipperary,tyrone,waterford,westmeath,wexford,wicklow'.split(','))
+const normalizeCounty = (value: string) => normalize(value).replace(/^(county|co) /, '')
+
 export function createPropertySearchIndex(properties: SearchableProperty[]) {
   const documents = new Map<string, string>()
   const postings = new Map<string, Set<string>>()
@@ -40,6 +43,10 @@ export function createPropertySearchIndex(properties: SearchableProperty[]) {
     search(value: string) {
       const query = normalize(value)
       if (!query) return new Set(documents.keys())
+      const county = normalizeCounty(value)
+      if (countyNames.has(county)) {
+        return new Set(properties.filter((property) => normalizeCounty(property.county) === county).map((property) => property.id))
+      }
 
       const terms = query.split(' ')
       const grams = terms.flatMap((term) => [...trigrams(term)])

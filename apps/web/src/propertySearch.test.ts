@@ -8,6 +8,17 @@ const homes = [
 ]
 
 describe('property search index', () => {
+  it('treats an exact county query as a location, not a street-name keyword', () => {
+    const index = createPropertySearchIndex([
+      ...homes,
+      { id: 'carlow', title: 'Townhouse', addressLine1: 'Dublin Road', city: 'Carlow', county: 'Carlow' },
+    ])
+    expect(index.search(' Dublin ')).toEqual(new Set(['dublin']))
+    expect(index.search('Co. Dublin')).toEqual(new Set(['dublin']))
+    expect(index.search('Dublin Road Carlow')).toEqual(new Set(['carlow']))
+    expect(index.search('County Kerry')).toEqual(new Set())
+  })
+
   it('matches words across the searchable property fields', () => {
     const index = createPropertySearchIndex(homes)
 

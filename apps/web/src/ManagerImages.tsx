@@ -71,7 +71,8 @@ function ImageDescriptionEditor({propertyID,media,disabled,onUpdated}:{propertyI
  }
  return <div className="manager-description-editor">
   {!editing?<><button type="button" disabled={disabled} aria-label={`Edit description: ${media.altText}`} onClick={()=>{setDescription(media.altText);setEditing(true);setError('');setSaved(false)}}>Edit description</button>{saved&&<p role="status">Description saved.</p>}</>:<form onSubmit={save}>
-   <label htmlFor={id}>Description for {media.altText}</label><input id={id} value={description} onChange={event=>setDescription(event.target.value)} maxLength={500} required disabled={saving} aria-describedby={error?`${id}-error`:undefined}/>
+   <label htmlFor={id}>Image description</label><textarea id={id} aria-label={`Description for ${media.altText}`} rows={4} value={description} onChange={event=>setDescription(event.target.value)} maxLength={500} required disabled={saving} aria-invalid={!!error} aria-describedby={`${id}-help${error?` ${id}-error`:''}`}/>
+   <small id={`${id}-help`}>Describe what is visible in this image. This text also helps people using screen readers.</small>
    <div><button type="submit" disabled={saving||disabled}>{saving?'Saving…':'Save description'}</button><button type="button" disabled={saving} onClick={()=>setEditing(false)}>Cancel</button></div>
    {error&&<p id={`${id}-error`} role="alert">{error}</p>}
   </form>}

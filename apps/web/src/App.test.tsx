@@ -3,6 +3,32 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
 
+it('labels showcase homes without promising a future real tour', async () => {
+  const demo = {...property,id:'d3000000-0000-4000-8000-000000000003',title:'Demo listing · Harbour townhouse'}
+  window.history.replaceState({}, '', `/properties/${demo.id}`)
+  mockResponse({properties:[demo]})
+  render(<App />)
+  expect(await screen.findByText('Fictional showcase · not for sale')).toBeVisible()
+  expect(screen.queryByText('Property for sale')).not.toBeInTheDocument()
+  expect(screen.getByRole('heading',{name:'Concept imagery, clearly labelled.'})).toBeVisible()
+  expect(screen.queryByText('Tour coming soon')).not.toBeInTheDocument()
+})
+
+it('restores the map anchor after the async homepage loads', async () => {
+  window.history.replaceState({}, '', `/?county=Dublin&property=${property.id}#explore`)
+  const scroll = vi.fn()
+  const original = HTMLElement.prototype.scrollIntoView
+  HTMLElement.prototype.scrollIntoView = scroll
+  try {
+    mockResponse({ properties: [property] })
+    render(<App />)
+    await waitFor(() => expect(scroll).toHaveBeenCalled())
+    expect(scroll.mock.instances).toContain(document.getElementById('explore'))
+  } finally {
+    HTMLElement.prototype.scrollIntoView = original
+  }
+})
+
 it('provides actionable property navigation without unavailable tour links', async () => {
   window.history.replaceState({}, '', `/properties/${property.id}`)
   mockResponse({ properties: [property] })
@@ -164,6 +190,54 @@ it('lets a signed-in client save a home from its property page', async () => {
 
   expect(await screen.findByRole('status')).toHaveTextContent('Saved to your account')
   expect(fetchMock).toHaveBeenCalledWith(`/api/v1/client/saved-properties/${property.id}`, expect.objectContaining({ method: 'PUT' }))
+})
+
+it('loads and saves private property notes for the signed-in client account', async () => {
+  window.history.replaceState({}, '', `/properties/${property.id}`)
+  const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
+    const url = String(input)
+    if (url === '/api/v1/properties') return Promise.resolve(Response.json({ properties: [property] }))
+    if (url === '/api/v1/client/session') return Promise.resolve(Response.json({ client: { id: 'buyer', email: 'buyer@example.test' } }))
+    if (url === '/api/v1/client/saved-properties') return Promise.resolve(Response.json({ properties: [] }))
+    if (url === `/api/v1/client/property-notes/${property.id}` && (!init?.method || init.method === 'GET')) {
+      return Promise.resolve(Response.json({ note: { propertyId: property.id, notes: 'Check the roof', questions: ['Confirm fixtures and fittings'] } }))
+    }
+    if (url === `/api/v1/client/property-notes/${property.id}` && init?.method === 'PUT') {
+      return Promise.resolve(Response.json({ note: { propertyId: property.id, notes: 'Check the roof and garden', questions: ['Confirm fixtures and fittings'] } }))
+    }
+    return Promise.resolve(new Response(null, { status: 404 }))
+  })
+
+  render(<App />)
+
+  expect(await screen.findByText('Notes synced to your account')).toBeVisible()
+  await userEvent.click(screen.getByRole('button', { name: 'Edit property notes' }))
+  const dialog = screen.getByRole('dialog', { name: `Notes for ${property.title}` })
+  expect(within(dialog).getByLabelText('Private notes')).toHaveValue('Check the roof')
+  expect(within(dialog).getByText('Private to your signed-in buyer account.')).toBeVisible()
+  await userEvent.type(within(dialog).getByLabelText('Private notes'), ' and garden')
+  await userEvent.click(within(dialog).getByRole('button', { name: 'Save property notes' }))
+
+  expect(fetchMock).toHaveBeenCalledWith(`/api/v1/client/property-notes/${property.id}`, expect.objectContaining({ method: 'PUT', credentials: 'same-origin' }))
+  expect(screen.getByText('Notes synced to your account')).toBeVisible()
+})
+
+it('does not claim browser notes are synced before the client saves them to the account', async () => {
+  window.history.replaceState({}, '', `/properties/${property.id}`)
+  localStorage.setItem(`openhaus:property-notes:${property.id}`, JSON.stringify({ notes: 'Browser-only note', questions: [] }))
+  vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+    const url = String(input)
+    if (url === '/api/v1/properties') return Promise.resolve(Response.json({ properties: [property] }))
+    if (url === '/api/v1/client/session') return Promise.resolve(Response.json({ client: { id: 'buyer', email: 'buyer@example.test' } }))
+    if (url === '/api/v1/client/saved-properties') return Promise.resolve(Response.json({ properties: [] }))
+    if (url === `/api/v1/client/property-notes/${property.id}`) return Promise.resolve(Response.json({ note: { propertyId: property.id, notes: '', questions: [] } }))
+    return Promise.resolve(new Response(null, { status: 404 }))
+  })
+
+  render(<App />)
+
+  expect(await screen.findByText('Browser notes ready to save to your account')).toBeVisible()
+  expect(screen.queryByText('Notes synced to your account')).not.toBeInTheDocument()
 })
 
 const property = {
@@ -414,6 +488,9 @@ describe('property catalogue', () => {
     expect(await screen.findByRole('main', { name: `${property.title} 360° tour` })).toBeVisible()
     expect(screen.getByRole('link', { name: `Back to ${property.title}` })).toHaveAttribute('href', `/properties/${property.id}`)
     expect(screen.getByRole('link', { name: 'View property details' })).toHaveAttribute('href', `/properties/${property.id}`)
+    const workspace = screen.getByRole('complementary', { name: 'Tour workspace controls' })
+    expect(within(workspace).getByRole('heading', { name: 'Explore at your pace.' })).toBeVisible()
+    expect(within(workspace).getByText('Secure provider connection')).toBeVisible()
     expect(screen.getByRole('link', { name: 'View location on map' })).toHaveAttribute('href', `/?county=${property.county}&property=${property.id}#explore`)
     expect(await screen.findByRole('button', { name: 'Enter 360° tour' })).toBeVisible()
   })
@@ -600,8 +677,26 @@ describe('property catalogue', () => {
     expect(within(explorer).getByRole('searchbox', { name: 'Search homes' })).toHaveValue('Cork')
   })
 
-  it('opens a contextual saved-search dialog and confirms the alert', async () => {
+  it('restores saved catalogue filters from a results link', async () => {
+    window.history.replaceState({}, '', '/?query=garden&beds=3&type=detached&maxPrice=800000&tour=true#homes')
     mockResponse({ properties: [property, corkProperty] })
+
+    render(<App />)
+
+    expect(screen.getByRole('searchbox', { name: 'Search homes from the opening feature' })).toHaveValue('garden')
+    const explorer = await screen.findByRole('region', { name: 'Explore homes by location' })
+    expect(within(explorer).getByRole('combobox', { name: 'Minimum bedrooms' })).toHaveValue('3')
+    expect(within(explorer).getByRole('combobox', { name: 'Property type' })).toHaveValue('detached')
+    expect(within(explorer).getByRole('combobox', { name: 'Maximum price' })).toHaveValue('800000')
+    expect(within(explorer).getByRole('checkbox', { name: /tours only/i })).toBeChecked()
+  })
+
+  it('saves contextual search criteria to the signed-in buyer account', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
+      if (String(input) === '/api/v1/properties') return Promise.resolve(Response.json({ properties: [property, corkProperty] }))
+      if (String(input) === '/api/v1/client/saved-searches' && init?.method === 'POST') return Promise.resolve(Response.json({ search: { id: 'search-one', location: 'All Ireland', minimumBedrooms: 0, propertyType: 'all', maximumPrice: 0, spatialOnly: false, frequency: 'daily', createdAt: new Date().toISOString() } }, { status: 201 }))
+      return Promise.resolve(new Response(null, { status: 401 }))
+    })
     const user = userEvent.setup()
 
     render(<App />)
@@ -609,10 +704,10 @@ describe('property catalogue', () => {
     await user.click(await screen.findByRole('button', { name: 'Save search' }))
     const dialog = screen.getByRole('dialog', { name: 'Save this search' })
     expect(within(dialog).getByText('2 matching homes')).toBeVisible()
-    await user.type(within(dialog).getByLabelText('Email address'), 'buyer@example.com')
-    await user.click(within(dialog).getByRole('button', { name: 'Create property alert' }))
+    await user.click(within(dialog).getByRole('button', { name: 'Save to my account' }))
 
-    expect(within(dialog).getByRole('status')).toHaveTextContent('Your sample alert is ready')
+    expect(await within(dialog).findByRole('status')).toHaveTextContent('Search saved to your account')
+    expect(fetchMock).toHaveBeenCalledWith('/api/v1/client/saved-searches', expect.objectContaining({ method: 'POST', credentials: 'same-origin' }))
   })
 
   it('shortlists homes and compares them in a persistent buyer tray', async () => {
@@ -807,10 +902,14 @@ describe('property catalogue', () => {
   })
 
   it('shows an error and retries the request', async () => {
-    const fetchMock = vi
-      .spyOn(globalThis, 'fetch')
-      .mockResolvedValueOnce(new Response(null, { status: 503 }))
-      .mockResolvedValueOnce(Response.json({ properties: [property] }))
+    let propertyRequests = 0
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      if (String(input) !== '/api/v1/properties') return new Response(null, { status: 401 })
+      propertyRequests += 1
+      return propertyRequests === 1
+        ? new Response(null, { status: 503 })
+        : Response.json({ properties: [property] })
+    })
     const user = userEvent.setup()
 
     render(<App />)
@@ -822,7 +921,7 @@ describe('property catalogue', () => {
     await user.click(screen.getByRole('button', { name: 'Try again' }))
 
     expect(await screen.findByRole('heading', { name: property.title })).toBeVisible()
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(fetchMock.mock.calls.filter(([input]) => String(input) === '/api/v1/properties')).toHaveLength(2))
   })
 })
 

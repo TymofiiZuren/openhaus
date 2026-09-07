@@ -23,7 +23,7 @@ The appearance label reserves a fixed-width slot and the document reserves scrol
 
 ## Client account foundation
 
-The frontend now has `/client`, `/client/login` and `/client/register` routes backed by a development-only account service. It restores cookie-backed sessions, handles loading/disabled/error states, lists account-owned saved homes, signs out, and can explicitly import the browser comparison. Public navigation keeps client and manager entry points distinct. Email verification, recovery, retention enforcement, account-owned notes/searches and viewing history remain launch work; browser-local notes are never presented as authenticated account data.
+The frontend now has `/client`, `/client/login` and `/client/register` routes backed by a development-only account service. It restores cookie-backed sessions, handles loading/disabled/error states, lists account-owned saved homes and saved searches, signs out, can explicitly import the browser comparison, and syncs private property notes for authenticated buyers. Public navigation keeps client and manager entry points distinct. Email verification, recovery, retention enforcement, saved-search delivery and viewing history remain launch work; anonymous browser-local notes are never presented as authenticated account data.
 
 - County selection now fits its actual boundary to the map viewport (64px desktop / 48px compact padding), replacing coarse zoom thresholds and the Cork exception. Local-area selection retains its own closer fit.
 - County/area styles share the same initial and mouseout definitions. Selected counties use a 3px charcoal outline with a very light fill; selected areas use a 2px clay outline and restrained tint. Hover changes emphasis without changing border weight.
@@ -63,7 +63,7 @@ Remaining passes are planned, not yet implemented or visually verified.
 - Buyer comparisons persist locally on the same browser, capped at four unique property IDs. Invalid or unavailable storage falls back safely. This is not an authenticated client portal or cross-device synchronization.
 - The LEA generator uses six decimal places and a 0.0001-degree simplification tolerance, down from 0.005 degrees. It verifies the downloaded feature count against the source before writing. Source: Tailte Éireann 2019 local electoral areas, not property/cadastral boundaries. Coordinate precision is not a guarantee of positional accuracy. County geometry is a separate dataset and remains unchanged.
 - Boundary rings now use lossless `polyline6` delta encoding, decoded by the shared boundary codec. The generator checks every ring round-trip before writing. All 273,108 coordinates matched the preceding dataset exactly; generated JSON fell from 5.98 MB to 1.33 MB (gzip 1.83 MB to 0.95 MB). The boundary bundle remains above the build warning threshold; per-county delivery is still a follow-up. Regenerate with `node apps/web/scripts/build-administrative-areas.mjs` on Node 22.18+ (native TypeScript stripping is needed for the shared codec). Do not hand-edit the generated JSON.
-- Client sessions and ownership-protected saved homes are implemented behind the development-only launch gate. The next buyer-workspace slice is verified email/recovery plus account-owned notes, searches and viewing history.
+- Client sessions, ownership-protected saved homes, saved searches and private property notes are implemented behind the development-only launch gate. The next buyer-workspace slice is verified email/recovery, alert delivery and viewing history.
 
 ## County geometry refinement
 

@@ -7,19 +7,19 @@ Working estimate: approximately 58% of the planned public product, based on the 
 - County/local-area discovery, property pages and map links.
 - Media galleries, hosted panorama entry and full-window tours.
 - Manager authentication, property editing, media upload and preview workflows.
-- Browser-local buyer notes and comparisons.
-- Account-owned saved homes with a deliberate browser-comparison import; account-owned notes and searches remain future work.
+- Browser-local buyer notes and comparisons remain available without an account.
+- Account-owned saved homes, saved searches and private property notes, with a deliberate browser-comparison import. Saved-search notification delivery remains future work.
 - Browser-local, explainable home matching and a catalogue-derived county index. These decision tools use visible listing facts and make no investment or suitability prediction.
 - About, Contact, searchable Help and draft Privacy information routes. Contact identity is deliberately unconfigured pending operator details.
 - Services, buyer, seller, accessibility, draft terms and public roadmap pages, plus a demonstration selling-agent directory linked from listings.
-- Confirmed deletion of browser-local notes/comparisons from the Privacy page. This is not server-side account deletion or a complete GDPR erasure workflow.
+- Confirmed deletion of browser-local notes/comparisons from the Privacy page, plus re-authenticated deletion of a buyer identity and its cascading application records. This is not a complete GDPR erasure workflow: uploads, logs, backups and provider copies still need retention and erasure procedures.
 - Manager profiles now expose the authenticated email and account identifier. Managers can change their password or revoke every manager session; both actions clear the current session, and password changes verify the existing password first.
 
 ## Next product increments, in order
 
-1. Development registration, login/logout and account pages are now verified against the migrated local database. Add verified email, recovery and expiry cleanup before public use. Keep manager and buyer permissions separate; test ownership on every account-owned record. Notes and comparisons currently remain browser-local.
-2. Extend the delivered account-owned saved homes and direct property-page save control into account-owned notes, searches and viewing history. Browser comparison import is explicit rather than automatic.
-3. Real viewing requests, staff availability, email delivery, cancellation and status tracking. Current viewing and saved-search forms are demonstrations.
+1. Development registration, login/logout and account pages are now verified against the migrated local database. Add verified email, recovery and expiry cleanup before public use. Keep manager and buyer permissions separate; test ownership on every account-owned record. Anonymous notes and comparisons remain browser-local.
+2. Extend the delivered account-owned saved homes, direct property-page save control, saved searches and private notes into viewing history and real alert delivery. Browser comparison import is explicit rather than automatic.
+3. Real viewing requests, staff availability, email delivery, cancellation and status tracking. Saved searches persist criteria but do not send notifications; viewing requests remain demonstrations.
 4. Verified contact channel and enquiry delivery with anti-abuse controls and data-minimising forms. Replace the demonstration Services, buyer and seller guidance with operator-approved offerings and support routes.
 5. Terms of use, finalized Privacy and cookies/storage information, and accessibility statement based on an actual audit. Unknown frontend routes now have a useful not-found view; production hosting/status behavior still needs verification.
 6. Optional assistant only after a provider/data review: grounded help answers, visible AI disclosure, no private notes by default, minimal retention, human escalation and no invented property/legal/financial advice. Searchable Help is the current non-AI alternative.
@@ -63,3 +63,24 @@ The cover/upload backing decorations have been removed. The concept illustration
 ## Local client login activation — 2026-09-04
 
 Migration 000005 was applied to the local development database and a separate loopback API/web pair runs at ports 8083/5177. Existing processes were left untouched. A reusable local API launcher verifies the schema and enables development-only client accounts. Live browser registration, login, reload, logout revocation, wrong-password rejection, foreign-origin rejection and manager isolation passed. The client-store PostgreSQL integration test, eight frontend auth tests, frontend build, Go tests and Go vet passed. One generated test-client record remains in the local database. These checks do not complete the privacy, recovery, verified-email or public-launch gates above.
+
+## Account-owned property notes — 2026-09-05
+
+- Migration 000008 adds buyer- and property-scoped private notes with cascading account/property deletion, bounded note and question storage, and no sharing field.
+- Authenticated note reads and writes derive ownership exclusively from the revocable client session. Same-origin mutation checks, strict JSON decoding, published-property checks and input limits apply before storage. Anonymous or temporarily unavailable account services keep the existing browser-local flow usable.
+- A browser note is not described as synced until the buyer explicitly saves it while authenticated. Successful account storage removes the stale browser copy on a best-effort basis.
+- The local database is at migration 8. Frontend 213/213 tests, the production build, lint, all Go tests, Go vet, and the full PostgreSQL-backed suite passed. Lint retains the three known map fast-refresh warnings and the build retains the two known large map/data chunk warnings.
+- A two-session local API check registered a temporary buyer, wrote a private note in one session and read it in a separately authenticated session. All requests succeeded and the temporary account was removed afterward. This validates local behavior, not public-launch security, recovery, retention or privacy readiness.
+
+## Account-owned saved searches — 2026-09-05
+
+- Migration `000009` stores buyer-owned catalogue criteria and alert cadence with cascading account deletion and a 50-search limit. It was applied to the explicitly configured loopback development database.
+- Create, list and delete routes derive ownership only from the revocable client session, require same-origin mutations, reject unknown or invalid fields, and do not expose or accept an owner identifier.
+- The catalogue saves the active geography, query, bedroom, property-type, price and 360° filters. The buyer account can load, revisit and remove saved searches. Notification delivery is explicitly not enabled.
+- Frontend 220/220 tests, the production build, lint, all Go tests and Go vet passed. The PostgreSQL ownership test and a temporary-account live API create/list/delete flow also passed; the temporary account was removed. Existing map fast-refresh and large chunk warnings remain.
+
+## Buyer account data export — 2026-09-06
+
+- Signed-in buyers can download a no-cache JSON export from the account page. It contains account identity, saved-property identifiers, saved searches and private property notes.
+- The server derives the export owner from the revocable HttpOnly session. Password hashes, raw passwords, session tokens, session hashes and authentication rate-limit records are excluded by contract.
+- API contract tests, the real PostgreSQL cross-account ownership test, all Go tests, Go vet, the client-page tests, production build and lint passed. A temporary-account live download against the isolated `8085/5179` pair returned the attachment and expected private records; the temporary account was removed.

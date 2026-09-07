@@ -2,11 +2,10 @@ import { lazy, Suspense, useEffect, useRef, useState, type ChangeEvent, type For
 import './App.css'
 import { PropertyDetailPage } from './App'
 import { ManagerImages } from './ManagerImages'
-import { ThemeControl } from './ThemeControl'
-import { HeaderAccountLinks } from './HeaderAccountLinks'
-import { OpenHausGuideButton } from './OpenHausGuideButton'
 import { AuthFields } from './AuthFields'
 import { clientSessionHintKey, managerSessionHintKey, SiteHeader, type HeaderClient } from './SiteHeader'
+import { displayAccountIdentifier } from './accountIdentifier'
+import { useWorkspaceAnchor } from './useWorkspaceAnchor'
 import { uploadPropertyVideo, waitForMediaJob, type MediaJob } from './api/mediaJobs'
 import {
   fetchManagedProperties,
@@ -54,6 +53,7 @@ function setManagerHint(active: boolean) {
 
 export function ManagerApp() {
   const [state, setState] = useState<ManagerState>({ status: 'checking' })
+  const [sessionError, setSessionError] = useState('')
 
   async function loadProperties(signal?: AbortSignal, manager?: ManagerIdentity) {
     try {
@@ -121,12 +121,13 @@ export function ManagerApp() {
   }
 
   async function signOut() {
+    setSessionError('')
     try {
       await logoutManager()
       setManagerHint(false)
       setState({ status: 'signed-out' })
     } catch {
-      setState({ status: 'error', message: 'Sign out failed. Please try again.' })
+      setSessionError('We could not confirm sign-out. Your manager workspace remains active; please try again.')
     }
   }
 
@@ -141,20 +142,23 @@ export function ManagerApp() {
     }
   }
 
-  const isSignedIn = state.status === 'ready'
   const previewID = window.location.pathname.match(/^\/manager\/preview\/([^/]+)$/)?.[1]
+  useWorkspaceAnchor(state.status === 'ready')
   const analytics = window.location.pathname.replace(/\/$/, '') === '/manager/analytics'
   const profile = window.location.pathname.replace(/\/$/, '') === '/manager/profile'
-  if (state.status === 'client-active') return <div className="site-shell"><SiteHeader pathname={window.location.pathname} client={state.client} clientSessionStatus="authenticated" onClientSignOut={() => void signOutClient()} /><main className="manager-client-guard"><p className="eyebrow">Account boundary</p><h1>Your client account is active.</h1><p>Manager tools stay separate from buyer accounts. Sign out from your client account before opening the property workspace.</p><a href="/client/login">Return to your client account <span aria-hidden="true">→</span></a></main></div>
+  if (state.status === 'client-active') return <div className="site-shell"><SiteHeader pathname={window.location.pathname} client={state.client} clientSessionStatus="authenticated" onClientSignOut={signOutClient} /><main className="manager-client-guard"><p className="eyebrow">Account boundary</p><h1>Your client account is active.</h1><p>Manager tools stay separate from buyer accounts. Sign out from your client account before opening the property workspace.</p><a href="/client/login">Return to your client account <span aria-hidden="true">→</span></a></main></div>
   if (previewID && state.status === 'ready') return <ManagerPublicationPreview property={state.properties.find((property) => property.id === previewID)} />
   return (
     <div className="manager-shell">
-      <header className="site-header manager-header">
-        <a className="wordmark" href="/" aria-label="OpenHaus home">OpenHaus<span aria-hidden="true">.</span></a>
-        <span className="manager-workspace-label">Property workspace</span>
-        <div className="header-actions"><OpenHausGuideButton /><ThemeControl />{isSignedIn && <HeaderAccountLinks managerSignedIn identity={state.manager} onSignOut={() => void signOut()} />}</div>
-      </header>
+      <SiteHeader
+        pathname={window.location.pathname}
+        clientSessionStatus="anonymous"
+        manager={state.status === 'ready' ? state.manager : null}
+        managerSessionStatus={state.status === 'checking' || state.status === 'loading' ? 'loading' : state.status === 'ready' ? 'authenticated' : 'anonymous'}
+        onManagerSignOut={signOut}
+      />
       <main className="manager-main">
+        {sessionError && <p className="manager-form-error" role="alert">{sessionError}</p>}
         {state.status === 'checking' && (
           <div className="manager-centred" role="status"><span className="spinner" />Loading manager workspace…</div>
         )}
@@ -305,7 +309,7 @@ function ManagerProfile({ manager, onSignedOut }: { manager: ManagerIdentity; on
     <dl>
       <div><dt>Email address</dt><dd>{manager.email}</dd></div>
       <div><dt>Account role</dt><dd>Manager</dd></div>
-      <div><dt>Account identifier</dt><dd>{manager.id}</dd></div>
+      <div><dt>Account identifier</dt><dd title={manager.id}>{displayAccountIdentifier(manager.id)}</dd></div>
     </dl>
     <section className="manager-security" aria-labelledby="manager-security-title">
       <div className="manager-security-heading"><p className="section-index">Account security</p><h2 id="manager-security-title">Password and sessions</h2><p>Changing your password signs out every manager session, including this one.</p></div>
@@ -333,7 +337,7 @@ function ManagerProfile({ manager, onSignedOut }: { manager: ManagerIdentity; on
 
 function ManagerDashboard({ properties }: { properties: ManagedProperty[] }) {
   const [items, setItems] = useState(properties)
-  const [editing, setEditing] = useState<ManagedProperty | 'new'>()
+  const [editing, setEditing] = useState<ManagedProperty | 'new' | undefined>(() => new URLSearchParams(window.location.search).get('action') === 'new' ? 'new' : undefined)
   const [saveError, setSaveError] = useState<string>()
   const [stageFilter, setStageFilter] = useState('all')
   const [sort, setSort] = useState('default')
@@ -406,7 +410,7 @@ function ManagerDashboard({ properties }: { properties: ManagedProperty[] }) {
                 </div>
                 <div hidden={compact && expandedID !== property.id}><ManagerReadinessChecklist property={property} onEdit={() => setEditing(property)} /></div>
               </div>
-<div className="manager-property-meta" id={`manager-tools-${property.id}`} hidden={compact && expandedID !== property.id}><p className="manager-panel-kicker">02 / Details & immersive media</p><h3>Listing essentials</h3><dl><div><dt>Price</dt><dd>{euros.format(property.priceCents / 100)}</dd></div><div><dt>Bedrooms</dt><dd>{property.bedrooms}</dd></div><div><dt>Type</dt><dd>{titleCase(property.propertyType)}</dd></div></dl><div className="manager-row-actions"><a href={`/manager/preview/${property.id}`} target="_blank" rel="noreferrer">Preview listing</a><button type="button" aria-label={`Edit ${property.title}`} onClick={() => setEditing(property)}>Edit listing</button>{property.status === 'published' && <a href={`/properties/${property.id}`}>View public listing <span aria-hidden="true">→</span></a>}</div><ManagerPanoramaForm property={property} onAttached={(media) => setItems((current) => current.map((item) => item.id === property.id ? { ...item, media: [...item.media.filter((entry) => entry.kind !== 'panorama'), media] } : item))} onRemoved={() => setItems((current) => current.map((item) => item.id === property.id ? { ...item, media: item.media.filter((entry) => entry.kind !== 'panorama') } : item))} /><ManagerTourPreview property={property} /><ManagerVideoUpload property={property} onReady={(media) => setItems((current) => current.map((item) => item.id === property.id ? { ...item, media: [...item.media.filter((entry) => entry.kind !== 'video'), ...media] } : item))} /></div>
+<div className="manager-property-meta" id={`manager-tools-${property.id}`} hidden={compact && expandedID !== property.id}><p className="manager-panel-kicker">Listing workspace</p><h3>Listing essentials</h3><dl><div><dt>Price</dt><dd>{euros.format(property.priceCents / 100)}</dd></div><div><dt>Bedrooms</dt><dd>{property.bedrooms}</dd></div><div><dt>Type</dt><dd>{titleCase(property.propertyType)}</dd></div></dl><div className="manager-row-actions"><a href={`/manager/preview/${property.id}`} target="_blank" rel="noreferrer">Preview listing</a><button type="button" aria-label={`Edit ${property.title}`} onClick={() => setEditing(property)}>Edit listing</button>{property.status === 'published' && <a href={`/properties/${property.id}`}>View public listing <span aria-hidden="true">→</span></a>}</div><div className="manager-immersive-tools"><section className="manager-tour-tools" aria-label={`360° tour settings for ${property.title}`}><h3>360° tour</h3><ManagerPanoramaForm property={property} onAttached={(media) => setItems((current) => current.map((item) => item.id === property.id ? { ...item, media: [...item.media.filter((entry) => entry.kind !== 'panorama'), media] } : item))} onRemoved={() => setItems((current) => current.map((item) => item.id === property.id ? { ...item, media: item.media.filter((entry) => entry.kind !== 'panorama') } : item))} /><ManagerTourPreview property={property} /></section><section className="manager-video-tools" aria-label={`Video settings for ${property.title}`}><h3>Video walkthrough</h3><ManagerVideoUpload property={property} onReady={(media) => setItems((current) => current.map((item) => item.id === property.id ? { ...item, media: [...item.media.filter((entry) => entry.kind !== 'video'), ...media] } : item))} /></section></div></div>
               <div className="manager-property-library" hidden={compact && expandedID !== property.id}><p className="manager-panel-kicker">03 / Media library</p>
                 <ManagerImages onUpdated={(media) => setItems((current) => current.map((item) => item.id === property.id ? { ...item, media: item.media.map((entry) => entry.url === media.url ? { ...entry, altText: media.altText } : entry) } : item))} propertyID={property.id} media={property.media} onUploaded={(media) => setItems((current) => current.map((item) => item.id === property.id ? {...item,media:[...item.media,media]} : item))} onOrdered={(media) => setItems((current) => current.map((item) => item.id === property.id ? {...item,media} : item))}/>
               </div>
@@ -439,8 +443,8 @@ function ManagerPanoramaForm({ property, onAttached, onRemoved }: { property: Ma
   }
   return <form className="manager-panorama-form" onSubmit={submit}>
     <label><span>{existing ? 'Replace Kuula 360° tour' : 'Add Kuula 360° tour'}</span><input type="url" required value={shareURL} onChange={(event) => { setShareURL(event.target.value); setState('idle') }} placeholder="https://kuula.co/share/…" aria-describedby={`panorama-help-${property.id}`} /></label>
-    <button type="submit" disabled={state === 'saving'}>{state === 'saving' ? 'Saving…' : existing ? 'Replace tour' : 'Attach tour'}</button>
-    {existing && !confirmingRemoval && <button className="manager-panorama-remove" type="button" aria-label={`Remove 360° tour from ${property.title}`} onClick={() => setConfirmingRemoval(true)}>Remove tour</button>}
+    <div className="manager-panorama-actions"><button type="submit" disabled={state === 'saving'}>{state === 'saving' ? 'Saving…' : existing ? 'Replace tour' : 'Attach tour'}</button>
+    {existing && !confirmingRemoval && <button className="manager-panorama-remove" type="button" aria-label={`Remove 360° tour from ${property.title}`} onClick={() => setConfirmingRemoval(true)}>Remove tour</button>}</div>
     {existing && confirmingRemoval && <div className="manager-panorama-confirm" role="group" aria-label="Confirm panorama removal"><strong>Remove this tour?</strong><span>The public listing will immediately show its photography and plans fallback.</span><div><button type="button" onClick={() => setConfirmingRemoval(false)}>Keep tour</button><button type="button" disabled={state === 'removing'} onClick={remove}>{state === 'removing' ? 'Removing…' : 'Confirm remove tour'}</button></div></div>}
     <small id={`panorama-help-${property.id}`}>Paste the embeddable Kuula /share/ link, not the /post/ page.</small>
     {state === 'saved' && <span role="status">360° tour attached.</span>}{state === 'removed' && <span role="status">360° tour removed.</span>}{state === 'error' && <span role="alert">The panorama update could not be completed.</span>}

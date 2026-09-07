@@ -69,11 +69,28 @@ func TestDatabaseAccountIsolationAndExpiry(t *testing.T) {
 	if _, err = service.Authenticate(ctx, session.Token); err != nil {
 		t.Fatal("valid session rejected")
 	}
-	if err = service.Logout(ctx, session.Token); err != nil {
-		t.Fatal("logout failed")
+	secondSession, err := service.Login(ctx, "buyer-integration@example.com", password, "127.0.0.1")
+	if err != nil {
+		t.Fatal("second login failed")
 	}
-	if _, err = service.Authenticate(ctx, session.Token); err == nil {
-		t.Fatal("revoked session accepted")
+	newPassword := password + "-updated"
+	if err = service.ChangePassword(ctx, session.User, password, newPassword); err != nil {
+		t.Fatal("password change failed")
+	}
+	for _, token := range []string{session.Token, secondSession.Token} {
+		if _, err = service.Authenticate(ctx, token); err == nil {
+			t.Fatal("password change left a database session active")
+		}
+	}
+	if _, err = service.Login(ctx, "buyer-integration@example.com", password, "127.0.0.1"); err == nil {
+		t.Fatal("database accepted the old password")
+	}
+	newSession, err := service.Login(ctx, "buyer-integration@example.com", newPassword, "127.0.0.1")
+	if err != nil {
+		t.Fatal("database rejected the new password")
+	}
+	if err = service.Logout(ctx, newSession.Token); err != nil {
+		t.Fatal("logout failed")
 	}
 	key := sha256.Sum256([]byte("limit-test"))
 	now := time.Now()
@@ -85,5 +102,18 @@ func TestDatabaseAccountIsolationAndExpiry(t *testing.T) {
 	}
 	if allowed, err := store.AllowAttempt(ctx, key[:], now.Add(16*time.Minute), 2); err != nil || !allowed {
 		t.Fatal("rate limit did not expire")
+	}
+	deletionSession, err := service.Login(ctx, "buyer-integration@example.com", newPassword, "127.0.0.1")
+	if err != nil {
+		t.Fatal("account could not reauthenticate before deletion")
+	}
+	if err = service.DeleteAccount(ctx, deletionSession.User, newPassword, "127.0.0.1"); err != nil {
+		t.Fatal("database account deletion failed")
+	}
+	if _, err = service.Authenticate(ctx, deletionSession.Token); err == nil {
+		t.Fatal("deleted account session remained valid")
+	}
+	if _, err = service.Login(ctx, "buyer-integration@example.com", newPassword, "127.0.0.1"); err == nil {
+		t.Fatal("deleted database account could still sign in")
 	}
 }

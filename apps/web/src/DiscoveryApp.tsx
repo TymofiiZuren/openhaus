@@ -87,7 +87,16 @@ function MatchLab({ properties }: { properties: Property[] }) {
   return <>
     <header className="discovery-hero">
       <div><p className="discovery-kicker">OpenHaus / Match Lab</p><h1>Turn preference into signal.</h1><p>Shape a brief and watch every home re-rank immediately. Nothing leaves this browser, and every result explains itself.</p></div>
-      <div className="discovery-orbit" aria-hidden="true"><span>Budget</span><span>Space</span><span>Media</span><span>Place</span><i /></div>
+      <div className="match-shortlist-art" aria-hidden="true">
+        <div className="match-shortlist-caption">Your priorities. In order.</div>
+        <div className="match-shortlist-stack">
+          {[0, 1, 2].map(index => <div className="match-shortlist-sheet" key={index}>
+            <svg viewBox="0 0 160 100" fill="none"><path d="M24 80V43L62 17L101 43V80M62 17V80M15 80H145M101 43L124 28L145 43V80M38 80V55H51V80M76 47H89V61H76Z" /></svg>
+            <div className="match-shortlist-signals"><span>Budget<i /></span><span>Space<i /></span><span>Place<i /></span></div>
+          </div>)}
+        </div>
+        <p>A clearer shortlist.</p>
+      </div>
     </header>
     <div className="match-workspace">
       <aside className="match-controls" aria-label="Match priorities">

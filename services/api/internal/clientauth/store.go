@@ -39,6 +39,38 @@ func (s *Store) DeleteSession(ctx context.Context, digest []byte) error {
 	_, err := s.database.Exec(ctx, `DELETE FROM client_sessions WHERE token_hash=$1`, digest)
 	return err
 }
+func (s *Store) ChangePasswordAndDeleteSessions(ctx context.Context, userID, currentPasswordHash, newPasswordHash string) error {
+	var updated bool
+	err := s.database.QueryRow(ctx, `
+		WITH updated AS (
+			UPDATE client_users SET password_hash = $3
+			WHERE id = $1::uuid AND password_hash = $2
+			RETURNING id
+		), deleted AS (
+			DELETE FROM client_sessions
+			WHERE client_user_id IN (SELECT id FROM updated)
+		)
+		SELECT EXISTS (SELECT 1 FROM updated)
+	`, userID, currentPasswordHash, newPasswordHash).Scan(&updated)
+	if err != nil {
+		return err
+	}
+	if !updated {
+		return managerauth.ErrUnauthenticated
+	}
+	return nil
+}
+func (s *Store) DeleteUserSessions(ctx context.Context, userID string) error {
+	_, err := s.database.Exec(ctx, `DELETE FROM client_sessions WHERE client_user_id = $1::uuid`, userID)
+	return err
+}
+func (s *Store) DeleteUser(ctx context.Context, userID, passwordHash string) (bool, error) {
+	result, err := s.database.Exec(ctx, `DELETE FROM client_users WHERE id = $1::uuid AND password_hash = $2`, userID, passwordHash)
+	if err != nil {
+		return false, err
+	}
+	return result.RowsAffected() == 1, nil
+}
 func (s *Store) AllowAttempt(ctx context.Context, digest []byte, now time.Time, maximum int) (bool, error) {
 	var attempts int
 	err := s.database.QueryRow(ctx, `INSERT INTO client_auth_limits(key_hash,attempts,reset_at) VALUES($1,1,$2)

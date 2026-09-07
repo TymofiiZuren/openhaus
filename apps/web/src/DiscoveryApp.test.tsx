@@ -25,7 +25,9 @@ afterEach(() => {
 })
 
 it('re-ranks homes immediately when the buyer changes the location signal', async () => {
-  vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({ properties }))
+  vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => String(input) === '/api/v1/properties'
+    ? Response.json({ properties })
+    : new Response(null, { status: 401 }))
   window.history.replaceState({}, '', '/match?county=Dublin')
   render(<DiscoveryApp page="match" />)
 
@@ -39,7 +41,9 @@ it('re-ranks homes immediately when the buyer changes the location signal', asyn
 })
 
 it('builds the area index from the current property catalogue', async () => {
-  vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({ properties }))
+  vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => String(input) === '/api/v1/properties'
+    ? Response.json({ properties })
+    : new Response(null, { status: 401 }))
   render(<DiscoveryApp page="areas" />)
 
   expect(await screen.findByRole('heading', { name: 'The live shape of the market.' })).toBeInTheDocument()

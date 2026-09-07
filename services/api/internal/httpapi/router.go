@@ -2,6 +2,8 @@ package httpapi
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
@@ -50,6 +52,21 @@ type ClientSavedPropertyStore interface {
 	RemoveClientSavedProperty(context.Context, string, string) error
 }
 
+type ClientPropertyNoteStore interface {
+	GetClientPropertyNote(context.Context, string, string) (property.ClientPropertyNote, error)
+	UpsertClientPropertyNote(context.Context, string, string, property.ClientPropertyNote) (property.ClientPropertyNote, error)
+}
+
+type ClientSavedSearchStore interface {
+	ListClientSavedSearches(context.Context, string) ([]property.ClientSavedSearch, error)
+	CreateClientSavedSearch(context.Context, string, property.ClientSavedSearch) (property.ClientSavedSearch, error)
+	RemoveClientSavedSearch(context.Context, string, string) error
+}
+
+type ClientDataExporter interface {
+	ExportClientData(context.Context, string) (property.ClientDataExport, error)
+}
+
 type ManagerAuthenticator interface {
 	Login(context.Context, string, string) (managerauth.Session, error)
 	Authenticate(context.Context, string) (managerauth.User, error)
@@ -73,6 +90,9 @@ type MediaJobGetter interface {
 type Dependencies struct {
 	ClientAuth            ClientAuthenticator
 	ClientSavedProperties ClientSavedPropertyStore
+	ClientPropertyNotes   ClientPropertyNoteStore
+	ClientSavedSearches   ClientSavedSearchStore
+	ClientDataExport      ClientDataExporter
 	ClientOrigin          string
 	Images                ImageStore
 	ImageRoot             string
@@ -91,7 +111,7 @@ type Dependencies struct {
 func NewRouter(dependencies Dependencies) http.Handler {
 	router := http.NewServeMux()
 	if dependencies.ClientAuth != nil {
-		clientRoutes(router, dependencies.ClientAuth, dependencies.ClientSavedProperties, dependencies.ClientOrigin, dependencies.SecureCookies)
+		clientRoutes(router, dependencies.ClientAuth, dependencies.ClientSavedProperties, dependencies.ClientPropertyNotes, dependencies.ClientSavedSearches, dependencies.ClientDataExport, dependencies.ClientOrigin, dependencies.SecureCookies)
 	}
 	if dependencies.Images != nil {
 		router.Handle("PATCH /api/v1/manager/properties/{propertyID}/image-description", requireManager(dependencies.ManagerAuth, updateImageDescription(dependencies.Images)))
@@ -535,7 +555,29 @@ func listProperties(properties PropertyLister) http.HandlerFunc {
 		if items == nil {
 			items = []property.Property{}
 		}
-		writeJSON(response, http.StatusOK, map[string]any{"properties": items})
+		body, err := json.Marshal(map[string]any{"properties": items})
+		if err != nil {
+			writeError(response, http.StatusInternalServerError, "internal_error", "internal server error")
+			return
+		}
+		body = append(body, '\n')
+		digest := sha256.Sum256(body)
+		tag := `"` + hex.EncodeToString(digest[:]) + `"`
+		response.Header().Set("Cache-Control", "private, no-cache")
+		response.Header().Set("ETag", tag)
+		response.Header().Set("Content-Type", "application/json")
+		for _, candidate := range strings.Split(request.Header.Get("If-None-Match"), ",") {
+			candidate = strings.TrimSpace(candidate)
+			if candidate == "*" || strings.TrimPrefix(candidate, "W/") == tag {
+				response.WriteHeader(http.StatusNotModified)
+				return
+			}
+		}
+		response.Header().Set("Content-Length", strconv.Itoa(len(body)))
+		response.WriteHeader(http.StatusOK)
+		if request.Method != http.MethodHead {
+			_, _ = response.Write(body)
+		}
 	}
 }
 

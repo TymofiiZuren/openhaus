@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { afterEach, expect, it, vi } from 'vitest'
 import { Application, ApplicationBoundary } from './Application'
 
@@ -19,7 +20,14 @@ vi.mock('./AgentPages', () => {
   loaded.agents()
   return { AgentPages: ({ slug }: { slug?: string }) => <h1>{slug ? `Agent ${slug}` : 'Agent directory'}</h1> }
 })
-afterEach(() => { vi.restoreAllMocks() })
+afterEach(() => { vi.restoreAllMocks(); window.history.replaceState({}, '', '/') })
+
+it('opens the engineering lab with honest sample labels', async () => {
+  render(<Application pathname="/media-lab" />)
+  expect(await screen.findByRole('heading', { name: 'See beyond the image.' })).toBeInTheDocument()
+  expect(screen.getByText(/fictional property · not for sale/)).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'Sobel edges' })).toBeDisabled()
+})
 
 it.each(['/missing-page', '/client/missing-page', '/properties/one/missing-page'])('shows a recoverable not-found page for %s', async pathname => {
   render(<Application pathname={pathname} />)
@@ -72,6 +80,23 @@ it('loads the public catalogue without importing staff tools', async () => {
   expect(screen.queryByText('Preparing your visit')).not.toBeInTheDocument()
   expect(await screen.findByRole('heading', { name: 'Public catalogue' })).toBeInTheDocument()
   expect(loaded.manager).not.toHaveBeenCalled()
+})
+
+it('opens the property guide without leaving an information page', async () => {
+  window.history.replaceState({}, '', '/about')
+  vi.spyOn(globalThis, 'fetch').mockImplementation(async input => {
+    if (String(input) === '/api/v1/properties') return Response.json({ properties: [] })
+    return new Response(null, { status: 401 })
+  })
+  render(<Application pathname="/about" />)
+
+  expect(await screen.findByRole('heading', { name: 'A fuller picture of home.' })).toBeVisible()
+  await userEvent.click(screen.getByRole('button', { name: 'Open OpenHaus guide' }))
+
+  expect(await screen.findByRole('dialog', { name: 'OpenHaus guide' })).toBeVisible()
+  expect(await screen.findByText('Catalogue ready · 0 homes indexed')).toBeVisible()
+  expect(screen.getByRole('heading', { name: 'A fuller picture of home.' })).toBeVisible()
+  expect(window.location.pathname).toBe('/about')
 })
 
 it.each(['/manager/login', '/manager/analytics', '/manager/profile'])('loads staff tools for the manager route %s', async pathname => {

@@ -27,6 +27,59 @@ it('shows manager workspace navigation when a manager session is active', async 
   expect(screen.getByRole('button', { name: 'Sign in options' })).toBeVisible()
 })
 
+it('supports a controlled manager session without rediscovering or owning its sign out', async () => {
+  const fetchMock = vi.spyOn(globalThis, 'fetch')
+  const onManagerSignOut = vi.fn()
+
+  render(<SiteHeader
+    pathname="/manager/analytics"
+    clientSessionStatus="anonymous"
+    manager={{ id: 'manager-1', email: 'manager@example.test' }}
+    managerSessionStatus="authenticated"
+    onManagerSignOut={onManagerSignOut}
+  />)
+
+  expect(screen.getByRole('button', { name: 'Open navigation' })).toBeVisible()
+  await userEvent.click(screen.getByRole('button', { name: 'Manager account options' }))
+  expect(screen.getByText('manager@example.test')).toBeVisible()
+  await userEvent.click(screen.getByRole('button', { name: 'Log out' }))
+  expect(onManagerSignOut).toHaveBeenCalledOnce()
+  expect(fetchMock).not.toHaveBeenCalled()
+})
+
+it('restores a manager session from its secure cookie when browser hints are missing', async () => {
+  const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+    if (String(input) === '/api/v1/client/session') return new Response(null, { status: 401 })
+    if (String(input) === '/api/v1/manager/session') {
+      return Response.json({ manager: { id: 'manager-1', email: 'manager@example.test' } })
+    }
+    throw new Error(`Unexpected request: ${String(input)}`)
+  })
+
+  render(<SiteHeader pathname="/areas" />)
+
+  expect(await screen.findByRole('button', { name: 'Manager account options' })).toBeVisible()
+  expect(fetchMock).toHaveBeenCalledWith('/api/v1/client/session', expect.objectContaining({ credentials: 'same-origin' }))
+  expect(fetchMock).toHaveBeenCalledWith('/api/v1/manager/session', expect.objectContaining({ credentials: 'same-origin' }))
+  expect(localStorage.getItem(managerSessionHintKey)).toBe('active')
+})
+
+it('restores a client session from its secure cookie when browser hints are missing', async () => {
+  const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+    if (String(input) === '/api/v1/client/session') {
+      return Response.json({ client: { id: 'buyer', email: 'buyer@example.test' } })
+    }
+    throw new Error(`Unexpected request: ${String(input)}`)
+  })
+
+  render(<SiteHeader pathname="/services" />)
+
+  expect(await screen.findByRole('button', { name: 'Account options' })).toBeVisible()
+  expect(fetchMock).toHaveBeenCalledWith('/api/v1/client/session', expect.objectContaining({ credentials: 'same-origin' }))
+  expect(fetchMock).not.toHaveBeenCalledWith('/api/v1/manager/session', expect.anything())
+  expect(localStorage.getItem(clientSessionHintKey)).toBe('active')
+})
+
 it('puts the OpenHaus guide in the navbar', async () => {
   const onOpenGuide = vi.fn()
   render(<SiteHeader pathname="/" onOpenGuide={onOpenGuide} guideOpen={false} />)
@@ -35,6 +88,10 @@ it('puts the OpenHaus guide in the navbar', async () => {
   expect(guide.querySelector('.openhaus-guide-orbit')).not.toBeNull()
   await userEvent.click(guide)
   expect(onOpenGuide).toHaveBeenCalledOnce()
+
+  await userEvent.click(screen.getByRole('button', { name: 'Open navigation' }))
+  await userEvent.click(within(screen.getByRole('dialog', { name: 'Explore OpenHaus' })).getByRole('button', { name: 'OpenHaus guide' }))
+  expect(onOpenGuide).toHaveBeenCalledTimes(2)
 })
 
 it('shows the client account when an existing session is active', async () => {

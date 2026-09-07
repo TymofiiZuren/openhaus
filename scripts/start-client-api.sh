@@ -14,8 +14,8 @@ export PGHOST="${POSTGRES_HOST:-127.0.0.1}" PGPORT="${POSTGRES_PORT:?Missing POS
 export PGUSER="${POSTGRES_USER:?Missing POSTGRES_USER}" PGPASSWORD="${POSTGRES_PASSWORD:?Missing POSTGRES_PASSWORD}" PGDATABASE="${POSTGRES_DB:?Missing POSTGRES_DB}"
 export PGCONNECT_TIMEOUT=5
 case "$PGHOST" in localhost|127.0.0.1) ;; *) echo 'This launcher only connects to the local development database.' >&2; exit 1 ;; esac
-if ! psql -X -v ON_ERROR_STOP=1 -c 'SELECT id,email,password_hash FROM client_users LIMIT 0; SELECT client_user_id,token_hash,expires_at FROM client_sessions LIMIT 0; SELECT key_hash,attempts,reset_at FROM client_auth_limits LIMIT 0; SELECT client_user_id,property_id,created_at FROM client_saved_properties LIMIT 0;' >/dev/null 2>&1; then
-  echo 'Client database is unavailable or migrations 000005–000006 are missing. Apply the documented migrations before starting.' >&2
+if ! psql -X -v ON_ERROR_STOP=1 -c 'SELECT id,email,password_hash FROM client_users LIMIT 0; SELECT client_user_id,token_hash,expires_at FROM client_sessions LIMIT 0; SELECT key_hash,attempts,reset_at FROM client_auth_limits LIMIT 0; SELECT client_user_id,property_id,created_at FROM client_saved_properties LIMIT 0; SELECT client_user_id,property_id,notes,questions,updated_at FROM client_property_notes LIMIT 0; SELECT id,client_user_id,location,frequency FROM client_saved_searches LIMIT 0;' >/dev/null 2>&1; then
+  echo 'Client database is unavailable or migrations 000005–000009 are missing. Apply the documented migrations before starting.' >&2
   exit 1
 fi
 # pgx uses the PG* environment above, avoiding credentials in process arguments.

@@ -1,0 +1,62 @@
+{
+  "version": 1,
+  "algorithm": "dhash-box-v1 + BK-tree",
+  "radius": 8,
+  "limitations": "Similarity candidates only, not proof of duplication. Crops, flat images and similar rooms can mislead. No automatic deletion.",
+  "assets": [
+    {
+      "name": "coastal-exterior.jpg",
+      "width": 1536,
+      "height": 1024,
+      "bytes": 243186,
+      "sha256": "75faa754d4a2f3baef94faa455f3c15ec8100f40a41dbf0ee8ab3cf2963fd029",
+      "perceptualHash": "5b6b73e249892f9a",
+      "candidates": []
+    },
+    {
+      "name": "coastal-interior.jpg",
+      "width": 1536,
+      "height": 1024,
+      "bytes": 196418,
+      "sha256": "d59e677615f38f2f593be84796e939c69abcc5f05e43d7ed82880fbf437c8795",
+      "perceptualHash": "2fb7b7b7b7cd74d4",
+      "candidates": []
+    },
+    {
+      "name": "courtyard-exterior.jpg",
+      "width": 1536,
+      "height": 1024,
+      "bytes": 442200,
+      "sha256": "80daa1b6512648b7447f13af8d6a56ad1112baa1166bd3e2aed5d1e21d84cb47",
+      "perceptualHash": "07070d4b5b292d2d",
+      "candidates": []
+    },
+    {
+      "name": "courtyard-interior.jpg",
+      "width": 1536,
+      "height": 1024,
+      "bytes": 338003,
+      "sha256": "4ac5755e6d76fd8749e5d6dc967491648eaa075d6c3b0d47e5f725e710bbbb73",
+      "perceptualHash": "07a737b7af3f6692",
+      "candidates": []
+    },
+    {
+      "name": "harbour-exterior.jpg",
+      "width": 1536,
+      "height": 1024,
+      "bytes": 232206,
+      "sha256": "19bbfc00020f0b525cd78487dfd9c8dcc70c537c556c7cca3c1644b373ba7ac7",
+      "perceptualHash": "e27e3a5e3f1b9b1e",
+      "candidates": []
+    },
+    {
+      "name": "harbour-interior.jpg",
+      "width": 1536,
+      "height": 1024,
+      "bytes": 243095,
+      "sha256": "f0d75f4a2a04592de611e11d50b781d013304a66b9c598cd04e19c8e57771795",
+      "perceptualHash": "096929698aa86336",
+      "candidates": []
+    }
+  ]
+}

@@ -63,6 +63,9 @@ func main() {
 		Handler: httpapi.NewRouter(httpapi.Dependencies{
 			ClientAuth:            buyerAuth,
 			ClientSavedProperties: propertyStore,
+			ClientPropertyNotes:   propertyStore,
+			ClientSavedSearches:   propertyStore,
+			ClientDataExport:      propertyStore,
 			ClientOrigin:          clientOrigin,
 			Images:                propertyStore,
 			ImageRoot:             uploadRoot + "/images",

@@ -25,7 +25,7 @@ Use warm paper texture, sparse dot fields, broad clay-coloured light blooms, occ
 
 ### Layer 1 — durable navigation and context
 
-The header, location selection, active filters and buyer-workspace entry remain predictable. County and area choices are URL-addressable. Account-saved homes survive navigation and devices; comparisons, notes and sample searches currently remain browser-local.
+The header, location selection, active filters and buyer-workspace entry remain predictable. County and area choices are URL-addressable. Account-saved homes and signed-in property notes survive navigation and devices; anonymous notes, comparisons and sample searches remain browser-local.
 
 ### Layer 2 — primary working surfaces
 
@@ -108,15 +108,16 @@ Use compact line and bullet charts. Never encode good/bad with colour alone. A t
 
 ### Phase B — buyer workspace
 
-The development account foundation keeps buyer identity and sessions separate from manager accounts. Registration, sign-in/sign-out, database-backed expiring HttpOnly sessions, generic credential responses, shared-database rate limiting and ownership-protected saved homes are implemented and tested. Buyers never inherit listing-edit or media-upload permissions. Anonymous browsing remains available, and importing the browser comparison is explicit. Email verification, recovery, expiry cleanup, account export/deletion, saved searches and private notes remain required before public account launch.
+The development account foundation keeps buyer identity and sessions separate from manager accounts. Registration, sign-in/sign-out, database-backed expiring HttpOnly sessions, generic credential responses, shared-database rate limiting, ownership-protected saved homes, saved searches, private property notes, authenticated JSON export and re-authenticated account deletion are implemented and tested. Buyers never inherit listing-edit or media-upload permissions. Anonymous browsing and browser-local notes remain available, and importing the browser comparison is explicit. Email verification, recovery, expiry cleanup and alert delivery remain required before public account launch.
 
 - [x] Development-only buyer registration, session restoration and sign-out.
 - [x] Account-owned saved homes with explicit browser-comparison import.
-- Saved searches backed by authenticated accounts.
+- [x] Re-authenticated buyer account deletion with cascading removal of buyer-owned data and sessions.
+- [x] Saved searches backed by authenticated accounts; notification delivery remains disabled.
 - [x] Local MVP shortlist and four-home comparison tray.
 - Persist shortlist and comparison groups for authenticated accounts.
 - [x] Local MVP notes and viewing questions per property with browser persistence.
-- Persist notes and questions for authenticated accounts with optional sharing.
+- [x] Persist private notes and questions for authenticated accounts; optional sharing remains future work.
 - [x] Local viewing-request overlay prototype with sample availability and no personal-data persistence.
 - Connect viewing requests to authenticated buyers and live staff availability.
 - Notification preferences and alert history.

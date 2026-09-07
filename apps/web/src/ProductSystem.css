@@ -3,16 +3,16 @@
   --public-header-height: 72px;
   --ink: #0a0a0a;
   --navy: #0a0a0a;
-  --paper: #fff;
+  --paper: #fafafa;
   --surface: #fff;
-  --raised-surface: #f7f7f7;
-  --control-surface: #f5f5f5;
-  --soft: #ededed;
+  --raised-surface: #f5f5f5;
+  --control-surface: #f0f0f0;
+  --soft: #e7e7e7;
   --tint: #fafafa;
   --muted: #5f6368;
   --line: #e1e1e1;
   --line-strong: #a8a8a8;
-  --accent: #5d5d58;
+  --accent: #716044;
   --yellow: #5d5d58;
   --yellow-dark: #343431;
   --yellow-soft: #efefec;
@@ -21,29 +21,29 @@
   --on-inverse: #fff;
   --on-accent: #fff;
   --header-surface: #fff;
-  --catalogue-wash: #fff;
+  --catalogue-wash: #fafafa;
   --map-canvas: #efefec;
-  --panel-shadow: 0 12px 36px rgba(0, 0, 0, .08);
+  --panel-shadow: 0 20px 60px rgba(38, 32, 22, .10);
   --font-family: 'DM Sans', sans-serif;
   --display-font: 'DM Sans', sans-serif;
-  --radius-control: 6px;
-  --radius-panel: 8px;
-  --radius-feature: 10px;
+  --radius-control: 10px;
+  --radius-panel: 16px;
+  --radius-feature: 20px;
 }
 
 :root[data-theme='dark'] {
   --ink: #f7f7f7;
   --navy: #f7f7f7;
-  --paper: #000;
-  --surface: #0a0a0a;
-  --raised-surface: #101010;
-  --control-surface: #141414;
-  --soft: #1b1b1b;
+  --paper: #101010;
+  --surface: #171717;
+  --raised-surface: #1d1d1d;
+  --control-surface: #232323;
+  --soft: #303030;
   --tint: #111;
-  --muted: #a4a4a4;
+  --muted: #b0b0a7;
   --line: #242424;
   --line-strong: #525252;
-  --accent: #d8d7d2;
+  --accent: #d5c3a2;
   --yellow: #d8d7d2;
   --yellow-dark: #eeeeea;
   --yellow-soft: #242421;
@@ -51,8 +51,8 @@
   --inverse-surface: #0a0a0a;
   --on-inverse: #f7f7f7;
   --on-accent: #080808;
-  --header-surface: #000;
-  --catalogue-wash: #000;
+  --header-surface: #101010;
+  --catalogue-wash: #101010;
   --map-canvas: #11110f;
   --panel-shadow: 0 14px 42px rgba(0, 0, 0, .34);
 }
@@ -95,7 +95,8 @@
 :root .home-hero-search button { border-color: var(--accent); background: var(--accent); color: var(--on-accent); }
 :root .home-hero-search button:hover { background: var(--yellow-dark); }
 :root .home-hero-actions a { color: #fff; text-decoration-color: rgba(255,255,255,.38); }
-:root .home-hero-actions button { border-color: var(--accent); background: var(--accent); color: var(--on-accent); }
+:root .home-hero-actions button { border: 0; border-radius: var(--radius-control); background: #30312b; color: #f4f1eb; padding-inline: 20px; transition: background-color 180ms ease; }
+:root .home-hero-actions button:hover { background: #42443b; }
 :root .home-hero-desk { position: relative; z-index: 1; border-left: 1px solid rgba(255,255,255,.14); background: rgba(7,7,6,.78); color: #fff; backdrop-filter: blur(14px); }
 :root .home-hero-desk > header,
 :root .home-hero-desk dl,
@@ -254,6 +255,69 @@
 :root .agent-monogram-large { border-radius: var(--radius-control); }
 :root .information-notice,
 :root .client-feedback { background: var(--yellow-soft); }
+:root .client-panel { border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+
+/* Field focus uses a surface change; compound controls own their focus treatment. */
+:root :is(input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']),textarea,select) {
+  border: 0 !important;
+  outline: 0 !important;
+  box-shadow: none !important;
+}
+:root :is(input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']),textarea,select):focus-visible {
+  border: 0 !important;
+  outline: 0 !important;
+  box-shadow: none !important;
+  background-color: var(--soft);
+}
+:root .auth-control { border: 0; box-shadow: none; }
+:root .auth-control:focus-within { border: 0; outline: 0; box-shadow: none; background: var(--soft); }
+:root .auth-control > input { box-shadow: none !important; }
+:root .auth-control > input:focus-visible { background: transparent; }
+
+:root .home-hero-search {
+  border: 0;
+  border-radius: 12px;
+  background: #262722;
+  box-shadow: 0 18px 46px rgba(0,0,0,.3);
+}
+:root .home-hero-search:focus-within {
+  outline: 0;
+  background: #292927;
+  box-shadow: 0 18px 46px rgba(0,0,0,.3);
+}
+:root .home-hero-search input,
+:root .home-hero-search input:focus-visible { box-shadow: none !important; background: transparent !important; }
+:root .property-search-bar input:focus-visible,
+:root .property-search-bar select:focus-visible { background: transparent; }
+:root .home-hero-search button {
+  align-self: center;
+  min-height: 50px;
+  margin: 6px;
+  border: 0;
+  border-radius: 8px;
+  background: #e8dfcf;
+  color: #25251f;
+  padding-inline: 24px;
+  transition: background-color 180ms ease;
+}
+:root .home-hero-search button:hover { background: #f4edde; color: #25251f; }
+:root :is(.client-main, .manager-main) [id] { scroll-margin-top: calc(var(--public-header-height, 72px) + 32px); }
+@media (prefers-reduced-motion: reduce) { :root .home-hero-search button { transition: none; } }
+
+:root .manager-session-action button {
+  background: color-mix(in srgb, var(--danger) 14%, var(--control-surface));
+  color: var(--danger);
+  box-shadow: none;
+}
+:root .manager-session-action button:hover,
+:root .manager-session-action button:focus-visible { background: color-mix(in srgb, var(--danger) 22%, var(--control-surface)); }
+@media (forced-colors: active) {
+  :root :is(input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']),textarea,select):focus-visible {
+    outline: 2px solid Highlight !important;
+    outline-offset: 2px !important;
+    box-shadow: none !important;
+  }
+}
 
 /* Match Lab and Area Index */
 :root .discovery-shell { background: var(--paper); color: var(--ink); }
@@ -277,9 +341,6 @@
 :root .area-row dt,
 :root .area-readiness span,
 :root .discovery-footer { color: var(--muted); }
-:root .discovery-orbit { border-color: var(--line-strong); border-radius: var(--radius-feature); }
-:root .discovery-orbit::before { border-color: var(--line); border-radius: inherit; }
-:root .discovery-orbit::after { border-radius: var(--radius-control); background: var(--accent); }
 :root .match-controls { border-color: var(--line); border-radius: var(--radius-panel); background: var(--surface); }
 :root .match-controls header,
 :root .match-controls fieldset,

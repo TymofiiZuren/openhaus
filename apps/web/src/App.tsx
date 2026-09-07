@@ -4,8 +4,11 @@ import './App.css'
 import { SiteHeader } from './SiteHeader'
 import { ClientSignInPrompt } from './ClientSignInPrompt'
 import { fetchClientSavedProperties, removeClientSavedProperty, saveClientProperty } from './api/clientSavedProperties'
+import { fetchClientPropertyNote, saveClientPropertyNote } from './api/clientPropertyNotes'
+import { createClientSavedSearch } from './api/clientSavedSearches'
 import { fetchProperties, type Property } from './api/properties'
 import { createPropertySearchIndex } from './propertySearch'
+import { isShowcaseProperty } from './showcaseProperties'
 import { createConciergeReply, type ConciergeCriteria, type ConciergeReply } from './propertyConcierge'
 import { findSellingAgent } from './sellingAgents'
 const PropertyMap = lazy(() => import('./PropertyMap').then((module) => ({ default: module.PropertyMap })))
@@ -22,6 +25,11 @@ const euros = new Intl.NumberFormat('en-IE', {
 })
 
 const shortlistKey = 'openhaus:comparison:v1'
+const propertyTypes = new Set(['all', 'detached', 'semi_detached', 'terraced', 'apartment'])
+function initialSearchNumber(name: string, allowed: number[]): number {
+  const value = Number(new URLSearchParams(window.location.search).get(name) ?? 0)
+  return allowed.includes(value) ? value : 0
+}
 function readShortlist(): string[] {
   try {
     const saved: unknown = JSON.parse(localStorage.getItem(shortlistKey) ?? '[]')
@@ -69,11 +77,11 @@ function App() {
   const [requestKey, setRequestKey] = useState(0)
   const [selectedCounty, setSelectedCounty] = useState<string | null>(() => new URLSearchParams(window.location.search).get('county'))
   const [selectedArea, setSelectedArea] = useState<string | undefined>(() => new URLSearchParams(window.location.search).get('area') ?? undefined)
-  const [propertyQuery, setPropertyQuery] = useState('')
-  const [minimumBedrooms, setMinimumBedrooms] = useState(0)
-  const [propertyType, setPropertyType] = useState('all')
-  const [maximumPrice, setMaximumPrice] = useState(0)
-  const [spatialToursOnly, setSpatialToursOnly] = useState(false)
+  const [propertyQuery, setPropertyQuery] = useState(() => (new URLSearchParams(window.location.search).get('query') ?? '').slice(0, 160))
+  const [minimumBedrooms, setMinimumBedrooms] = useState(() => initialSearchNumber('beds', [0, 2, 3, 4]))
+  const [propertyType, setPropertyType] = useState(() => { const value = new URLSearchParams(window.location.search).get('type') ?? 'all'; return propertyTypes.has(value) ? value : 'all' })
+  const [maximumPrice, setMaximumPrice] = useState(() => initialSearchNumber('maxPrice', [0, 650000, 800000, 1000000]))
+  const [spatialToursOnly, setSpatialToursOnly] = useState(() => new URLSearchParams(window.location.search).get('tour') === 'true')
   const [sortOrder, setSortOrder] = useState('recent')
   const [saveSearchOpen, setSaveSearchOpen] = useState(false)
   const [shortlistedPropertyIDs, setShortlistedPropertyIDs] = useState<string[]>(readShortlist)
@@ -81,9 +89,24 @@ function App() {
   const [conciergeOpen, setConciergeOpen] = useState(() => new URLSearchParams(window.location.search).get('guide') === 'open')
   const [conciergeAnchor, setConciergeAnchor] = useState<HTMLElement | null>(null)
   const [areaTools, setAreaTools] = useState<AreaTools>()
-  const [mapReady, setMapReady] = useState(() => typeof IntersectionObserver === 'undefined')
+  const [mapReady, setMapReady] = useState(() => window.location.hash === '#explore' || typeof IntersectionObserver === 'undefined')
   const mapEntry = useRef<HTMLDivElement>(null)
   const deferredPropertyQuery = useDeferredValue(propertyQuery)
+
+  useEffect(() => {
+    let frame = 0
+    const restoreMapAnchor = () => {
+      if (window.location.hash !== '#explore' || !mapEntry.current) return
+      setMapReady(true)
+      frame = requestAnimationFrame(() => mapEntry.current?.scrollIntoView?.({ block: 'start', behavior: 'instant' }))
+    }
+    restoreMapAnchor()
+    window.addEventListener('hashchange', restoreMapAnchor)
+    return () => {
+      cancelAnimationFrame(frame)
+      window.removeEventListener('hashchange', restoreMapAnchor)
+    }
+  }, [state.status])
 
   useEffect(() => {
     try { localStorage.setItem(shortlistKey, JSON.stringify(shortlistedPropertyIDs)) } catch { /* Comparison remains usable without storage. */ }
@@ -318,9 +341,13 @@ function App() {
       {saveSearchOpen && <SaveSearchDialog
         matchingHomes={visibleProperties.length}
         location={effectiveSelectedArea ?? effectiveSelectedCounty ?? 'All Ireland'}
+        county={effectiveSelectedCounty ?? ''}
+        area={effectiveSelectedArea ?? ''}
         minimumBedrooms={minimumBedrooms}
         propertyType={propertyType}
         maximumPrice={maximumPrice}
+        query={propertyQuery}
+        spatialOnly={spatialToursOnly}
         onClose={() => setSaveSearchOpen(false)}
       />}
       {shortlistedProperties.length > 0 && <ComparisonTray properties={shortlistedProperties} onCompare={() => setCompareOpen(true)} onRemove={(propertyID) => toggleShortlist(propertyID)} onClear={() => setShortlistedPropertyIDs([])} />}
@@ -335,12 +362,13 @@ function App() {
   )
 }
 
-function SaveSearchDialog({ matchingHomes, location, minimumBedrooms, propertyType, maximumPrice, onClose }: { matchingHomes: number; location: string; minimumBedrooms: number; propertyType: string; maximumPrice: number; onClose: () => void }) {
-  const emailRef = useRef<HTMLInputElement>(null)
-  const [confirmed, setConfirmed] = useState(false)
+function SaveSearchDialog({ matchingHomes, location, county, area, minimumBedrooms, propertyType, maximumPrice, query, spatialOnly, onClose }: { matchingHomes: number; location: string; county: string; area: string; minimumBedrooms: number; propertyType: string; maximumPrice: number; query: string; spatialOnly: boolean; onClose: () => void }) {
+  const frequencyRef = useRef<HTMLSelectElement>(null)
+  const [frequency, setFrequency] = useState<'instant' | 'daily' | 'weekly'>('daily')
+  const [status, setStatus] = useState<'idle' | 'busy' | 'saved' | 'anonymous' | 'error'>('idle')
 
   useEffect(() => {
-    emailRef.current?.focus()
+    frequencyRef.current?.focus()
   }, [])
 
   const criteria = [location, minimumBedrooms ? `${minimumBedrooms}+ beds` : 'Any beds', propertyType === 'all' ? 'All property types' : propertyType, maximumPrice ? `Up to ${euros.format(maximumPrice)}` : 'Any price']
@@ -349,12 +377,13 @@ function SaveSearchDialog({ matchingHomes, location, minimumBedrooms, propertyTy
     <section className="save-search-dialog">
       <header><div><p className="section-index">Buyer workspace · alert 01</p><h2 id="save-search-title">Save this search</h2></div><button type="button" className="overlay-close" aria-label="Close saved search" onClick={onClose}>×</button></header>
       <div className="save-search-summary"><strong>{matchingHomes} matching {matchingHomes === 1 ? 'home' : 'homes'}</strong><p>We’ll use this decision brief as the basis for future property alerts.</p><ul>{criteria.map((item) => <li key={item}>{item}</li>)}</ul></div>
-      <form onSubmit={(event) => { event.preventDefault(); setConfirmed(true) }}>
-        <label>Email address<input ref={emailRef} type="email" required autoComplete="email" placeholder="you@example.com" /></label>
-        <label>Alert frequency<select defaultValue="daily"><option value="instant">As soon as a home is added</option><option value="daily">Daily digest</option><option value="weekly">Weekly briefing</option></select></label>
-        <button type="submit">Create property alert <span aria-hidden="true">→</span></button>
+      <form onSubmit={(event) => { event.preventDefault(); setStatus('busy'); void createClientSavedSearch({ location, county, area, query, minimumBedrooms, propertyType, maximumPrice: maximumPrice ? maximumPrice * 100 : 0, spatialOnly, frequency }).then(() => setStatus('saved')).catch((reason: unknown) => setStatus(reason instanceof Error && reason.message === 'authentication_required' ? 'anonymous' : 'error')) }}>
+        <label>Alert frequency<select ref={frequencyRef} value={frequency} onChange={(event) => setFrequency(event.target.value as typeof frequency)} disabled={status === 'busy'}><option value="instant">As soon as a home is added</option><option value="daily">Daily digest</option><option value="weekly">Weekly briefing</option></select></label>
+        <button type="submit" disabled={status === 'busy'}>{status === 'busy' ? 'Saving…' : 'Save to my account'} <span aria-hidden="true">→</span></button>
       </form>
-      {confirmed && <p className="save-search-confirmation" role="status"><strong>Your sample alert is ready.</strong> Account-backed alerts are planned for the buyer workspace phase.</p>}
+      {status === 'saved' && <p className="save-search-confirmation" role="status"><strong>Search saved to your account.</strong> Delivery will begin when property alerts are enabled.</p>}
+      {status === 'anonymous' && <p className="save-search-confirmation" role="status"><strong>Sign in to save this search.</strong> <a href="/client/login">Open your buyer account</a>; your current filters will stay on this page.</p>}
+      {status === 'error' && <p className="save-search-confirmation" role="alert"><strong>The search could not be saved.</strong> Please try again.</p>}
     </section>
   </Overlay>
 }
@@ -632,7 +661,7 @@ export function PropertyDetailPage({ property, status, onRetry }: { property?: P
           <article className="property-page-layout" id="overview">
             <div className="property-page-hero" id="media"><PropertyGallery property={property} eager /></div>
             <div className="property-page-summary">
-              <div className="property-page-identity"><p className="eyebrow">Property for sale</p><h1>{property.title}</h1><p className="property-page-address">{property.addressLine1}, Co. {property.county}</p></div>
+              <div className="property-page-identity"><p className="eyebrow">{isShowcaseProperty(property.id) ? 'Fictional showcase · not for sale' : 'Property for sale'}</p><h1>{property.title}</h1><p className="property-page-address">{property.addressLine1}, Co. {property.county}</p></div>
               <strong className="property-page-price"><span>Asking price</span>{euros.format(property.priceCents / 100)}</strong>
               <ClientPropertySaveAction property={property} />
               {property.media.some(item => item.kind === 'panorama' && item.url.startsWith('https://')) && <a className="property-summary-tour" href={`/properties/${property.id}/tour`}>Open full-window 360° tour <span aria-hidden="true">↗</span></a>}
@@ -756,22 +785,36 @@ function PropertyTourPage({ property, status, onRetry }: { property?: Property; 
         <header className="property-tour-header">
           <a href={`/properties/${property.id}`} aria-label={`Back to ${property.title}`}><span aria-hidden="true">←</span> Back to property</a>
           <div><p className="section-index">Immersive viewing · 360°</p><h1>{property.title}</h1><p>{property.city} · Co. {property.county}</p></div>
-          <a className="property-tour-details-link" href={`/properties/${property.id}`}>View property details <span aria-hidden="true">→</span></a>
+          <a className="property-tour-details-link" href={`/properties/${property.id}`} aria-label="View property details">Property details <span aria-hidden="true">→</span></a>
         </header>
         <section className="property-tour-stage" aria-label="Interactive panorama" ref={tourStageRef}>
-          <div className="property-tour-tools" aria-label="Tour controls">
-            <div><strong>{property.bedrooms} bedrooms</strong><span>{titleCase(property.propertyType)} · {euros.format(property.priceCents / 100)}</span></div>
-            <a href={`/?county=${encodeURIComponent(property.county)}&property=${encodeURIComponent(property.id)}#explore`}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s6-5.2 6-11a6 6 0 1 0-12 0c0 5.8 6 11 6 11Z"/><circle cx="12" cy="10" r="2"/></svg>View location on map</a>
-            <button type="button" aria-pressed={fullscreen} aria-label={fullscreen ? 'Exit browser fullscreen' : 'Open tour in browser fullscreen'} onClick={toggleFullscreen}>
-              <svg viewBox="0 0 24 24" aria-hidden="true">{fullscreen ? <path d="M9 4v5H4m16 0h-5V4M4 15h5v5m6 0v-5h5" /> : <path d="M9 4H4v5m16 0V4h-5M4 15v5h5m6 0h5v-5" />}</svg>
-              {fullscreen ? 'Exit full screen' : 'Full screen'}
-            </button>
-            <button type="button" onClick={() => setViewingOpen(true)}>Arrange a viewing <span aria-hidden="true">→</span></button>
+          <aside className="property-tour-tools" aria-label="Tour workspace controls">
+            <div className="property-tour-brief">
+              <p className="section-index">Digital viewing room · live</p>
+              <h2>Explore at your pace.</h2>
+              <p>Move through the home room by room, then return to the listing whenever you are ready.</p>
+            </div>
+            <dl className="property-tour-facts">
+              <div><dt>Home</dt><dd>{titleCase(property.propertyType)}</dd></div>
+              <div><dt>Bedrooms</dt><dd>{property.bedrooms}</dd></div>
+              <div><dt>Asking price</dt><dd>{euros.format(property.priceCents / 100)}</dd></div>
+            </dl>
+            <div className="property-tour-actions">
+              <a href={`/?county=${encodeURIComponent(property.county)}&property=${encodeURIComponent(property.id)}#explore`}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s6-5.2 6-11a6 6 0 1 0-12 0c0 5.8 6 11 6 11Z"/><circle cx="12" cy="10" r="2"/></svg><span>View location on map</span><b aria-hidden="true">↗</b></a>
+              <button type="button" aria-pressed={fullscreen} aria-label={fullscreen ? 'Exit browser fullscreen' : 'Open tour in browser fullscreen'} onClick={toggleFullscreen}>
+                <svg viewBox="0 0 24 24" aria-hidden="true">{fullscreen ? <path d="M9 4v5H4m16 0h-5V4M4 15h5v5m6 0v-5h5" /> : <path d="M9 4H4v5m16 0V4h-5M4 15v5h5m6 0h5v-5" />}</svg>
+                <span>{fullscreen ? 'Exit full screen' : 'Full screen'}</span><b aria-hidden="true">↗</b>
+              </button>
+              <button className="property-tour-viewing-action" type="button" onClick={() => setViewingOpen(true)}><span>Arrange a viewing</span><b aria-hidden="true">→</b></button>
+            </div>
+            <footer><i aria-hidden="true" /><span>Secure provider connection</span></footer>
+          </aside>
+          <div className="property-tour-canvas">
+            {fullscreenError && <p className="property-tour-fullscreen-error" role="status">Browser fullscreen is unavailable. Use the fullscreen control inside the tour instead.</p>}
+            {tourURL
+              ? <Suspense fallback={<div className="property-tour-loading" role="status">Preparing the 360° tour…</div>}><SpatialMediaViewer source={{ provider: 'embed', embedUrl: tourURL, title: `${property.title} 360° tour`, posterUrl: poster }} /></Suspense>
+              : <div className="property-tour-unavailable"><span>360°</span><strong>Tour coming soon</strong><p>The listing team is preparing the immersive walkthrough.</p><a href={`/properties/${property.id}`}>View photography and plans</a></div>}
           </div>
-          {fullscreenError && <p className="property-tour-fullscreen-error" role="status">Browser fullscreen is unavailable. Use the fullscreen control inside the tour instead.</p>}
-          {tourURL
-            ? <Suspense fallback={<div className="property-tour-loading" role="status">Preparing the 360° tour…</div>}><SpatialMediaViewer source={{ provider: 'embed', embedUrl: tourURL, title: `${property.title} 360° tour`, posterUrl: poster }} /></Suspense>
-            : <div className="property-tour-unavailable"><span>360°</span><strong>Tour coming soon</strong><p>The listing team is preparing the immersive walkthrough.</p><a href={`/properties/${property.id}`}>View photography and plans</a></div>}
         </section>
         {viewingOpen && <ViewingRequestDialog property={property} onClose={() => setViewingOpen(false)} />}
       </>}
@@ -780,6 +823,7 @@ function PropertyTourPage({ property, status, onRetry }: { property?: Property; 
 }
 
 function PropertySpatialTour({ property }: { property: Property }) {
+  if (isShowcaseProperty(property.id)) return <section className="property-spatial-tour" id="tour" aria-labelledby="property-tour-title"><header><p className="section-index">Fictional media study</p><h2 id="property-tour-title">Concept imagery, clearly labelled.</h2><p>These independently generated interior and exterior images illustrate a design idea, not a verified property layout. The gallery video is a still-image sequence, not recorded footage. No 360° tour or measured floor plan is available for this fictional home.</p><a href="/media-lab">Inspect the media algorithms →</a></header></section>
   const panorama = property.media.find((item) => item.kind === 'panorama')
   const tourURL = panorama?.url.startsWith('https://') ? panorama.url : undefined
   const poster = property.media.find((item) => item.kind === 'image')?.url
@@ -820,6 +864,9 @@ function PropertyDecisionPanel({ property }: { property: Property }) {
   const storageKey = `openhaus:property-notes:${property.id}`
   const [notesOpen, setNotesOpen] = useState(false)
   const [notesError, setNotesError] = useState('')
+  const [notesBusy, setNotesBusy] = useState(false)
+  const [notesMode, setNotesMode] = useState<'checking' | 'account' | 'browser' | 'unavailable'>('checking')
+  const [notesSource, setNotesSource] = useState<'browser' | 'account'>('browser')
   const [buyerNotes, setBuyerNotes] = useState<{ notes: string; questions: string[] }>(() => {
     try {
       const saved = JSON.parse(window.localStorage.getItem(storageKey) ?? 'null')
@@ -827,23 +874,57 @@ function PropertyDecisionPanel({ property }: { property: Property }) {
     }
     catch { return { notes: '', questions: [] } }
   })
+  useEffect(() => {
+    const controller = new AbortController()
+    fetchClientPropertyNote(property.id, controller.signal)
+      .then(note => {
+        if (controller.signal.aborted) return
+        const accountHasNotes = note.notes.trim().length > 0 || note.questions.length > 0
+        if (accountHasNotes) {
+          setBuyerNotes({ notes: note.notes, questions: note.questions })
+          setNotesSource('account')
+        }
+        setNotesMode('account')
+      })
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) return
+        setNotesMode(error instanceof Error && error.message === 'authentication_required' ? 'browser' : 'unavailable')
+      })
+    return () => controller.abort()
+  }, [property.id])
   const hasNotes = buyerNotes.notes.trim().length > 0 || buyerNotes.questions.length > 0
-  const saveNotes = (next: { notes: string; questions: string[] }) => {
+  const saveNotes = async (next: { notes: string; questions: string[] }) => {
+    if (notesBusy || notesMode === 'checking') return
+    setNotesBusy(true)
+    if (notesMode === 'account') {
+      try {
+        const saved = await saveClientPropertyNote(property.id, next)
+        try { window.localStorage.removeItem(storageKey) } catch { /* Account storage succeeded; stale browser cleanup is best effort. */ }
+        setBuyerNotes({ notes: saved.notes, questions: saved.questions })
+        setNotesSource('account')
+        setNotesError('')
+        setNotesOpen(false)
+      } catch {
+        setNotesError('Your account notes could not be saved. Keep this window open and try again.')
+      } finally { setNotesBusy(false) }
+      return
+    }
     try { window.localStorage.setItem(storageKey, JSON.stringify(next)) }
-    catch { setNotesError('Your notes could not be saved in this browser. Keep this window open, copy your notes, or enable browser storage and try again.'); return }
+    catch { setNotesError('Your notes could not be saved in this browser. Keep this window open, copy your notes, or enable browser storage and try again.'); setNotesBusy(false); return }
     setNotesError('')
     setBuyerNotes(next)
     setNotesOpen(false)
+    setNotesBusy(false)
   }
   return <section className="property-decision-panel" id="intelligence" aria-labelledby="decision-title">
     <header><p className="section-index">Property intelligence</p><h2 id="decision-title">Understand the commitment.</h2><p>Illustrative figures help organise questions before professional financial, legal and survey advice.</p></header>
     <dl><div><dt>10% deposit</dt><dd>{euros.format(deposit)}</dd><small>Illustrative only</small></div><div><dt>Monthly estimate</dt><dd>{euros.format(Number(monthly))}</dd><small>Sample repayment</small></div><div><dt>Energy profile</dt><dd>B2</dd><small>Example BER</small></div><div><dt>Media coverage</dt><dd>{property.media.length}</dd><small>Available items</small></div></dl>
-    <div className="decision-context" id="location"><div><span>Area context</span><strong>{property.city}, Co. {property.county}</strong><p>Transport, schools, broadband, planning and comparable sales can connect here as verified providers are added.</p></div><div id="viewing"><span>Buyer workspace</span><strong>Build your viewing file</strong><p>{hasNotes ? 'Notes saved locally' : 'Keep private observations and questions attached to this property.'}</p><button type="button" onClick={() => setNotesOpen(true)}>{hasNotes ? 'Edit property notes' : 'Add property notes'} <span aria-hidden="true">→</span></button></div></div>
-    {notesOpen && <PropertyNotesDialog property={property} value={buyerNotes} error={notesError} onSave={saveNotes} onClose={() => { setNotesOpen(false); setNotesError('') }} />}
+    <div className="decision-context" id="location"><div><span>Area context</span><strong>{property.city}, Co. {property.county}</strong><p>Transport, schools, broadband, planning and comparable sales can connect here as verified providers are added.</p></div><div id="viewing"><span>Buyer workspace</span><strong>Build your viewing file</strong><p>{hasNotes ? (notesMode === 'account' && notesSource === 'account' ? 'Notes synced to your account' : notesMode === 'account' ? 'Browser notes ready to save to your account' : 'Notes saved locally') : notesMode === 'checking' ? 'Checking your private notes…' : 'Keep private observations and questions attached to this property.'}</p><button type="button" onClick={() => setNotesOpen(true)}>{hasNotes ? 'Edit property notes' : 'Add property notes'} <span aria-hidden="true">→</span></button></div></div>
+    {notesOpen && <PropertyNotesDialog property={property} value={buyerNotes} error={notesError} busy={notesBusy} mode={notesMode} onSave={saveNotes} onClose={() => { if (!notesBusy) { setNotesOpen(false); setNotesError('') } }} />}
   </section>
 }
 
-function PropertyNotesDialog({ property, value, error, onSave, onClose }: { property: Property; value: { notes: string; questions: string[] }; error?: string; onSave: (value: { notes: string; questions: string[] }) => void; onClose: () => void }) {
+function PropertyNotesDialog({ property, value, error, busy, mode, onSave, onClose }: { property: Property; value: { notes: string; questions: string[] }; error?: string; busy: boolean; mode: 'checking' | 'account' | 'browser' | 'unavailable'; onSave: (value: { notes: string; questions: string[] }) => Promise<void>; onClose: () => void }) {
   const notesRef = useRef<HTMLTextAreaElement>(null)
   const [notes, setNotes] = useState(value.notes)
   const [questions, setQuestions] = useState(value.questions)
@@ -857,11 +938,11 @@ function PropertyNotesDialog({ property, value, error, onSave, onClose }: { prop
       <form onSubmit={(event) => { event.preventDefault(); onSave({ notes, questions }) }}>
         <label>Private notes<textarea ref={notesRef} rows={6} value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="What should you remember at the viewing?" /></label>
         <fieldset><legend>Questions for the viewing</legend><div className="property-question-list">{prompts.map((prompt) => <label key={prompt}><input type="checkbox" checked={questions.includes(prompt)} onChange={() => toggleQuestion(prompt)} /><span>{prompt}</span></label>)}</div></fieldset>
-        <p>Stored only in this browser. You do not need to sign in to save these notes.</p>
+        <p>{mode === 'account' ? 'Private to your signed-in buyer account.' : mode === 'unavailable' ? 'Account sync is temporarily unavailable. This copy will stay only in this browser.' : 'Stored only in this browser. You do not need to sign in to save these notes.'}</p>
         {error && <p role="alert">{error}</p>}
-        <div><button type="button" onClick={onClose}>Cancel</button><button type="submit">Save property notes</button></div>
+        <div><button type="button" disabled={busy} onClick={onClose}>Cancel</button><button type="submit" disabled={busy || mode === 'checking'}>{busy ? 'Saving…' : mode === 'checking' ? 'Checking account…' : 'Save property notes'}</button></div>
       </form>
-      <ClientSignInPrompt />
+      {mode !== 'account' && <ClientSignInPrompt />}
     </section>
   </Overlay>
 }

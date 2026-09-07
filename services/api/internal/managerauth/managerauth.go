@@ -127,6 +127,12 @@ func HashPassword(password string) (string, error) {
 	return string(hash), err
 }
 
+// ComparePassword verifies a password against an existing bcrypt hash without
+// exposing the hashing implementation to account-specific services.
+func ComparePassword(passwordHash, password string) error {
+	return bcrypt.CompareHashAndPassword([]byte(passwordHash), []byte(password))
+}
+
 func tokenDigest(token string) []byte {
 	digest := sha256.Sum256([]byte(token))
 	return digest[:]

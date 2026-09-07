@@ -44,10 +44,17 @@ export function PropertyMap({ properties, selectedCounty, selectedArea, property
   const availableCounties = useMemo(() => groups.map((group) => group.county), [groups])
   const selectedGroup = groups.find((group) => sameLocation(group.county, selectedCounty ?? ''))
   const countyAreas = useMemo(() => areasForCounty(selectedCounty), [selectedCounty])
-  const areaGroups = useMemo(() => countyAreas.map((area) => ({
-    area,
-    properties: selectedGroup?.properties.filter((property) => areaForCoordinate(area.county, { lat: property.latitude, lng: property.longitude })?.name === area.name) ?? [],
-  })), [countyAreas, selectedGroup])
+  const areaGroups = useMemo(() => {
+    const byArea = new Map<string, Property[]>()
+    for (const property of selectedGroup?.properties ?? []) {
+      const area = areaForCoordinate(property.county, {lat:property.latitude,lng:property.longitude})
+      if (!area) continue
+      const group = byArea.get(area.name) ?? []
+      group.push(property)
+      byArea.set(area.name,group)
+    }
+    return countyAreas.map(area=>({area,properties:byArea.get(area.name)??[]}))
+  }, [countyAreas, selectedGroup])
   const activeArea = areaGroups.some((group) => sameLocation(group.area.name, selectedArea ?? '')) ? selectedArea : undefined
   const normalizedCountyQuery = countyQuery.trim().toLocaleLowerCase()
   const normalizedAreaQuery = areaQuery.trim().toLocaleLowerCase()

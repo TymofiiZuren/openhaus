@@ -30,6 +30,14 @@ function managerWorkspaceResponse(input: RequestInfo | URL, properties: unknown[
 afterEach(() => { vi.restoreAllMocks(); localStorage.removeItem(clientSessionHintKey); localStorage.removeItem(managerSessionHintKey); window.history.replaceState({}, '', '/') })
 
 describe('manager application', () => {
+  it('opens an unsaved draft form from the account-menu shortcut', async () => {
+    window.history.replaceState({}, '', '/manager?action=new#manager-editor-title')
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(input => managerWorkspaceResponse(input, [managedProperty]))
+    render(<ManagerApp />)
+    expect(await screen.findByRole('heading', { name: 'Add a property' })).toBeVisible()
+    expect(screen.getByLabelText('Listing title')).toHaveValue('')
+    expect(fetchMock.mock.calls.some(([, options]) => options?.method === 'POST')).toBe(false)
+  })
   it('does not expose manager sign in while a client account is active', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(input => {
       if (String(input) === '/api/v1/client/session') return Promise.resolve(Response.json({ client: { id: 'buyer', email: 'buyer@example.test' } }))
@@ -63,6 +71,8 @@ describe('manager application', () => {
     render(<ManagerApp />)
     await waitFor(() => expect(screen.queryByText('Loading manager workspace…')).not.toBeInTheDocument())
     expect(screen.getByRole('link', { name: 'OpenHaus home' })).toHaveAttribute('href', '/')
+    expect(screen.getByRole('button', { name: 'Open navigation' })).toBeVisible()
+    expect(screen.getByRole('navigation', { name: 'Primary navigation' })).toBeVisible()
     expect(screen.queryByRole('link', { name: 'View live site' })).not.toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Manager account options' }))
     expect(screen.getByRole('link', { name: 'Analytics overview' })).toHaveAttribute('href', '/manager/analytics')
@@ -87,7 +97,7 @@ describe('manager application', () => {
 
     expect(await screen.findByRole('heading', { name: 'Account profile' })).toBeVisible()
     expect(screen.getByText('manager@example.test')).toBeVisible()
-    expect(screen.getByText('manager-1')).toBeVisible()
+    expect(screen.getByText('OH-MANAGER1')).toHaveAttribute('title', 'manager-1')
     expect(screen.getByText('Manager', { selector: 'dd' })).toBeVisible()
     expect(screen.queryByText('Session security')).not.toBeInTheDocument()
   })
@@ -412,6 +422,23 @@ describe('manager application', () => {
 
     expect(await screen.findByRole('heading', { name: 'Manager sign in' })).toBeVisible()
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/v1/manager/session', { method: 'DELETE' }))
+  })
+
+  it('keeps the authenticated workspace visible when logout is not confirmed', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      if (String(input) === '/api/v1/client/session') return new Response(null, { status: 401 })
+      if (String(input) === '/api/v1/manager/session' && init?.method === 'DELETE') return new Response(null, { status: 503 })
+      if (String(input) === '/api/v1/manager/session') return Response.json({ manager: managerIdentity })
+      return Response.json({ properties: [managedProperty] })
+    })
+    render(<ManagerApp />)
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Log out' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('could not confirm sign-out')
+    expect(screen.getByRole('button', { name: 'Manager account options' })).toBeVisible()
+    expect(screen.queryByRole('heading', { name: 'Manager sign in' })).not.toBeInTheDocument()
+    expect(fetchMock).toHaveBeenCalledWith('/api/v1/manager/session', { method: 'DELETE' })
   })
 
   it('creates a draft listing from the manager workspace', async () => {

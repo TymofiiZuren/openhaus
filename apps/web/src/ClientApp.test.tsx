@@ -66,9 +66,53 @@ it('restores an existing session and keeps the account visible if sign-out fails
   expect(screen.getByRole('button', { name: 'Account options' })).toHaveTextContent('My account')
   expect(screen.queryByRole('button', { name: 'Sign in options' })).not.toBeInTheDocument()
   expect(screen.queryByLabelText('Password')).not.toBeInTheDocument()
+  await screen.findByText(/No account-saved homes yet/)
   fireEvent.click(screen.getByRole('button', { name: 'Sign out' }))
-  expect(await screen.findByRole('alert')).toHaveTextContent('could not confirm sign-out')
+  expect(await screen.findByText(/could not confirm sign-out/)).toBeVisible()
   expect(screen.getByRole('button', { name: 'Sign out' })).toBeInTheDocument()
+})
+
+it('shows account identity and changes the password before requiring sign-in again', async () => {
+  const fetcher = api(
+    response(200, { client: { id: 'buyer-identifier', email: 'buyer@example.test' } }),
+    response(200, { properties: [] }),
+    new Response(null, { status: 204 }),
+  )
+  render(<ClientApp />)
+
+  expect(await screen.findByRole('region', { name: 'Account overview' })).toBeVisible()
+  expect(screen.getByRole('navigation', { name: 'Account shortcuts' })).toBeVisible()
+  expect(await screen.findByText('OH-BUYERIDE')).toHaveAttribute('title', 'buyer-identifier')
+  expect(screen.getByRole('heading', { name: 'buyer@example.test' })).toBeVisible()
+  expect(screen.getByRole('link', { name: 'Download my account data' })).toHaveAttribute('href', '/api/v1/client/export')
+  fireEvent.change(screen.getByLabelText('Current password'), { target: { value: 'old password phrase' } })
+  fireEvent.change(screen.getByLabelText('New password'), { target: { value: 'new password phrase' } })
+  fireEvent.change(screen.getByLabelText('Confirm new password'), { target: { value: 'new password phrase' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Change password' }))
+
+  expect(await screen.findByRole('status')).toHaveTextContent('Password updated')
+  expect(screen.getByRole('button', { name: 'Sign in' })).toBeVisible()
+  expect(fetcher.mock.calls[2][0]).toBe('/api/v1/client/password')
+  expect(fetcher.mock.calls[2][1]).toMatchObject({ method: 'PUT', credentials: 'same-origin' })
+})
+
+it('requires explicit confirmation and the current password before deleting the buyer account', async () => {
+  const fetcher = api(
+    response(200, { client: { id: 'buyer-identifier', email: 'buyer@example.test' } }),
+    response(200, { properties: [] }),
+    new Response(null, { status: 204 }),
+  )
+  render(<ClientApp />)
+
+  await screen.findByRole('heading', { name: 'buyer@example.test' })
+  fireEvent.change(screen.getByLabelText('Current password for account deletion'), { target: { value: 'correct horse battery staple' } })
+  fireEvent.change(screen.getByLabelText('Type DELETE to confirm'), { target: { value: 'DELETE' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Delete my account permanently' }))
+
+  expect(await screen.findByRole('status')).toHaveTextContent('account has been deleted')
+  expect(screen.getByRole('button', { name: 'Sign in' })).toBeVisible()
+  expect(fetcher.mock.calls[2][0]).toBe('/api/v1/client/account')
+  expect(fetcher.mock.calls[2][1]).toMatchObject({ method: 'DELETE', credentials: 'same-origin' })
 })
 
 it('shows account-owned saved properties', async () => {
@@ -77,6 +121,25 @@ it('shows account-owned saved properties', async () => {
 
   expect(await screen.findByText('Garden home')).toBeVisible()
   expect(screen.getByRole('link', { name: 'View home' })).toHaveAttribute('href', '/properties/home-one')
+})
+
+it('loads and removes account-owned saved searches on demand', async () => {
+  const fetcher = api(
+    response(200, { client: { id: 'buyer', email: 'buyer@example.test' } }),
+    response(200, { properties: [] }),
+    response(200, { searches: [{ id: '22222222-2222-4222-8222-222222222222', location: 'Cork', county: 'Cork', minimumBedrooms: 3, propertyType: 'detached', maximumPrice: 80000000, spatialOnly: false, frequency: 'daily', createdAt: new Date().toISOString() }] }),
+    new Response(null, { status: 204 }),
+  )
+  render(<ClientApp />)
+
+  await screen.findByText(/No account-saved homes yet/)
+  fireEvent.click(await screen.findByRole('button', { name: 'Load saved searches' }))
+  expect(await screen.findByText('Cork')).toBeVisible()
+  expect(screen.getByText(/3\+ bedrooms.*detached.*daily/i)).toBeVisible()
+  expect(screen.getByRole('link', { name: 'View results' })).toHaveAttribute('href', '/?county=Cork&beds=3&type=detached&maxPrice=800000#homes')
+  fireEvent.click(screen.getByRole('button', { name: 'Remove' }))
+  expect(await screen.findByRole('status')).toHaveTextContent('Saved search removed')
+  expect(fetcher.mock.calls[3][0]).toContain('/api/v1/client/saved-searches/22222222-2222-4222-8222-222222222222')
 })
 
 it('imports the browser comparison into the signed-in account', async () => {

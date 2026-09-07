@@ -23,7 +23,7 @@ function HostedSpatialTour({ source }: { source: Extract<SpatialMediaSource, { p
   </div>
   if (!entered) return <div className="media-module media-module-360 spatial-consent" role="group" aria-label={source.title}>
     {source.posterUrl && <img src={source.posterUrl} alt="" loading="lazy" />}
-    <div className="spatial-consent-copy"><span>360°</span><strong>{source.title}</strong><small>Loads interactive content from {approved.provider}</small><button type="button" onClick={() => setEntered(true)}>Enter 360° tour</button></div>
+    <div className="spatial-consent-copy"><span>360° · {approved.provider} ready</span><strong>Step inside the home.</strong><small>{source.title}. Interactive content loads only after you continue.</small><button type="button" onClick={() => setEntered(true)}>Enter 360° tour</button></div>
   </div>
   return <div className="media-module media-module-360 spatial-embed" role="group" aria-label={source.title}>
     <iframe title={source.title} src={approved.url} loading="lazy" allow="fullscreen; xr-spatial-tracking; gyroscope; accelerometer" allowFullScreen referrerPolicy="strict-origin-when-cross-origin" sandbox="allow-scripts allow-same-origin allow-popups allow-forms" />

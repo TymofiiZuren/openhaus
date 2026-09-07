@@ -1,6 +1,6 @@
 # Client accounts — development foundation
 
-Development-only, disabled by default. Client pages are available at `/client`, `/client/login` and `/client/register`. They check backend availability before offering a form, show the authenticated account, support revocable sign-out and list account-owned saved properties. Email verification, recovery and retention enforcement must still be delivered before public launch.
+Development-only, disabled by default. Client pages are available at `/client`, `/client/login` and `/client/register`. They check backend availability before offering a form, show the authenticated account, support revocable sign-out and list account-owned saved properties. Private property notes and viewing questions are account-owned when signed in; anonymous notes stay browser-local. A signed-in buyer can permanently delete their account only after re-entering the current password and an explicit confirmation phrase. Email verification, recovery and retention enforcement must still be delivered before public launch.
 
 ## Isolation and security
 
@@ -18,7 +18,7 @@ Migration `000005` introduces separate `client_users`, `client_sessions` and `cl
 
 ## Local setup
 
-Apply migrations `000005` and `000006` using the repository's migration workflow against an explicitly selected development database. They were applied to the local `openhaus` database on 2026-09-04; other installations still require migration. Rollback drops buyer data and is destructive; do not run it against populated data without a recovery plan.
+Apply migrations `000005`, `000006`, `000008` and `000009` using the repository's migration workflow against an explicitly selected development database. Migrations `000008` and `000009` were applied to the local `openhaus` database on 2026-09-05; other installations still require migration. Rollback drops buyer data and is destructive; do not run it against populated data without a recovery plan.
 
 Set `APP_ENV=development`, `ENABLE_CLIENT_ACCOUNTS=true` and `CLIENT_ORIGIN` to the exact browser origin, such as `http://127.0.0.1:5176` (no trailing slash). Restart the API using an available port; the frontend must proxy requests to that API. Enabling accounts outside development fails startup.
 
@@ -44,14 +44,15 @@ Open `http://127.0.0.1:5177/client/register`, choose a test email and a unique p
 | POST | `/api/v1/client/session` | Sign in; response contains client ID/email and sets cookie |
 | GET | `/api/v1/client/session` | Read the authenticated buyer profile; 401 otherwise |
 | DELETE | `/api/v1/client/session` | Revoke current session and clear cookie |
+| PUT | `/api/v1/client/password` | Verify the current password, replace it and revoke every buyer session |
 | GET | `/api/v1/client/saved-properties` | List the authenticated buyer's published saved homes |
 | PUT | `/api/v1/client/saved-properties/{propertyID}` | Idempotently save a published home |
 | DELETE | `/api/v1/client/saved-properties/{propertyID}` | Remove the authenticated buyer's saved relationship |
 
 ## Validation and remaining work
 
-Unit tests cover hashing, normalization, session revocation, input checks, rate limiting, origin guards and cookie namespace separation. PostgreSQL integration tests run only with `TEST_DATABASE_URL`; they apply the new migration inside an isolated schema and roll back all data afterwards.
+Unit tests cover hashing, normalization, password changes, session revocation, input checks, rate limiting, origin guards and cookie namespace separation. Password replacement verifies the current credential and changes the password plus session state in one database statement, so every browser must authenticate again. PostgreSQL integration tests run only with `TEST_DATABASE_URL`; they apply the migration inside an isolated schema and roll back all data afterwards.
 
 Frontend interaction tests cover disabled accounts, connection retry, cookie-backed sign-in/sign-out, registration feedback, rejected credentials, saved-property rendering, direct saving from a property page and importing the browser comparison. Ownership integration tests verify that a second buyer cannot list or remove another buyer's saved relationship. On 2026-09-04 the live PostgreSQL-to-browser flow passed registration, rejected-password handling, login, reload persistence, HttpOnly/SameSite/path cookie checks, manager isolation, foreign-origin rejection and session revocation after logout. One generated browser-test client record was created; its credentials were never logged or offered as shared defaults. Database-store integration checks passed in a rolled-back test schema.
 
-Next: account-owned notes and searches, email verification and recovery, expiry cleanup jobs, deletion/export, and operational privacy review. Retention cleanup for expired sessions and rate-limit rows is not implemented in this foundation; do not enable public traffic.
+Account-owned saved searches now persist the catalogue criteria and alert cadence under the authenticated buyer, with a 50-search cap. No email or notification is sent. Authenticated buyers can download a no-cache JSON export containing their identity, saved-property identifiers, saved searches and property notes; authentication secrets and session material are excluded. Account deletion requires the authenticated buyer's current password, is rate-limited, deletes the buyer identity at the database boundary and relies on cascading foreign keys to remove sessions, saved properties, saved searches and private notes. Next: viewing history, alert delivery, email verification and recovery, expiry cleanup jobs, and operational privacy review. Retention cleanup for expired sessions and rate-limit rows is not implemented in this foundation; do not enable public traffic.

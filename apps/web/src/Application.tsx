@@ -1,6 +1,7 @@
 import { Component, lazy, Suspense, type ReactNode } from 'react'
 import './Application.css'
 import { SiteHeader } from './SiteHeader'
+import { UniversalGuide } from './UniversalGuide'
 
 const PublicApp = lazy(() => import('./App'))
 const StaffApp = lazy(() => import('./ManagerApp').then(module => ({ default: module.ManagerApp })))
@@ -8,6 +9,7 @@ const InformationApp = lazy(() => import('./InformationPages').then(module => ({
 const BuyerApp = lazy(() => import('./ClientApp').then(module => ({ default: module.ClientApp })))
 const DiscoveryRoute = lazy(() => import('./DiscoveryApp').then(module => ({ default: module.DiscoveryApp })))
 const AgentRoute = lazy(() => import('./AgentPages').then(module => ({ default: module.AgentPages })))
+const MediaLabRoute = lazy(() => import('./MediaLab').then(module => ({ default: module.MediaLab })))
 
 export class ApplicationBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
   state = { failed: false }
@@ -46,7 +48,8 @@ export function Application({ pathname = window.location.pathname }: { pathname?
       <Suspense fallback={
         <main aria-busy="true" aria-label="Loading page" />
       }>
-        {manager ? <StaffApp /> : client ? <BuyerApp key={pathname} pathname={pathname} /> : discoveryPage ? <DiscoveryRoute page={discoveryPage} /> : agentMatch ? <AgentRoute slug={agentMatch[1]} /> : informationPage ? <InformationApp key={informationPage} page={informationPage} /> : catalogue ? <PublicApp /> : <div className="site-shell"><SiteHeader pathname={pathname} /><main className="application-status"><p className="eyebrow">404 / OpenHaus</p><h1>Page not found.</h1><p>This address may have changed. Find a home or use the navigation above.</p><div className="application-status-actions"><a href="/#explore">Back to property search</a><a href="/help">Open help</a></div></main></div>}
+        {path === '/media-lab' ? <MediaLabRoute /> : manager ? <StaffApp /> : client ? <BuyerApp key={pathname} pathname={pathname} /> : discoveryPage ? <DiscoveryRoute page={discoveryPage} /> : agentMatch ? <AgentRoute slug={agentMatch[1]} /> : informationPage ? <InformationApp key={informationPage} page={informationPage} /> : catalogue ? <PublicApp /> : <div className="site-shell"><SiteHeader pathname={pathname} /><main className="application-status"><p className="eyebrow">404 / OpenHaus</p><h1>Page not found.</h1><p>This address may have changed. Find a home or use the navigation above.</p><div className="application-status-actions"><a href="/#explore">Back to property search</a><a href="/help">Open help</a></div></main></div>}
+        {path !== '/' && <UniversalGuide />}
       </Suspense>
     </ApplicationBoundary>
   )

@@ -22,7 +22,9 @@ export type Property = {
 type PropertiesResponse = { properties: Property[] }
 
 export async function fetchProperties(signal?: AbortSignal): Promise<Property[]> {
-  const response = await fetch('/api/v1/properties', { cache: 'no-store', headers: { Accept: 'application/json' }, signal })
+  // Let the browser retain a representation, but revalidate on every request.
+  // It combines a 304 with the stored body; publication changes remain immediate.
+  const response = await fetch('/api/v1/properties', { cache: 'no-cache', headers: { Accept: 'application/json' }, signal })
   if (!response.ok) throw new Error(`Property request failed with status ${response.status}`)
   const body = (await response.json()) as PropertiesResponse
   if (!Array.isArray(body.properties)) throw new Error('Property response is invalid')
