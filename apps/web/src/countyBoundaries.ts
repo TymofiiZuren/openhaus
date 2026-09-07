@@ -1,5 +1,6 @@
-import countyData from './data/irelandCounties.json'
+import countyJSON from './data/irelandCountyTopology.json?raw'
 import type { Coordinate } from './googleMapsLoader'
+import { unpackBoundaries, type BoundaryTopology } from './boundaryTopology'
 
 export type CountyBoundary = {
   name: string
@@ -7,19 +8,14 @@ export type CountyBoundary = {
   bounds: { west: number; south: number; east: number; north: number }
 }
 
-export const countyBoundaries: CountyBoundary[] = countyData.counties.map((county) => ({
-  name: county.name,
-  paths: parseProjectedPath(county.d),
-  bounds: {
-    west: county.bounds[0],
-    south: county.bounds[1],
-    east: county.bounds[2],
-    north: county.bounds[3],
-  },
-}))
+const countyData = JSON.parse(countyJSON) as BoundaryTopology & { source: string; attribution: string }
+export const countyBoundaries: CountyBoundary[] = unpackBoundaries(countyData).map((county) => {
+  const paths = county.paths.map(path => path.map(([lat, lng]) => ({ lat, lng })))
+  return { name: county.name, paths, bounds: boundaryBounds({ paths }) }
+})
 
 export const countyBoundaryAttribution = {
-  label: 'Tailte Éireann · CC BY 4.0',
+  label: countyData.attribution,
   url: countyData.source,
 }
 
@@ -28,7 +24,7 @@ export function boundariesForSelection(selectedCounty: string | null | undefined
   return countyBoundaries.filter((county) => sameLocation(county.name, selectedCounty))
 }
 
-export function boundaryBounds(county: CountyBoundary) {
+export function boundaryBounds(county: Pick<CountyBoundary, 'paths'>) {
   const coordinates = county.paths.flat()
   return coordinates.reduce((bounds, coordinate) => ({
     west: Math.min(bounds.west, coordinate.lng),
@@ -41,7 +37,7 @@ export function boundaryBounds(county: CountyBoundary) {
 export function mapViewport(selectedCounty: string | null | undefined) {
   const selected = boundariesForSelection(selectedCounty)
   const counties = selected.length > 0 ? selected : countyBoundaries
-  const bounds = mergeBounds(counties.map(boundaryBounds))
+  const bounds = mergeBounds(counties.map(county => county.bounds))
   return {
     mode: selectedCounty && selected.length > 0 ? 'county' as const : 'ireland' as const,
     bounds,
@@ -67,32 +63,6 @@ function expandBounds(bounds: CountyBoundary['bounds'], ratio: number) {
     south: bounds.south - latitudePadding,
     east: bounds.east + longitudePadding,
     north: bounds.north + latitudePadding,
-  }
-}
-
-function parseProjectedPath(path: string): Coordinate[][] {
-  const paths: Coordinate[][] = []
-  let current: Coordinate[] = []
-  const commands = path.matchAll(/([ML])(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)|Z/g)
-
-  for (const command of commands) {
-    if (command[0] === 'Z') {
-      if (current.length > 2) paths.push(current)
-      current = []
-      continue
-    }
-    if (command[1] === 'M' && current.length > 2) paths.push(current)
-    current.push(unproject(Number(command[2]), Number(command[3])))
-  }
-  if (current.length > 2) paths.push(current)
-  return paths
-}
-
-function unproject(x: number, y: number): Coordinate {
-  const { offsetX, offsetY, scale, cosineLatitude } = countyData.projection
-  return {
-    lng: countyData.bounds.minLongitude + (x - offsetX) / (cosineLatitude * scale),
-    lat: countyData.bounds.maxLatitude - (y - offsetY) / scale,
   }
 }
 

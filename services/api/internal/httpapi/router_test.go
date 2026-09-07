@@ -46,6 +46,23 @@ func (stub managerAuthStub) Authenticate(_ context.Context, token string) (manag
 }
 func (stub managerAuthStub) Logout(context.Context, string) error { return nil }
 
+type managerSecurityStub struct {
+	managerAuthStub
+	changedUser, currentPassword, newPassword, revokedUser string
+}
+
+func (stub *managerSecurityStub) ChangePassword(_ context.Context, user managerauth.User, currentPassword, newPassword string) error {
+	stub.changedUser, stub.currentPassword, stub.newPassword = user.ID, currentPassword, newPassword
+	if currentPassword != "valid-password" {
+		return managerauth.ErrInvalidCredentials
+	}
+	return nil
+}
+func (stub *managerSecurityStub) LogoutAll(_ context.Context, userID string) error {
+	stub.revokedUser = userID
+	return nil
+}
+
 type managerPropertyListerStub struct{ properties []property.ManagedProperty }
 
 func (stub managerPropertyListerStub) ListManaged(context.Context) ([]property.ManagedProperty, error) {
@@ -56,6 +73,18 @@ type managerPropertyWriterStub struct {
 	created   property.ManagedPropertyInput
 	updated   property.ManagedPropertyInput
 	updatedID string
+}
+
+type spatialTourWriterStub struct{ propertyID, shareURL, altText, removedID string }
+
+func (stub *spatialTourWriterStub) UpsertPanorama(_ context.Context, propertyID, shareURL, altText string) (property.Media, error) {
+	stub.propertyID, stub.shareURL, stub.altText = propertyID, shareURL, altText
+	return property.Media{URL: shareURL, Kind: "panorama", AltText: altText, Position: 4}, nil
+}
+
+func (stub *spatialTourWriterStub) RemovePanorama(_ context.Context, propertyID string) error {
+	stub.removedID = propertyID
+	return nil
 }
 
 func (stub *managerPropertyWriterStub) CreateManaged(_ context.Context, input property.ManagedPropertyInput) (property.ManagedProperty, error) {
@@ -104,6 +133,26 @@ func TestHealth(t *testing.T) {
 	}
 	if body.Status != "ok" {
 		t.Fatalf("status body = %q, want %q", body.Status, "ok")
+	}
+}
+
+func TestSecurityHeadersApplyToEveryAPIResponse(t *testing.T) {
+	request := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	response := httptest.NewRecorder()
+
+	newRouter().ServeHTTP(response, request)
+
+	want := map[string]string{
+		"X-Content-Type-Options":       "nosniff",
+		"X-Frame-Options":              "DENY",
+		"Referrer-Policy":              "no-referrer",
+		"Cross-Origin-Resource-Policy": "same-origin",
+		"Permissions-Policy":           "camera=(), microphone=(), geolocation=()",
+	}
+	for header, value := range want {
+		if got := response.Header().Get(header); got != value {
+			t.Errorf("%s = %q, want %q", header, got, value)
+		}
 	}
 }
 
@@ -168,6 +217,73 @@ func TestManagerCanLoginAndListDrafts(t *testing.T) {
 	}
 }
 
+func TestManagerCanReadAuthenticatedSession(t *testing.T) {
+	router := httpapi.NewRouter(httpapi.Dependencies{ManagerAuth: managerAuthStub{validToken: "session-token"}})
+	unauthenticated := httptest.NewRecorder()
+	router.ServeHTTP(unauthenticated, httptest.NewRequest(http.MethodGet, "/api/v1/manager/session", nil))
+	if unauthenticated.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated session status = %d, want %d", unauthenticated.Code, http.StatusUnauthorized)
+	}
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/manager/session", nil)
+	request.AddCookie(&http.Cookie{Name: "openhaus_manager_session", Value: "session-token"})
+	response := httptest.NewRecorder()
+
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("session status = %d, want %d", response.Code, http.StatusOK)
+	}
+	if !strings.Contains(response.Body.String(), `"email":"manager@example.com"`) {
+		t.Fatalf("session response does not include manager identity: %s", response.Body.String())
+	}
+}
+
+func TestManagerCanChangePasswordAndRevokeAllSessions(t *testing.T) {
+	authenticator := &managerSecurityStub{managerAuthStub: managerAuthStub{validToken: "session-token"}}
+	router := httpapi.NewRouter(httpapi.Dependencies{ManagerAuth: authenticator})
+	password := httptest.NewRequest(http.MethodPut, "/api/v1/manager/password", strings.NewReader(`{"currentPassword":"valid-password","newPassword":"a different secure password"}`))
+	password.Header.Set("Content-Type", "application/json")
+	password.AddCookie(&http.Cookie{Name: "openhaus_manager_session", Value: "session-token"})
+	passwordResponse := httptest.NewRecorder()
+
+	router.ServeHTTP(passwordResponse, password)
+
+	if passwordResponse.Code != http.StatusNoContent || authenticator.changedUser != "manager-1" || authenticator.newPassword != "a different secure password" {
+		t.Fatalf("password response = %d, changed user = %q", passwordResponse.Code, authenticator.changedUser)
+	}
+	if cookies := passwordResponse.Result().Cookies(); len(cookies) != 1 || cookies[0].MaxAge != -1 {
+		t.Fatalf("password change did not clear session cookie: %#v", cookies)
+	}
+
+	sessions := httptest.NewRequest(http.MethodDelete, "/api/v1/manager/sessions", nil)
+	sessions.AddCookie(&http.Cookie{Name: "openhaus_manager_session", Value: "session-token"})
+	sessionsResponse := httptest.NewRecorder()
+	router.ServeHTTP(sessionsResponse, sessions)
+	if sessionsResponse.Code != http.StatusNoContent || authenticator.revokedUser != "manager-1" {
+		t.Fatalf("session response = %d, revoked user = %q", sessionsResponse.Code, authenticator.revokedUser)
+	}
+}
+
+func TestManagerSecurityRejectsUnauthenticatedAndCrossSiteRequests(t *testing.T) {
+	authenticator := &managerSecurityStub{managerAuthStub: managerAuthStub{validToken: "session-token"}}
+	router := httpapi.NewRouter(httpapi.Dependencies{ManagerAuth: authenticator})
+	unauthenticated := httptest.NewRequest(http.MethodDelete, "/api/v1/manager/sessions", nil)
+	unauthenticatedResponse := httptest.NewRecorder()
+	router.ServeHTTP(unauthenticatedResponse, unauthenticated)
+	if unauthenticatedResponse.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated status = %d", unauthenticatedResponse.Code)
+	}
+
+	crossSite := httptest.NewRequest(http.MethodDelete, "/api/v1/manager/sessions", nil)
+	crossSite.Header.Set("Sec-Fetch-Site", "cross-site")
+	crossSite.AddCookie(&http.Cookie{Name: "openhaus_manager_session", Value: "session-token"})
+	crossSiteResponse := httptest.NewRecorder()
+	router.ServeHTTP(crossSiteResponse, crossSite)
+	if crossSiteResponse.Code != http.StatusForbidden {
+		t.Fatalf("cross-site status = %d", crossSiteResponse.Code)
+	}
+}
+
 func TestManagerPropertyMutationsRequireAuthentication(t *testing.T) {
 	router := httpapi.NewRouter(httpapi.Dependencies{ManagerAuth: managerAuthStub{validToken: "session-token"}, ManagerPropertyWriter: &managerPropertyWriterStub{}})
 	for _, request := range []*http.Request{
@@ -200,6 +316,41 @@ func TestManagerCanCreateDraftAndPublishIt(t *testing.T) {
 	router.ServeHTTP(updateResponse, update)
 	if updateResponse.Code != http.StatusOK || writer.updatedID != "new-property" || writer.updated.Status != "published" {
 		t.Fatalf("update status = %d, id = %q, lifecycle = %q", updateResponse.Code, writer.updatedID, writer.updated.Status)
+	}
+}
+
+func TestManagerCanAttachValidatedKuulaTour(t *testing.T) {
+	writer := &spatialTourWriterStub{}
+	router := httpapi.NewRouter(httpapi.Dependencies{ManagerAuth: managerAuthStub{validToken: "session-token"}, SpatialTours: writer})
+	request := httptest.NewRequest(http.MethodPut, "/api/v1/manager/properties/property-1/panorama", strings.NewReader(`{"shareUrl":"https://kuula.co/share/LTPpc?fs=1","altText":"Living room 360 tour"}`))
+	request.AddCookie(&http.Cookie{Name: "openhaus_manager_session", Value: "session-token"})
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || writer.propertyID != "property-1" || writer.shareURL != "https://kuula.co/share/LTPpc?fs=1" {
+		t.Fatalf("response = %d, property = %q, URL = %q", response.Code, writer.propertyID, writer.shareURL)
+	}
+}
+
+func TestManagerCanRemovePanorama(t *testing.T) {
+	writer := &spatialTourWriterStub{}
+	router := httpapi.NewRouter(httpapi.Dependencies{ManagerAuth: managerAuthStub{validToken: "session-token"}, SpatialTours: writer})
+	request := httptest.NewRequest(http.MethodDelete, "/api/v1/manager/properties/property-1/panorama", nil)
+	request.AddCookie(&http.Cookie{Name: "openhaus_manager_session", Value: "session-token"})
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusNoContent || writer.removedID != "property-1" {
+		t.Fatalf("response = %d, removed property = %q", response.Code, writer.removedID)
+	}
+}
+
+func TestManagerPanoramaRejectsNonEmbeddableURL(t *testing.T) {
+	router := httpapi.NewRouter(httpapi.Dependencies{ManagerAuth: managerAuthStub{validToken: "session-token"}, SpatialTours: &spatialTourWriterStub{}})
+	request := httptest.NewRequest(http.MethodPut, "/api/v1/manager/properties/property-1/panorama", strings.NewReader(`{"shareUrl":"https://kuula.co/post/LTPpc","altText":"Tour"}`))
+	request.AddCookie(&http.Cookie{Name: "openhaus_manager_session", Value: "session-token"})
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), "invalid_panorama") {
+		t.Fatalf("response = %d %s", response.Code, response.Body.String())
 	}
 }
 
@@ -273,6 +424,9 @@ func TestListProperties(t *testing.T) {
 
 	if response.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", response.Code, http.StatusOK)
+	}
+	if got := response.Header().Get("Cache-Control"); got != "private, no-cache" {
+		t.Fatalf("Cache-Control = %q, want private, no-cache", got)
 	}
 
 	var body struct {

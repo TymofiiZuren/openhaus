@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2000 1500" role="img" aria-labelledby="title description">
+<title id="title">OpenHaus measured residence sample floor plan</title>
+<desc id="description">A detailed reference floor plan presented inside an OpenHaus architectural drawing sheet with project title, scale, status and explanatory notes.</desc>
+<defs>
+  <pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse"><path d="M20 0H0V20" fill="none" stroke="#718b8a" stroke-width=".55" opacity=".07"/></pattern>
+  <style>.heading{fill:#202825;font:700 34px Arial,sans-serif;letter-spacing:.17em}.meta{fill:#68716d;font:15px Arial,sans-serif;letter-spacing:.1em}.data{fill:#587372;font:13px ui-monospace,monospace;letter-spacing:.08em}.note{fill:#68716d;font:13px Arial,sans-serif}.accent{fill:#bd684e}</style>
+</defs>
+<rect width="2000" height="1500" fill="#fbfaf6"/><rect width="2000" height="1500" fill="url(#grid)"/><rect x="28" y="28" width="1944" height="1444" fill="none" stroke="#cfd2cc" stroke-width="2"/>
+<text x="72" y="82" class="heading">MEASURED RESIDENCE · GENERAL ARRANGEMENT</text>
+<text x="72" y="116" class="meta">OPENHAUS REFERENCE STUDY · EXISTING GROUND FLOOR · DRAWING SCALE 1:45</text>
+<text x="1928" y="82" text-anchor="end" class="data">DRAWING / A-101</text><text x="1928" y="112" text-anchor="end" class="data">REVISION / P01</text>
+<path d="M72 144H1928" stroke="#949d98" stroke-width="1.5"/><rect x="72" y="166" width="1856" height="1235" fill="white" stroke="#949d98" stroke-width="2"/>
+<image href="measured-floor-plan-reference.png" x="76" y="170" width="1848" height="1227" preserveAspectRatio="xMidYMid meet"/>
+<rect x="72" y="1418" width="1856" height="36" fill="#202825"/>
+<text x="92" y="1442" fill="#fbfaf6" class="data">REFERENCE PLAN · DIMENSIONS SHOWN IN MILLIMETRES · VERIFY ON SITE BEFORE DESIGN OR CONSTRUCTION</text>
+<text x="1908" y="1442" text-anchor="end" fill="#dfa28f" class="data">ILLUSTRATIVE PORTFOLIO SAMPLE</text>
+<circle cx="48" cy="1429" r="5" class="accent"/><circle cx="48" cy="1409" r="5" class="accent"/><circle cx="48" cy="1389" r="5" class="accent"/>
+</svg>

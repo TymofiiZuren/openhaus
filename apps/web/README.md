@@ -1,32 +1,41 @@
-# React + TypeScript + Vite
+# OpenHaus web client
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+The React and TypeScript client serves the public property explorer, property
+and tour pages, information pages, the development buyer account, and the
+authenticated manager workspace. Route-level bundles keep manager, account,
+map, and immersive-media code out of routes that do not need them.
 
-Currently, two official plugins are available:
+## Develop locally
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+Start the API as described in the [repository README](../../README.md), then:
 
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```sh
+npm install
+npm run dev
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+Vite proxies `/api` to `http://127.0.0.1:8080` by default. Point it at another
+local API without changing source code:
+
+```sh
+OPENHAUS_API_PROXY_TARGET=http://127.0.0.1:8083 npm run dev -- --port 5177
+```
+
+Copy `.env.example` to `.env.local` and set `VITE_GOOGLE_MAPS_API_KEY` for the
+map. The key is browser-visible and must be restricted to the Maps JavaScript
+API and approved HTTP referrers. If the provider is missing or fails, the
+location list and property results remain usable and the map reports that it is
+unavailable.
+
+## Validate changes
+
+```sh
+npm test -- --run
+npm run lint
+npm run build
+```
+
+See the repository [interaction plan](../../docs/INTERACTION_MOTION_PLAN.md),
+[map plan](../../docs/MAP_IMPLEMENTATION_PLAN.md), and
+[client-account guide](../../docs/CLIENT_ACCOUNTS.md) for behavior and release
+constraints.

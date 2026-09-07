@@ -19,6 +19,7 @@ describe('Google Maps loader', () => {
     const callbackName = new URL(requestedScript?.src ?? '').searchParams.get('callback')
 
     expect(callbackName).toBe('__openHausGoogleMapsReady')
+    expect(new URL(requestedScript?.src ?? '').searchParams.has('libraries')).toBe(false)
     expect(window.google).toBeUndefined()
 
     window.google = { maps }

@@ -2,10 +2,24 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" type="image/svg+xml" sizes="any" href="/openhaus-mark.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="Explore homes for sale across Ireland with OpenHaus." />
+    <meta name="theme-color" content="#000000" />
     <title>OpenHaus — Homes across Ireland</title>
+    <script>
+      // Set the palette before rendering so a saved dark preference never flashes white.
+      (() => {
+        let saved;
+        try { saved = localStorage.getItem('openhaus-appearance'); } catch {}
+        const theme = saved === 'dark' || saved === 'light'
+          ? saved : saved === 'system'
+            ? (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+            : 'dark';
+        document.documentElement.dataset.theme = theme;
+        document.querySelector('meta[name="theme-color"]').content = theme === 'dark' ? '#000000' : '#ffffff';
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

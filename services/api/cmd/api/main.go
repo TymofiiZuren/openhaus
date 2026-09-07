@@ -5,11 +5,13 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
+	"github.com/TymofiiZuren/openhaus/services/api/internal/clientauth"
 	"github.com/TymofiiZuren/openhaus/services/api/internal/httpapi"
 	"github.com/TymofiiZuren/openhaus/services/api/internal/managerauth"
 	"github.com/TymofiiZuren/openhaus/services/api/internal/mediajob"
@@ -26,16 +28,28 @@ func main() {
 	}
 
 	startupContext, cancelStartup := context.WithTimeout(context.Background(), 10*time.Second)
-	databasePool, err := pgxpool.New(startupContext, databaseURL)
+	databasePool, err := connectDatabase(startupContext, databaseURL)
 	cancelStartup()
 	if err != nil {
-		log.Fatalf("configure database pool: %v", err)
+		log.Fatalf("connect to database: %v", err)
 	}
 	defer databasePool.Close()
 
 	propertyStore := property.NewStore(databasePool)
 	mediaJobStore := mediajob.NewStore(databasePool)
 	managerAuth := managerauth.NewService(managerauth.NewStore(databasePool))
+	var buyerAuth httpapi.ClientAuthenticator
+	clientOrigin := os.Getenv("CLIENT_ORIGIN")
+	if os.Getenv("ENABLE_CLIENT_ACCOUNTS") == "true" {
+		if os.Getenv("APP_ENV") != "development" {
+			log.Fatal("client accounts are development-only pending email verification and recovery")
+		}
+		parsed, err := url.Parse(clientOrigin)
+		if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Path != "" || parsed.RawQuery != "" || parsed.Fragment != "" || parsed.User != nil {
+			log.Fatal("CLIENT_ORIGIN must be an exact HTTP(S) origin without a path")
+		}
+		buyerAuth = clientauth.NewService(clientauth.NewStore(databasePool))
+	}
 	uploadRoot := os.Getenv("MEDIA_SOURCE_DIR")
 	if uploadRoot == "" {
 		uploadRoot = ".data/uploads"
@@ -47,6 +61,14 @@ func main() {
 	server := &http.Server{
 		Addr: serverAddress,
 		Handler: httpapi.NewRouter(httpapi.Dependencies{
+			ClientAuth:            buyerAuth,
+			ClientSavedProperties: propertyStore,
+			ClientPropertyNotes:   propertyStore,
+			ClientSavedSearches:   propertyStore,
+			ClientDataExport:      propertyStore,
+			ClientOrigin:          clientOrigin,
+			Images:                propertyStore,
+			ImageRoot:             uploadRoot + "/images",
 			Readiness:             databasePool,
 			Properties:            propertyStore,
 			Videos:                mediajob.NewUploadService(uploadRoot, mediaJobStore),
@@ -54,6 +76,7 @@ func main() {
 			ManagerAuth:           managerAuth,
 			ManagerProperties:     propertyStore,
 			ManagerPropertyWriter: propertyStore,
+			SpatialTours:          propertyStore,
 			SecureCookies:         os.Getenv("APP_ENV") == "production",
 		}),
 		ReadHeaderTimeout: 5 * time.Second,
@@ -95,4 +118,16 @@ func main() {
 	}
 
 	log.Print("API stopped")
+}
+
+func connectDatabase(ctx context.Context, databaseURL string) (*pgxpool.Pool, error) {
+	pool, err := pgxpool.New(ctx, databaseURL)
+	if err != nil {
+		return nil, err
+	}
+	if err := pool.Ping(ctx); err != nil {
+		pool.Close()
+		return nil, err
+	}
+	return pool, nil
 }

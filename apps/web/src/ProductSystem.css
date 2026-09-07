@@ -1,0 +1,400 @@
+/* OpenHaus product system: one high-contrast language across every route. */
+:root {
+  --public-header-height: 72px;
+  --ink: #0a0a0a;
+  --navy: #0a0a0a;
+  --paper: #fafafa;
+  --surface: #fff;
+  --raised-surface: #f5f5f5;
+  --control-surface: #f0f0f0;
+  --soft: #e7e7e7;
+  --tint: #fafafa;
+  --muted: #5f6368;
+  --line: #e1e1e1;
+  --line-strong: #a8a8a8;
+  --accent: #716044;
+  --yellow: #5d5d58;
+  --yellow-dark: #343431;
+  --yellow-soft: #efefec;
+  --success: #137a4b;
+  --inverse-surface: #0a0a0a;
+  --on-inverse: #fff;
+  --on-accent: #fff;
+  --header-surface: #fff;
+  --catalogue-wash: #fafafa;
+  --map-canvas: #efefec;
+  --panel-shadow: 0 20px 60px rgba(38, 32, 22, .10);
+  --font-family: 'DM Sans', sans-serif;
+  --display-font: 'DM Sans', sans-serif;
+  --radius-control: 10px;
+  --radius-panel: 16px;
+  --radius-feature: 20px;
+}
+
+:root[data-theme='dark'] {
+  --ink: #f7f7f7;
+  --navy: #f7f7f7;
+  --paper: #101010;
+  --surface: #171717;
+  --raised-surface: #1d1d1d;
+  --control-surface: #232323;
+  --soft: #303030;
+  --tint: #111;
+  --muted: #b0b0a7;
+  --line: #242424;
+  --line-strong: #525252;
+  --accent: #d5c3a2;
+  --yellow: #d8d7d2;
+  --yellow-dark: #eeeeea;
+  --yellow-soft: #242421;
+  --success: #57d49b;
+  --inverse-surface: #0a0a0a;
+  --on-inverse: #f7f7f7;
+  --on-accent: #080808;
+  --header-surface: #101010;
+  --catalogue-wash: #101010;
+  --map-canvas: #11110f;
+  --panel-shadow: 0 14px 42px rgba(0, 0, 0, .34);
+}
+
+:root body {
+  background: var(--paper);
+  color: var(--ink);
+}
+
+:root :is(h1, h2, h3, h4, .wordmark, .public-header-brand, .application-brand) {
+  font-family: var(--font-family);
+  letter-spacing: -.035em;
+}
+
+:root :is(.signature-note, .card-signature) { display: none; }
+:root .eyebrow { color: var(--accent); font-family: var(--data-font); font-weight: 500; }
+
+:root .theme-options { border-color: var(--line-strong); background: #fff; color: var(--ink); }
+:root[data-theme='dark'] .theme-options { border-color: var(--line-strong); background: #080808; }
+:root .public-side-menu { border-color: var(--line); background: var(--surface); color: var(--ink); }
+
+/* Home */
+:root .home-hero {
+  min-height: min(760px, calc(100svh - 72px));
+  isolation: isolate;
+  border-color: #2b2b28;
+  background: #000;
+  color: #fff;
+}
+:root .home-hero::before { content: ''; position: absolute; z-index: -2; inset: 0; background: url('./assets/openhaus-architectural-night-v2.webp') center / cover no-repeat; opacity: .96; }
+:root .home-hero::after { content: ''; position: absolute; z-index: -1; inset: 0; background: linear-gradient(90deg, #000 0%, rgba(0,0,0,.97) 30%, rgba(0,0,0,.64) 55%, rgba(0,0,0,.18) 100%); pointer-events: none; }
+:root .home-hero-layout { position: relative; z-index: 1; border-color: rgba(255,255,255,.16); }
+:root .home-hero-copy .eyebrow { color: var(--accent); }
+:root .home-hero-copy h1 { max-width: 11ch; color: #fff; font-size: clamp(3.25rem, 5.4vw, 5.8rem); font-weight: 600; text-wrap: balance; }
+:root .home-hero-copy > p:not(.eyebrow) { color: #c2c2bd; }
+:root .home-hero-search { border-color: rgba(255,255,255,.28); background: rgba(12,12,11,.72); color: #fff; backdrop-filter: blur(10px); }
+:root .home-hero-search input { color: #fff; }
+:root .home-hero-search input::placeholder { color: #aaa9a3; }
+:root .home-hero-search:focus-within { outline-color: var(--accent); }
+:root .home-hero-search button { border-color: var(--accent); background: var(--accent); color: var(--on-accent); }
+:root .home-hero-search button:hover { background: var(--yellow-dark); }
+:root .home-hero-actions a { color: #fff; text-decoration-color: rgba(255,255,255,.38); }
+:root .home-hero-actions button { border: 0; border-radius: var(--radius-control); background: #30312b; color: #f4f1eb; padding-inline: 20px; transition: background-color 180ms ease; }
+:root .home-hero-actions button:hover { background: #42443b; }
+:root .home-hero-desk { position: relative; z-index: 1; border-left: 1px solid rgba(255,255,255,.14); background: rgba(7,7,6,.78); color: #fff; backdrop-filter: blur(14px); }
+:root .home-hero-desk > header,
+:root .home-hero-desk dl,
+:root .home-hero-desk dl div { border-color: rgba(255,255,255,.14); }
+:root .home-hero-desk > header span,
+:root .home-hero-desk-heading,
+:root .home-hero-desk dt { color: #aaa9a3; }
+:root .home-hero-desk > header strong,
+:root .home-hero-desk > a { color: var(--accent); }
+:root .home-hero-desk dd { color: #fff; }
+:root .home-hero-facts { position: relative; z-index: 1; border-color: rgba(255,255,255,.14); background: rgba(0,0,0,.82); color: #fff; }
+:root .home-hero-facts div { border-color: rgba(255,255,255,.14); }
+:root .home-hero-facts dt { color: #9f9e99; }
+:root .home-hero-facts dd { color: #fff; }
+
+/* Location and catalogue */
+:root .location-explorer,
+:root .map-first,
+:root .location-workspace { background: var(--paper); color: var(--ink); }
+:root .property-search-bar { border-color: var(--line); background: var(--surface); }
+:root .catalogue {
+  --page: min(1680px, calc(100vw - 24px));
+  --navy: var(--ink);
+  --muted: #5f6368;
+  --line: #e1e1e1;
+  --line-strong: #a8a8a8;
+  --surface: #fff;
+  --control-surface: #f5f5f5;
+  --soft: #ededed;
+  --accent: #5d5d58;
+  --yellow: #5d5d58;
+  --yellow-dark: #343431;
+  --yellow-soft: #efefec;
+  --inverse-surface: #0a0a0a;
+  --catalogue-hover: #fafafa;
+  --catalogue-success: #137a4b;
+  background: #fff;
+}
+:root[data-theme='dark'] .catalogue {
+  --navy: #f7f7f7;
+  --ink: #f7f7f7;
+  --muted: #a4a4a4;
+  --line: #242424;
+  --line-strong: #525252;
+  --surface: #0a0a0a;
+  --control-surface: #141414;
+  --soft: #1b1b1b;
+  --accent: #d8d7d2;
+  --yellow: #d8d7d2;
+  --yellow-dark: #eeeeea;
+  --yellow-soft: #242421;
+  --inverse-surface: #0a0a0a;
+  --catalogue-hover: #101010;
+  --catalogue-success: #57d49b;
+  background: #000;
+}
+:root .catalogue-heading h2,
+:root .property-card h3 { font-family: var(--font-family); font-weight: 600; }
+:root .property-card { border-color: var(--line); border-radius: var(--radius-feature); content-visibility: auto; contain-intrinsic-size: 920px; }
+:root .property-body { background: var(--surface); }
+:root .property-card-actions > button,
+:root .property-card-actions .spatial-card-badge { border-radius: var(--radius-control); }
+:root .property-carousel-placeholder,
+:root .property-visual,
+:root .gallery-stage-plan { background: #f7f7f5; }
+:root .map-type-control,
+:root .map-navigation-control,
+:root .map-location-toggle { border-color: var(--line-strong); background: color-mix(in srgb, var(--surface) 94%, transparent); color: var(--ink); }
+:root .map-type-control button,
+:root .map-navigation-control button { color: var(--muted); }
+:root .map-type-control button:hover,
+:root .map-type-control button[aria-pressed='true'],
+:root .map-navigation-control button:hover { background: var(--accent); color: var(--on-accent); }
+:root .map-location-toggle:hover,
+:root .map-location-toggle[aria-expanded='true'] { border-color: var(--accent); background: var(--surface); color: var(--accent); }
+
+/* Property detail */
+:root .property-page {
+  --ink: #0a0a0a;
+  --navy: #0a0a0a;
+  --paper: #fff;
+  --surface: #fff;
+  --raised-surface: #fff;
+  --control-surface: #f5f5f5;
+  --soft: #ededed;
+  --muted: #5f6368;
+  --line: #e1e1e1;
+  --line-strong: #a8a8a8;
+  --accent: #5d5d58;
+  --yellow: #5d5d58;
+  --yellow-dark: #343431;
+  --yellow-soft: #efefec;
+  background: #fff;
+}
+:root[data-theme='dark'] .property-page {
+  --ink: #f7f7f7;
+  --navy: #f7f7f7;
+  --paper: #000;
+  --surface: #0a0a0a;
+  --raised-surface: #0a0a0a;
+  --control-surface: #141414;
+  --soft: #1b1b1b;
+  --muted: #a4a4a4;
+  --line: #242424;
+  --line-strong: #525252;
+  --accent: #d8d7d2;
+  --yellow: #d8d7d2;
+  --yellow-dark: #eeeeea;
+  --yellow-soft: #242421;
+  background: #000;
+}
+:root .property-chapters { border-color: var(--line); background: var(--paper); box-shadow: none; }
+:root .property-page-layout,
+:root .property-spatial-tour,
+:root .property-decision-panel { border-color: var(--line); border-radius: var(--radius-feature); box-shadow: none; }
+:root .property-page-summary h1,
+:root .property-page-message h1,
+:root .property-story h2,
+:root .property-decision-panel h2 { font-family: var(--font-family); font-weight: 600; }
+:root .property-summary-tour { color: var(--accent); }
+:root .selling-agent-monogram { border-color: var(--line); border-radius: var(--radius-control); }
+
+/* Client, information, agents, manager, status */
+:root .client-main,
+:root .information-main,
+:root .agent-main,
+:root .manager-dashboard,
+:root .application-status { color: var(--ink); }
+:root .client-panel,
+:root .information-body,
+:root .information-progress,
+:root .agent-directory-card,
+:root .agent-profile,
+:root .manager-login,
+:root .manager-property-row,
+:root .manager-editor,
+:root .manager-empty {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-panel);
+  background: var(--surface);
+  box-shadow: none;
+}
+:root :is(.client-intro h1, .client-panel h2, .information-intro h1, .information-body h2, .agent-hero h1, .agent-directory-card h2, .agent-profile h1, .agent-profile-grid h2, .manager-login h1, .manager-dashboard h1, .application-status h1) {
+  font-family: var(--font-family);
+  font-weight: 600;
+}
+:root .client-panel > button,
+:root .client-panel form > button,
+:root .information-body button,
+:root .manager-login form > button {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--on-accent);
+}
+:root .agent-monogram,
+:root .agent-monogram-large { border-radius: var(--radius-control); }
+:root .information-notice,
+:root .client-feedback { background: var(--yellow-soft); }
+:root .client-panel { border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+
+/* Field focus uses a surface change; compound controls own their focus treatment. */
+:root :is(input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']),textarea,select) {
+  border: 0 !important;
+  outline: 0 !important;
+  box-shadow: none !important;
+}
+:root :is(input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']),textarea,select):focus-visible {
+  border: 0 !important;
+  outline: 0 !important;
+  box-shadow: none !important;
+  background-color: var(--soft);
+}
+:root .auth-control { border: 0; box-shadow: none; }
+:root .auth-control:focus-within { border: 0; outline: 0; box-shadow: none; background: var(--soft); }
+:root .auth-control > input { box-shadow: none !important; }
+:root .auth-control > input:focus-visible { background: transparent; }
+
+:root .home-hero-search {
+  border: 0;
+  border-radius: 12px;
+  background: #262722;
+  box-shadow: 0 18px 46px rgba(0,0,0,.3);
+}
+:root .home-hero-search:focus-within {
+  outline: 0;
+  background: #292927;
+  box-shadow: 0 18px 46px rgba(0,0,0,.3);
+}
+:root .home-hero-search input,
+:root .home-hero-search input:focus-visible { box-shadow: none !important; background: transparent !important; }
+:root .property-search-bar input:focus-visible,
+:root .property-search-bar select:focus-visible { background: transparent; }
+:root .home-hero-search button {
+  align-self: center;
+  min-height: 50px;
+  margin: 6px;
+  border: 0;
+  border-radius: 8px;
+  background: #e8dfcf;
+  color: #25251f;
+  padding-inline: 24px;
+  transition: background-color 180ms ease;
+}
+:root .home-hero-search button:hover { background: #f4edde; color: #25251f; }
+:root :is(.client-main, .manager-main) [id] { scroll-margin-top: calc(var(--public-header-height, 72px) + 32px); }
+@media (prefers-reduced-motion: reduce) { :root .home-hero-search button { transition: none; } }
+
+:root .manager-session-action button {
+  background: color-mix(in srgb, var(--danger) 14%, var(--control-surface));
+  color: var(--danger);
+  box-shadow: none;
+}
+:root .manager-session-action button:hover,
+:root .manager-session-action button:focus-visible { background: color-mix(in srgb, var(--danger) 22%, var(--control-surface)); }
+@media (forced-colors: active) {
+  :root :is(input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']),textarea,select):focus-visible {
+    outline: 2px solid Highlight !important;
+    outline-offset: 2px !important;
+    box-shadow: none !important;
+  }
+}
+
+/* Match Lab and Area Index */
+:root .discovery-shell { background: var(--paper); color: var(--ink); }
+:root .discovery-hero,
+:root .match-card,
+:root .match-card:last-child,
+:root .area-row,
+:root .area-row:last-child,
+:root .discovery-footer { border-color: var(--line); }
+:root .discovery-kicker,
+:root .match-results > header a,
+:root .match-card-copy h2 a:hover,
+:root .area-name a,
+:root .area-readiness strong { color: var(--accent); }
+:root .discovery-hero > div:first-child > p:last-child,
+:root .match-card-copy > p,
+:root .match-card-copy ul,
+:root .match-card-facts,
+:root .area-index > header,
+:root .area-name p,
+:root .area-row dt,
+:root .area-readiness span,
+:root .discovery-footer { color: var(--muted); }
+:root .match-controls { border-color: var(--line); border-radius: var(--radius-panel); background: var(--surface); }
+:root .match-controls header,
+:root .match-controls fieldset,
+:root .match-card-signals,
+:root .area-row > dl,
+:root .area-row > dl div { border-color: var(--line); }
+:root .match-controls > label,
+:root .match-controls fieldset label,
+:root .match-controls legend,
+:root .match-card-copy h2 a,
+:root .discovery-footer > a,
+:root .discovery-footer nav a { color: var(--ink); }
+:root .match-controls select { border-color: var(--line-strong); background: var(--control-surface); color: var(--ink); }
+:root .match-method span { border-color: var(--line); border-radius: var(--radius-control); color: var(--muted); }
+:root .match-card:hover { background: var(--raised-surface); }
+:root .match-card-image { border-radius: var(--radius-control); background: var(--soft); }
+:root .match-score-track,
+:root .match-signal > div,
+:root .area-readiness > div { stroke: var(--line); background: var(--line); }
+:root .match-score-value { stroke: var(--accent); }
+:root .match-signal i,
+:root .area-readiness i { background: var(--accent); }
+
+/* Dialogs and overlays */
+:root :is(.save-search-dialog, .comparison-dialog, .property-notes-dialog, .viewing-request-dialog, .property-concierge) {
+  border-color: var(--line-strong);
+  border-radius: var(--radius-panel);
+  background: var(--surface);
+  color: var(--ink);
+}
+:root .overlay-layer { background: rgba(0, 0, 0, .74); }
+:root main { animation: openhaus-page-enter var(--motion-normal) var(--motion-ease) both; }
+:root :is(.property-card, .client-panel, .information-body, .agent-directory-card, .agent-profile, .manager-property-row, .match-card, .area-row) { transition: border-color var(--motion-fast) var(--motion-ease), background-color var(--motion-fast) var(--motion-ease), box-shadow var(--motion-normal) var(--motion-ease); }
+:root :is(.property-card, .client-panel, .information-body, .agent-directory-card, .agent-profile, .manager-property-row, .match-card, .area-row):hover { border-color: var(--line-strong); box-shadow: var(--panel-shadow); }
+
+@keyframes openhaus-page-enter { from { opacity: 0; transform: translate3d(0, 8px, 0); } to { opacity: 1; transform: none; } }
+
+@media (max-width: 1100px) {
+  :root { --public-header-height: 76px; }
+}
+
+@media (max-width: 820px) {
+  :root { --public-header-height: 68px; }
+  :root .catalogue { --page: calc(100vw - 32px); }
+  :root .home-hero { min-height: auto; }
+  :root .home-hero::before { background-position: 68% center; opacity: .62; }
+  :root .home-hero::after { background: linear-gradient(180deg, rgba(0,0,0,.9), rgba(0,0,0,.58)); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root *, :root *::before, :root *::after {
+    scroll-behavior: auto !important;
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+  }
+}

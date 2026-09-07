@@ -49,3 +49,30 @@ func (store *Store) DeleteSession(ctx context.Context, tokenHash []byte) error {
 	_, err := store.database.Exec(ctx, `DELETE FROM manager_sessions WHERE token_hash = $1`, tokenHash)
 	return err
 }
+
+func (store *Store) ChangePasswordAndDeleteSessions(ctx context.Context, userID, currentPasswordHash, newPasswordHash string) error {
+	var updated bool
+	err := store.database.QueryRow(ctx, `
+		WITH updated AS (
+			UPDATE manager_users SET password_hash = $3, updated_at = now()
+			WHERE id = $1::uuid AND password_hash = $2
+			RETURNING id
+		), deleted AS (
+			DELETE FROM manager_sessions
+			WHERE manager_user_id IN (SELECT id FROM updated)
+		)
+		SELECT EXISTS (SELECT 1 FROM updated)
+	`, userID, currentPasswordHash, newPasswordHash).Scan(&updated)
+	if err != nil {
+		return err
+	}
+	if !updated {
+		return ErrUnauthenticated
+	}
+	return nil
+}
+
+func (store *Store) DeleteUserSessions(ctx context.Context, userID string) error {
+	_, err := store.database.Exec(ctx, `DELETE FROM manager_sessions WHERE manager_user_id = $1::uuid`, userID)
+	return err
+}
