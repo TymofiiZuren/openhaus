@@ -36,8 +36,10 @@ export function MediaLab() {
   useEffect(() => {
     let active = true
     let worker: Worker | undefined
+    let workerDeadline: ReturnType<typeof setTimeout> | undefined
     const stopWorker = () => {
       active = false
+      clearTimeout(workerDeadline)
       if (!worker) return
       worker.onmessage = null
       worker.onerror = null
@@ -59,6 +61,10 @@ export function MediaLab() {
         context.drawImage(image, 0, 0, width, height)
         const pixels = context.getImageData(0, 0, width, height).data
         worker = new Worker(new URL('./mediaAnalysis.worker.ts', import.meta.url), { type: 'module' })
+        workerDeadline = setTimeout(() => {
+          if (active) setError('Image analysis timed out. Retry in an active tab or choose another image.')
+          stopWorker()
+        }, 15_000)
         worker.onmessage = (event: MessageEvent<MediaAnalysis & { error?: string }>) => {
           if (!active) return
           if (event.data.error) setError(event.data.error)

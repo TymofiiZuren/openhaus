@@ -52,7 +52,20 @@ it('retries the same photo with a fresh worker and publishes recovered measureme
   expect(screen.getByRole('link', { name: /Download analysis report/ })).toBeVisible()
   expect(workers[1].terminate).toHaveBeenCalled()
 })
-afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals() })
+afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
+
+it('times out a stalled worker and offers a fresh retry', () => {
+  vi.useFakeTimers()
+  render(<MediaLab />)
+  act(() => images[0].onload?.())
+  act(() => vi.advanceTimersByTime(15_000))
+  expect(screen.getByRole('alert')).toHaveTextContent('timed out')
+  expect(workers[0].terminate).toHaveBeenCalled()
+  fireEvent.click(screen.getByRole('button', { name: 'Retry analysis' }))
+  act(() => images[1].onload?.())
+  expect(workers[1].terminate).not.toHaveBeenCalled()
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+})
 
 it('reports unreadable worker responses and releases the failed worker', () => {
   render(<MediaLab />)

@@ -4,6 +4,19 @@ Current working stage (2026-09-08): advanced demonstration / pre-beta, not appro
 
 Latest focused review: signed-in account navigation no longer uses signed-out copy. Media Lab has bounded local analysis and tested distribution algorithms, and the server has upload sanitisation, orientation correction, thumbnails and atomic video publication. These are separate verified slices, not an end-to-end launch audit. Priority gates remain verified email/recovery, worker leases and crash recovery with idempotent completion, delivery-backed notifications/enquiries, backup restoration and retention procedures, and supported-device performance/accessibility testing. The map bundle remains large. Do not imply recent source changes have been deployed merely because tests and builds pass.
 
+## September 8 checkpoint and remaining launch gates
+
+The accumulated map recovery, account presentation, image derivatives and Media Lab work was committed locally as `750ae6c`. It was not pushed or deployed. Validation included the full frontend suite (342 tests at that checkpoint), build/lint, `go test ./...`, `go vet ./...`, race checks for `internal/mediajob` and `internal/httpapi`, and the real FFmpeg encoding-boundary test with small, portrait, 4K, odd-sized and anamorphic fixtures. Existing map bundle and fast-refresh warnings remain. `TEST_DATABASE_URL` was not configured, so this checkpoint does not establish database integration readiness.
+
+Code-backed blockers remain:
+
+- `services/api/cmd/api/main.go` refuses enabled buyer accounts outside development pending email verification and recovery. Keep this gate; do not bypass it to launch.
+- `services/api/internal/mediajob/store.go` claims only pending jobs. A worker crash after claiming can leave a processing job stranded. Leases, reclaim rules and idempotent completion need a coordinated schema/worker design and failure-injection tests.
+- Saved-search delivery and real viewing/enquiry delivery remain unfinished product integrations, not demonstrated by persistence alone.
+- Backup restoration, retention enforcement, production security/accessibility checks and supported-device performance still require evidence before public launch.
+
+The next consequential backend increment should be crash-safe media-job recovery, followed by verified account recovery and delivery-backed workflows. These require explicit design decisions; no production infrastructure or external service has been provisioned by this checkpoint.
+
 ## Delivered foundations
 
 - County/local-area discovery, property pages and map links.
