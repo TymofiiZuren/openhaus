@@ -30,7 +30,14 @@ type GooglePropertyMapProps = {
   onSelectProperty: (property: Property) => void
   onDismissProperty: () => void
 }
-export function GooglePropertyMap({ properties, selectedPropertyID, selectedCounty, selectedArea, cameraRequestKey = 0, areas, availableCounties, onSelectCounty, onSelectArea, onSelectProperty, onDismissProperty }: GooglePropertyMapProps) {
+export function GooglePropertyMap(props: GooglePropertyMapProps) {
+  const [attempt, setAttempt] = useState(0)
+  // Restart only the provider session; the parent retains search and selection.
+  // Remounting also runs the session's listener and overlay cleanup.
+  return <GoogleMapSession key={attempt} {...props} onRetry={() => setAttempt(value => value + 1)} />
+}
+
+function GoogleMapSession({ properties, selectedPropertyID, selectedCounty, selectedArea, cameraRequestKey = 0, areas, availableCounties, onSelectCounty, onSelectArea, onSelectProperty, onDismissProperty, onRetry }: GooglePropertyMapProps & { onRetry: () => void }) {
   const container = useRef<HTMLDivElement>(null)
   const map = useRef<MapInstance | undefined>(undefined)
   const markers = useRef<MapMarker[]>([])
@@ -235,9 +242,9 @@ export function GooglePropertyMap({ properties, selectedPropertyID, selectedCoun
 
   if (!apiKey || status === 'error') {
     return (
-      <div className="map-unavailable" role="status">
+      <div className="map-unavailable" role={status === 'error' ? 'alert' : 'status'}>
         <svg viewBox="0 0 48 48" aria-hidden="true"><path d="m7 12 11-5 12 5 11-5v29l-11 5-12-5-11 5zM18 7v29m12-24v29" /></svg>
-        <div><strong>Map is not available.</strong><p>Use Choose location to browse every available county and local area.</p></div>
+        <div className="map-unavailable-content"><strong>Map is not available.</strong><p>Use Choose location to browse every available county and local area.</p>{apiKey && <button type="button" onClick={onRetry}>Retry map</button>}</div>
       </div>
     )
   }

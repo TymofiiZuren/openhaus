@@ -17,6 +17,118 @@ it('preserves an area deep link through a failed geometry load and explicit retr
   expect(load).toHaveBeenCalledTimes(2)
 })
 
+it('preserves the map layout box while returning to all Ireland loads geometry', async () => {
+  window.history.replaceState({}, '', '/?county=Dublin#explore')
+  mockResponse({ properties: [property] })
+  render(<App />)
+  const filters = await screen.findByRole('search', { name: 'Search and filter homes' })
+  await waitFor(() => expect(filters.closest('[hidden]')).toBeNull())
+  const geometry = await import('./administrativeAreas')
+  vi.spyOn(geometry, 'loadAreasForCounty').mockRejectedValueOnce(new Error('offline'))
+  fireEvent.click(screen.getByRole('button', { name: 'All Ireland' }))
+  await screen.findByRole('button', { name: 'Retry map detail' })
+  expect(filters.closest('[hidden]')).toBeNull()
+  expect(filters.closest('[aria-hidden="true"]')).toBeNull()
+  expect(screen.getByRole('heading', { name: 'Homes in Dublin' })).toBeVisible()
+  expect(screen.getByText(/Showing the previous area/)).toBeVisible()
+})
+
+it('keeps the last loaded county visible until the next county is ready', async () => {
+  window.history.replaceState({}, '', '/?county=Dublin#explore')
+  mockResponse({ properties: [property, { ...property, id: 'cork', county: 'Cork', city: 'Cork', longitude: -8.4932, latitude: 51.9045 }] })
+  render(<App />)
+  const workspace = await screen.findByRole('region', { name: 'Explore homes by location' })
+  await waitFor(() => expect(workspace.closest('[aria-hidden="true"]')).toBeNull())
+  const geometry = await import('./administrativeAreas')
+  const original = geometry.loadAreasForCounty
+  let finish!: () => void
+  vi.spyOn(geometry, 'loadAreasForCounty').mockImplementationOnce(() => new Promise<void>(resolve => { finish = resolve }))
+  act(() => {
+    window.history.pushState({}, '', '/?county=Cork#explore')
+    window.dispatchEvent(new PopStateEvent('popstate'))
+  })
+  await waitFor(() => expect(finish).toBeDefined())
+  expect(within(workspace).getByRole('heading', { name: 'Homes in Dublin' })).toBeVisible()
+  expect(workspace.closest('[aria-hidden="true"]')).toBeNull()
+  await act(async () => { await original('Cork'); finish() })
+  expect(within(workspace).getByRole('heading', { name: 'Homes in Cork' })).toBeVisible()
+  expect(screen.queryByText(/Showing the previous area/)).not.toBeInTheDocument()
+})
+
+it('returns to a previously loaded county without a transitional loading message', async () => {
+  window.history.replaceState({}, '', '/?county=Dublin#explore')
+  mockResponse({ properties: [property, { ...property, id: 'cork', county: 'Cork', city: 'Cork', longitude: -8.4932, latitude: 51.9045 }] })
+  render(<App />)
+  const workspace = await screen.findByRole('region', { name: 'Explore homes by location' })
+  await waitFor(() => expect(workspace.closest('[aria-hidden="true"]')).toBeNull())
+  act(() => {
+    window.history.pushState({}, '', '/?county=Cork#explore')
+    window.dispatchEvent(new PopStateEvent('popstate'))
+  })
+  await within(workspace).findByRole('heading', { name: 'Homes in Cork' })
+  const geometry = await import('./administrativeAreas')
+  const load = vi.spyOn(geometry, 'loadAreasForCounty')
+  act(() => {
+    window.history.pushState({}, '', '/?county=Dublin#explore')
+    window.dispatchEvent(new PopStateEvent('popstate'))
+  })
+  expect(within(workspace).getByRole('heading', { name: 'Homes in Dublin' })).toBeVisible()
+  expect(screen.queryByText(/Showing the previous area/)).not.toBeInTheDocument()
+  expect(load).not.toHaveBeenCalled()
+})
+
+it('ignores a late county failure after returning to a cached county', async () => {
+  window.history.replaceState({}, '', '/?county=Dublin#explore')
+  mockResponse({ properties: [property, { ...property, id: 'cork', county: 'Cork', city: 'Cork', longitude: -8.4932, latitude: 51.9045 }] })
+  render(<App />)
+  const workspace = await screen.findByRole('region', { name: 'Explore homes by location' })
+  await waitFor(() => expect(workspace.closest('[aria-hidden="true"]')).toBeNull())
+  const geometry = await import('./administrativeAreas')
+  let fail!: (error: Error) => void
+  vi.spyOn(geometry, 'loadAreasForCounty').mockImplementationOnce(() => new Promise<void>((_, reject) => { fail = reject }))
+  act(() => {
+    window.history.pushState({}, '', '/?county=Cork#explore')
+    window.dispatchEvent(new PopStateEvent('popstate'))
+  })
+  await waitFor(() => expect(fail).toBeDefined())
+  expect(screen.getByText(/Showing the previous area/)).toBeVisible()
+  act(() => {
+    window.history.pushState({}, '', '/?county=Dublin#explore')
+    window.dispatchEvent(new PopStateEvent('popstate'))
+  })
+  await act(async () => { fail(new Error('offline')) })
+  expect(within(workspace).getByRole('heading', { name: 'Homes in Dublin' })).toBeVisible()
+  expect(screen.queryByRole('button', { name: 'Retry map detail' })).not.toBeInTheDocument()
+  expect(screen.queryByText(/Showing the previous area/)).not.toBeInTheDocument()
+  expect(workspace.closest('[aria-busy="true"]')).toBeNull()
+})
+
+it('caches a recovered county after a successful retry', async () => {
+  window.history.replaceState({}, '', '/?county=Dublin#explore')
+  mockResponse({ properties: [property, { ...property, id: 'cork', county: 'Cork', city: 'Cork', longitude: -8.4932, latitude: 51.9045 }] })
+  render(<App />)
+  const workspace = await screen.findByRole('region', { name: 'Explore homes by location' })
+  await waitFor(() => expect(workspace.closest('[aria-hidden="true"]')).toBeNull())
+  const geometry = await import('./administrativeAreas')
+  const load = vi.spyOn(geometry, 'loadAreasForCounty').mockRejectedValueOnce(new Error('offline'))
+  act(() => {
+    window.history.pushState({}, '', '/?county=Cork#explore')
+    window.dispatchEvent(new PopStateEvent('popstate'))
+  })
+  await userEvent.click(await screen.findByRole('button', { name: 'Retry map detail' }))
+  await within(workspace).findByRole('heading', { name: 'Homes in Cork' })
+  expect(load).toHaveBeenCalledTimes(2)
+  for (const county of ['Dublin', 'Cork']) {
+    act(() => {
+      window.history.pushState({}, '', `/?county=${county}#explore`)
+      window.dispatchEvent(new PopStateEvent('popstate'))
+    })
+    expect(within(workspace).getByRole('heading', { name: `Homes in ${county}` })).toBeVisible()
+    expect(screen.queryByText(/Showing the previous area/)).not.toBeInTheDocument()
+  }
+  expect(load).toHaveBeenCalledTimes(2)
+})
+
 it('ignores a late geometry response after navigating to another county', async () => {
   const geometry = await import('./administrativeAreas')
   const original = geometry.loadAreasForCounty

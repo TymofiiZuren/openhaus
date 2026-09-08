@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
@@ -104,6 +105,62 @@ func TestAcceptUploadRejectsNonVideo(t *testing.T) {
 	_, err := service.AcceptUpload(context.Background(), "property-1", "notes.txt", bytes.NewBufferString("not a video"))
 	if !errors.Is(err, mediajob.ErrUnsupportedMedia) {
 		t.Fatalf("error = %v, want ErrUnsupportedMedia", err)
+	}
+}
+
+func TestAcceptUploadRejectsEmptyAndTruncatedHeadersWithoutQueueing(t *testing.T) {
+	for _, payload := range [][]byte{nil, []byte("ftyp"), []byte("\x00\x00\x00\x18ftyp")} {
+		root := t.TempDir()
+		creator := &creatorStub{}
+		_, err := mediajob.NewUploadService(root, creator).AcceptUpload(context.Background(), "property-1", "tour.mp4", bytes.NewReader(payload))
+		if !errors.Is(err, mediajob.ErrUnsupportedMedia) {
+			t.Fatalf("error = %v; want unsupported media", err)
+		}
+		if creator.job.ID != "" {
+			t.Fatal("invalid upload created a job")
+		}
+		entries, err := os.ReadDir(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(entries) != 0 {
+			t.Fatal("invalid upload retained files")
+		}
+	}
+}
+
+type brokenUploadReader struct{ err error }
+
+func (reader brokenUploadReader) Read([]byte) (int, error) { return 0, reader.err }
+
+func TestAcceptUploadPreservesReadFailureAndRemovesPartialFile(t *testing.T) {
+	for _, bodyFailure := range []bool{false, true} {
+		root := t.TempDir()
+		creator := &creatorStub{}
+		failure := errors.New("transport interrupted")
+		var source io.Reader = brokenUploadReader{failure}
+		if bodyFailure {
+			header := make([]byte, 512)
+			copy(header, []byte("\x00\x00\x00\x18ftypqt  "))
+			source = io.MultiReader(bytes.NewReader(header), source)
+		}
+		_, err := mediajob.NewUploadService(root, creator).AcceptUpload(context.Background(), "property-1", "tour.mov", source)
+		if !errors.Is(err, failure) {
+			t.Fatalf("error = %v; want original read failure", err)
+		}
+		if errors.Is(err, mediajob.ErrUnsupportedMedia) {
+			t.Fatal("transport failure misreported as invalid media")
+		}
+		if creator.job.ID != "" {
+			t.Fatal("interrupted upload created a job")
+		}
+		entries, err := os.ReadDir(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(entries) != 0 {
+			t.Fatal("interrupted upload retained files")
+		}
 	}
 }
 

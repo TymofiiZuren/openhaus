@@ -62,6 +62,9 @@ func (service *UploadService) AcceptUpload(ctx context.Context, propertyID, file
 
 	header := make([]byte, 512)
 	read, err := io.ReadFull(source, header)
+	if errors.Is(err, io.EOF) {
+		return Job{}, ErrUnsupportedMedia
+	}
 	if err != nil && !errors.Is(err, io.ErrUnexpectedEOF) {
 		return Job{}, fmt.Errorf("read media header: %w", err)
 	}

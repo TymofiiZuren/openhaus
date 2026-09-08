@@ -1,3 +1,5 @@
+import { histogramStatistics } from './histogramStatistics'
+
 // Bound canvas allocation before decoding pixels or transferring a worker buffer.
 // Preserve aspect ratio except for a minimum 3px axis required by Sobel's kernel.
 export function analysisDimensions(sourceWidth: number, sourceHeight: number) {
@@ -15,8 +17,12 @@ export function analysePixels(rgba: Uint8ClampedArray, width: number, height: nu
   const luminance = new Float32Array(count)
   const edges = new Uint8ClampedArray(count * 4)
   const histogram = Array<number>(32).fill(0)
+  const channels = { red: Array<number>(32).fill(0), green: Array<number>(32).fill(0), blue: Array<number>(32).fill(0) }
   let total = 0, shadows = 0, highlights = 0, edgeTotal = 0
   for (let i = 0; i < count; i++) {
+    channels.red[rgba[i * 4] >> 3]++
+    channels.green[rgba[i * 4 + 1] >> 3]++
+    channels.blue[rgba[i * 4 + 2] >> 3]++
     // Gamma-encoded Rec.709 luma approximation, not physical luminance.
     const value = Math.round(.2126 * rgba[i * 4] + .7152 * rgba[i * 4 + 1] + .0722 * rgba[i * 4 + 2])
     luminance[i] = value
@@ -34,22 +40,30 @@ export function analysePixels(rgba: Uint8ClampedArray, width: number, height: nu
     edgeTotal += strength
     edges[i*4] = edges[i*4+1] = edges[i*4+2] = strength
   }
-  return { histogram, mean: total / count, shadows: shadows / count * 100, highlights: highlights / count * 100, edgeMean: edgeTotal / ((width-2)*(height-2)), edges, width, height }
+  return { histogram, channels, mean: total / count, shadows: shadows / count * 100, highlights: highlights / count * 100, edgeMean: edgeTotal / ((width-2)*(height-2)), edges, width, height }
 }
 export type MediaAnalysis = ReturnType<typeof analysePixels> & { elapsedMs: number }
 
-export function analysisReport(result: MediaAnalysis, source: string) {
+export function analysisReport(result: MediaAnalysis, source: string, kind: 'sample' | 'local' = 'sample') {
   return {
     schemaVersion: 1,
     algorithm: 'rec709-gamma-luma-sobel-v1',
     source,
     width: result.width, height: result.height,
     histogram: result.histogram,
+    rgbHistograms: result.channels,
+    distributionStatistics: {
+      algorithm: 'binned-shannon-otsu-32-v1',
+      luma: histogramStatistics(result.histogram),
+      red: histogramStatistics(result.channels.red),
+      green: histogramStatistics(result.channels.green),
+      blue: histogramStatistics(result.channels.blue),
+    },
     meanLuma: result.mean,
     nearBlackPercent: result.shadows,
     nearWhitePercent: result.highlights,
     meanSobelMagnitude: result.edgeMean,
     workerComputeMs: result.elapsedMs,
-    limitations: 'Sampled image; compute time excludes decode and transfer. Not a calibrated quality score. AI-generated fictional sample.',
+    limitations: `Sampled image; compute time excludes decode and transfer. Not a calibrated quality score. ${kind === 'local' ? 'Local image; transparency composited against black. Filename and embedded metadata omitted.' : 'AI-generated fictional sample.'}`,
   }
 }

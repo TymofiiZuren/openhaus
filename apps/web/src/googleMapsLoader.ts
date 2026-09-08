@@ -58,23 +58,31 @@ export function loadGoogleMaps(apiKey: string): Promise<GoogleMaps> {
     const script = document.createElement('script')
     const callbackName = '__openHausGoogleMapsReady'
     const previousAuthFailure = window.gm_authFailure
+    let settled = false
+    const deadline = window.setTimeout(() => fail(new Error('Google Maps loading timed out')), 15_000)
     const cleanup = () => {
+      window.clearTimeout(deadline)
+      script.onerror = null
       delete window.__openHausGoogleMapsReady
       if (previousAuthFailure) window.gm_authFailure = previousAuthFailure
       else delete window.gm_authFailure
     }
     const fail = (error: Error) => {
+      if (settled) return
+      settled = true
       cleanup()
       script.remove()
       reject(error)
     }
 
     window.__openHausGoogleMapsReady = () => {
+      if (settled) return
       if (!window.google?.maps) {
         fail(new Error('Google Maps callback ran without the Maps API'))
         return
       }
       const maps = window.google.maps
+      settled = true
       cleanup()
       resolve(maps)
     }

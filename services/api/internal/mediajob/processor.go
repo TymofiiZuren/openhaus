@@ -29,29 +29,54 @@ func NewProcessor(queue Queue, ffmpegPath, outputRoot, publicPrefix string) *Pro
 }
 
 func (processor *Processor) Run(ctx context.Context) error {
+	if ctx.Err() != nil {
+		return nil
+	}
 	if err := os.MkdirAll(processor.outputRoot, 0o750); err != nil {
 		return err
 	}
-	ticker := time.NewTicker(time.Second)
-	defer ticker.Stop()
+	delay := time.Second
 	for {
-		err := processor.ProcessNext(ctx)
-		if err != nil && !errors.Is(err, ErrNotFound) {
-			log.Printf("process media job: %v", err)
+		if ctx.Err() != nil {
+			return nil
 		}
+		err := processor.ProcessNext(ctx)
+		if ctx.Err() != nil {
+			return nil
+		}
+		failed := err != nil && !errors.Is(err, ErrNotFound)
+		if failed {
+			log.Printf("process media job: %v", err)
+		} else {
+			delay = time.Second
+		}
+		// Wait after the attempt ends; a ticker can leave an immediate tick queued
+		// behind a long encode. This only delays polling, never replays a job.
+		timer := time.NewTimer(delay)
 		select {
 		case <-ctx.Done():
+			timer.Stop()
 			return nil
-		case <-ticker.C:
+		case <-timer.C:
+		}
+		if failed {
+			delay = min(delay*2, 30*time.Second)
 		}
 	}
 }
 
 func (processor *Processor) ProcessNext(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if err := os.MkdirAll(processor.outputRoot, 0o750); err != nil {
 		return fmt.Errorf("create media output directory: %w", err)
 	}
-	job, err := processor.queue.ClaimNext(ctx)
+	// Bound queue acquisition separately from the much longer encoding deadline.
+	// An uncertain claim must not trigger a failure transition or source cleanup.
+	claimCtx, cancelClaim := context.WithTimeout(ctx, 5*time.Second)
+	job, err := processor.queue.ClaimNext(claimCtx)
+	cancelClaim()
 	if err != nil {
 		return err
 	}

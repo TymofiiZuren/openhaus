@@ -90,8 +90,11 @@ function App() {
   const [conciergeAnchor, setConciergeAnchor] = useState<HTMLElement | null>(null)
   const [areaAttempt, setAreaAttempt] = useState(0)
   const [areaLoad, setAreaLoad] = useState<{ county: string | null; attempt: number; tools?: AreaTools; failed?: boolean }>()
+  const [readyAreaTools, setReadyAreaTools] = useState<ReadonlyMap<string, AreaTools>>(() => new Map())
+  const areaCacheKey = selectedCounty?.toLocaleLowerCase() ?? ''
+  const [settledMapLocation, setSettledMapLocation] = useState<{ county: string | null; area?: string }>()
   const currentAreaLoad = areaLoad?.county === selectedCounty && areaLoad.attempt === areaAttempt ? areaLoad : undefined
-  const areaTools = currentAreaLoad?.tools
+  const areaTools = currentAreaLoad?.tools ?? readyAreaTools.get(areaCacheKey)
   const [mapReady, setMapReady] = useState(() => window.location.hash === '#explore' || typeof IntersectionObserver === 'undefined')
   const mapEntry = useRef<HTMLDivElement>(null)
   const deferredPropertyQuery = useDeferredValue(propertyQuery)
@@ -129,12 +132,23 @@ function App() {
   useEffect(() => {
     if (!mapReady && !selectedArea) return
     let active = true
-    import('./administrativeAreas')
+    const cached = readyAreaTools.get(areaCacheKey)
+    const loading = cached ? Promise.resolve(cached) : import('./administrativeAreas')
       .then(async module => { await module.loadAreasForCounty(selectedCounty); return module })
-      .then(tools => { if (active) setAreaLoad({ county: selectedCounty, attempt: areaAttempt, tools }) })
+    loading
+      .then(tools => {
+        if (!active) return
+        setAreaLoad({ county: selectedCounty, attempt: areaAttempt, tools })
+        setSettledMapLocation({ county: selectedCounty, area: selectedArea })
+        // Store readiness only; the module owns decoded geometry and shared requests.
+        // Do not grow this page cache with arbitrary county strings from URLs.
+        if (!cached && (!selectedCounty || tools.areasForCounty(selectedCounty).length > 0)) {
+          setReadyAreaTools(previous => new Map(previous).set(areaCacheKey, tools))
+        }
+      })
       .catch(() => { if (active) setAreaLoad({ county: selectedCounty, attempt: areaAttempt, failed: true }) })
     return () => { active = false }
-  }, [mapReady, selectedCounty, selectedArea, areaAttempt])
+  }, [mapReady, selectedCounty, selectedArea, areaAttempt, areaCacheKey, readyAreaTools])
 
   useEffect(() => {
     if (mapReady || state.status !== 'success' || state.properties.length === 0 || !mapEntry.current) return
@@ -270,16 +284,17 @@ function App() {
         <div id="explore" className="map-first" ref={mapEntry}>
           {state.status === 'success' && state.properties.length > 0 && (mapReady ? (
             <>
-            {!areaTools && <div className="map-module-loading" role={currentAreaLoad?.failed ? 'alert' : 'status'}>
+            {!areaTools && <div className={settledMapLocation ? 'map-transition-status' : 'map-module-loading'} role={currentAreaLoad?.failed ? 'alert' : 'status'}>
               {currentAreaLoad?.failed ? <>Local map detail could not load. <button type="button" onClick={() => setAreaAttempt(value => value + 1)}>Retry map detail</button></> : 'Preparing local map detail…'}
+              {settledMapLocation && <span>Showing the previous area until {selectedCounty ?? 'All Ireland'} is ready.</span>}
             </div>}
-            <div hidden={!areaTools}>
+            <div className="map-geometry-slot" data-loading={!areaTools && !settledMapLocation} aria-hidden={!areaTools && !settledMapLocation} aria-busy={!areaTools}>
             <Suspense fallback={<div className="map-module-loading" role="status">Preparing the property map…</div>}>
             <PropertyMap
               key={requestedMapPropertyID ?? 'property-map'}
               properties={filteredProperties}
-              selectedCounty={areaTools ? effectiveSelectedCounty : null}
-              selectedArea={effectiveSelectedArea}
+              selectedCounty={areaTools ? effectiveSelectedCounty : settledMapLocation?.county ?? null}
+              selectedArea={areaTools ? effectiveSelectedArea : settledMapLocation?.area}
               propertyQuery={propertyQuery}
               minimumBedrooms={minimumBedrooms}
               propertyType={propertyType}

@@ -8,7 +8,7 @@ import (
 	"errors"
 	"github.com/TymofiiZuren/openhaus/services/api/internal/property"
 	"image"
-	_ "image/jpeg"
+	"image/jpeg"
 	"image/png"
 	"io"
 	"net/http"
@@ -55,18 +55,48 @@ func updateImageDescription(store ImageStore) http.HandlerFunc {
 	}
 }
 
-func sanitizeImage(data []byte) ([]byte, error) {
+type sanitizedImage struct {
+	data      []byte
+	thumbnail []byte
+	extension string
+}
+
+func sanitizeImage(data []byte) (sanitizedImage, error) {
 	config, format, err := image.DecodeConfig(bytes.NewReader(data))
 	if err != nil || (format != "jpeg" && format != "png") || config.Width <= 0 || config.Height <= 0 || int64(config.Width)*int64(config.Height) > 24000000 {
-		return nil, errors.New("invalid image")
+		return sanitizedImage{}, errors.New("invalid image")
 	}
 	decoded, _, err := image.Decode(bytes.NewReader(data))
 	if err != nil {
-		return nil, err
+		return sanitizedImage{}, err
 	}
 	var clean bytes.Buffer
-	err = png.Encode(&clean, decoded)
-	return clean.Bytes(), err
+	extension := ".png"
+	if format == "jpeg" {
+		extension = ".jpg"
+		decoded = orientImage(decoded, jpegOrientation(data))
+		err = jpeg.Encode(&clean, decoded, &jpeg.Options{Quality: 90})
+	} else {
+		err = png.Encode(&clean, decoded)
+	}
+	if err != nil {
+		return sanitizedImage{}, err
+	}
+	result := sanitizedImage{data: clean.Bytes(), extension: extension}
+	preview := thumbnailImage(decoded)
+	if preview != decoded {
+		var thumbnail bytes.Buffer
+		if format == "jpeg" {
+			err = jpeg.Encode(&thumbnail, preview, &jpeg.Options{Quality: 85})
+		} else {
+			err = png.Encode(&thumbnail, preview)
+		}
+		if err != nil {
+			return sanitizedImage{}, err
+		}
+		result.thumbnail = thumbnail.Bytes()
+	}
+	return result, nil
 }
 
 func uploadImage(store ImageStore, root string) http.HandlerFunc {
@@ -107,22 +137,29 @@ func uploadImage(store ImageStore, root string) http.HandlerFunc {
 			writeError(w, 415, "invalid_image", "Use a valid JPEG or PNG, up to 24 megapixels")
 			return
 		}
-		name := rand.Text() + ".png"
+		name := rand.Text() + clean.extension
 		url := "/api/v1/property-images/" + name
 		path := filepath.Join(root, name)
+		thumbnailPath := filepath.Join(root, strings.TrimSuffix(name, clean.extension)+".thumb"+clean.extension)
+		attached := false
+		defer func() {
+			if !attached {
+				_ = os.Remove(path)
+				if len(clean.thumbnail) > 0 {
+					_ = os.Remove(thumbnailPath)
+				}
+			}
+		}()
 		if err = os.MkdirAll(root, 0700); err == nil {
-			err = os.WriteFile(path, clean, 0600)
+			err = os.WriteFile(path, clean.data, 0600)
+		}
+		if err == nil && len(clean.thumbnail) > 0 {
+			err = os.WriteFile(thumbnailPath, clean.thumbnail, 0600)
 		}
 		if err != nil {
 			writeError(w, 500, "storage_failed", "Could not save image")
 			return
 		}
-		attached := false
-		defer func() {
-			if !attached {
-				_ = os.Remove(path)
-			}
-		}()
 		media, err := store.AddImage(r.Context(), r.PathValue("propertyID"), kind, url, description)
 		if err != nil {
 			writeError(w, 400, "save_failed", "Could not attach image to this property")
@@ -155,7 +192,7 @@ func orderImages(store ImageStore) http.HandlerFunc {
 	}
 }
 
-var imageName = regexp.MustCompile(`^[A-Za-z0-9]+\.png$`)
+var imageName = regexp.MustCompile(`^[A-Za-z0-9]+\.(png|jpg)$`)
 
 func serveImage(store ImageStore, root string, manager bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -173,6 +210,22 @@ func serveImage(store ImageStore, root string, manager bool) http.HandlerFunc {
 		}
 		w.Header().Set("Cache-Control", "private, no-store")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
-		http.ServeFile(w, r, filepath.Join(root, name))
+		path := filepath.Join(root, name)
+		switch r.URL.Query().Get("size") {
+		case "":
+		case "thumbnail":
+			extension := filepath.Ext(name)
+			preview := filepath.Join(root, strings.TrimSuffix(name, extension)+".thumb"+extension)
+			if info, err := os.Stat(preview); err == nil && info.Mode().IsRegular() {
+				path = preview
+			} else if err == nil || !os.IsNotExist(err) {
+				writeError(w, 500, "storage_failed", "Could not read image preview")
+				return
+			}
+		default:
+			writeError(w, 400, "invalid_size", "Use size=thumbnail or omit size for the full image")
+			return
+		}
+		http.ServeFile(w, r, path)
 	}
 }

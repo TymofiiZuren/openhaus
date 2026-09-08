@@ -72,6 +72,43 @@ func (creator *uploadCreator) Create(context.Context, mediajob.Job) error {
 	return nil
 }
 
+func TestEmptyVideoUploadIsUnsupportedRatherThanServerFailure(t *testing.T) {
+	buffer := &bytes.Buffer{}
+	writer := multipart.NewWriter(buffer)
+	if _, err := writer.CreateFormFile("video", "empty.mp4"); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	creator := &uploadCreator{}
+	request := managerRequest(http.MethodPost, "/api/v1/manager/properties/property-1/videos", buffer)
+	request.Header.Set("Content-Type", writer.FormDataContentType())
+	response := httptest.NewRecorder()
+	authenticatedMediaRouter(mediajob.NewUploadService(root, creator), jobGetterStub{}).ServeHTTP(response, request)
+	if response.Code != http.StatusUnsupportedMediaType {
+		t.Fatalf("status = %d; want 415", response.Code)
+	}
+	var result struct{ Error struct{ Code string } }
+	if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.Error.Code != "unsupported_media" {
+		t.Fatalf("code = %q", result.Error.Code)
+	}
+	if creator.called {
+		t.Fatal("empty video created a job")
+	}
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatal("empty upload retained files")
+	}
+}
+
 func TestCancelledVideoRequestCleansUpWithoutQueueing(t *testing.T) {
 	buffer := &bytes.Buffer{}
 	writer := multipart.NewWriter(buffer)

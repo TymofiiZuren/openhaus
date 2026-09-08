@@ -373,8 +373,8 @@
 }
 :root .overlay-layer { background: rgba(0, 0, 0, .74); }
 :root main { animation: openhaus-page-enter var(--motion-normal) var(--motion-ease) both; }
-:root :is(.property-card, .client-panel, .information-body, .agent-directory-card, .agent-profile, .manager-property-row, .match-card, .area-row) { transition: border-color var(--motion-fast) var(--motion-ease), background-color var(--motion-fast) var(--motion-ease), box-shadow var(--motion-normal) var(--motion-ease); }
-:root :is(.property-card, .client-panel, .information-body, .agent-directory-card, .agent-profile, .manager-property-row, .match-card, .area-row):hover { border-color: var(--line-strong); box-shadow: var(--panel-shadow); }
+:root :is(.property-card, .information-body, .agent-directory-card, .agent-profile, .manager-property-row, .match-card, .area-row) { transition: border-color var(--motion-fast) var(--motion-ease), background-color var(--motion-fast) var(--motion-ease), box-shadow var(--motion-normal) var(--motion-ease); }
+:root :is(.property-card, .information-body, .agent-directory-card, .agent-profile, .manager-property-row, .match-card, .area-row):hover { border-color: var(--line-strong); box-shadow: var(--panel-shadow); }
 
 @keyframes openhaus-page-enter { from { opacity: 0; transform: translate3d(0, 8px, 0); } to { opacity: 1; transform: none; } }
 

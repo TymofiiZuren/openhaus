@@ -1,0 +1,14 @@
+.compute-comparison { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 48px; padding: 40px; margin-top: 48px; background: var(--surface); border-radius: var(--radius-panel); }
+.compute-comparison-intro, .compute-comparison-results { display: grid; align-content: start; gap: 16px; min-width: 0; }
+.compute-comparison :is(h2, h3, p) { margin: 0; }
+.compute-comparison h2 { font-size: clamp(1.7rem, 3vw, 2.4rem); line-height: 1.12; letter-spacing: -.035em; }
+.compute-comparison-actions { display: flex; flex-wrap: wrap; gap: 12px; }
+.compute-comparison-empty { display: grid; gap: 16px; align-content: center; min-height: 200px; }
+.compute-comparison-table { overflow-x: auto; }
+.compute-comparison table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+.compute-comparison caption { text-align: left; color: var(--muted); padding-bottom: 16px; font-size: .85rem; }
+.compute-comparison :is(th, td) { text-align: right; padding: 16px 8px; border-bottom: 1px solid var(--line); }
+.compute-comparison th:first-child { text-align: left; }
+.compute-comparison summary { cursor: pointer; padding-block: 12px; }
+.compute-comparison summary:focus-visible { outline: 2px solid var(--ink); outline-offset: 4px; }
+@media (max-width: 800px) { .compute-comparison { grid-template-columns: minmax(0, 1fr); padding: 24px; gap: 24px; } .compute-comparison table { font-size: .85rem; } }

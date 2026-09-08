@@ -1,6 +1,8 @@
 # OpenHaus launch readiness
 
-Working estimate: approximately 58% of the planned public product, based on the product roadmap and implementation review, not an audited score or legal certification.
+Current working stage (2026-09-08): advanced demonstration / pre-beta, not approved for public production use. Historical percentages below are planning estimates, not a current readiness score. Feature count and passing unit tests do not establish operational readiness.
+
+Latest focused review: signed-in account navigation no longer uses signed-out copy. Media Lab has bounded local analysis and tested distribution algorithms, and the server has upload sanitisation, orientation correction, thumbnails and atomic video publication. These are separate verified slices, not an end-to-end launch audit. Priority gates remain verified email/recovery, worker leases and crash recovery with idempotent completion, delivery-backed notifications/enquiries, backup restoration and retention procedures, and supported-device performance/accessibility testing. The map bundle remains large. Do not imply recent source changes have been deployed merely because tests and builds pass.
 
 ## Delivered foundations
 
