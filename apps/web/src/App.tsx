@@ -1,6 +1,8 @@
 import { lazy, memo, Suspense, useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, MouseEvent as ReactMouseEvent, ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import './App.css'
+import './PropertyDialog.css'
 import { SiteHeader } from './SiteHeader'
 import { ClientSignInPrompt } from './ClientSignInPrompt'
 import { fetchClientSavedProperties, removeClientSavedProperty, saveClientProperty } from './api/clientSavedProperties'
@@ -230,7 +232,7 @@ function App() {
       ? filteredProperties.filter((property) => property.county.localeCompare(effectiveSelectedCounty, undefined, { sensitivity: 'base' }) === 0)
       : filteredProperties
     const locationProperties = effectiveSelectedCounty && effectiveSelectedArea && areaTools
-      ? countyProperties.filter((property) => areaTools.areaForCoordinate(effectiveSelectedCounty, { lat: property.latitude, lng: property.longitude })?.name === effectiveSelectedArea)
+      ? countyProperties.filter((property) => areaTools.areaForProperty(property)?.name === effectiveSelectedArea)
       : countyProperties
     return [...locationProperties].sort((left, right) => {
       if (sortOrder === 'price-low') return left.priceCents - right.priceCents
@@ -442,7 +444,7 @@ function Overlay({ labelID, onClose, children }: { labelID: string; onClose: () 
       previouslyFocused?.focus({ preventScroll: true })
     }
   }, [])
-  return <div className="overlay-layer" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}><div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby={labelID}>{children}</div></div>
+  return createPortal(<div className="overlay-layer" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}><div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby={labelID}>{children}</div></div>, document.body)
 }
 
 function GuidePopover({ anchor, labelID, onClose, children }: { anchor: HTMLElement | null; labelID: string; onClose: () => void; children: ReactNode }) {
@@ -551,8 +553,8 @@ function PropertyConcierge({ anchor, properties, onApply, onClose }: { anchor: H
 
 function ComparisonTray({ properties, onCompare, onRemove, onClear }: { properties: Property[]; onCompare: () => void; onRemove: (propertyID: string) => void; onClear: () => void }) {
   return <aside className="comparison-tray" role="region" aria-label="Property comparison">
-    <div><span>Buyer workspace</span><strong>{properties.length} {properties.length === 1 ? 'home selected' : 'homes selected'}</strong></div>
-    <ul>{properties.map((property) => <li key={property.id}><span>{property.title}</span><button type="button" aria-label={`Remove ${property.title} from comparison`} onClick={() => onRemove(property.id)}>×</button></li>)}</ul>
+    <div><span>Your shortlist</span><strong>{properties.length} {properties.length === 1 ? 'home selected' : 'homes selected'}</strong></div>
+    <ul>{properties.map((property) => <li key={property.id}><span>{property.city}</span><button type="button" aria-label={`Remove ${property.title} from comparison`} onClick={() => onRemove(property.id)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17" /></svg></button></li>)}</ul>
     <div className="comparison-tray-actions"><button type="button" onClick={onClear}>Clear</button><button type="button" disabled={properties.length < 2} onClick={onCompare}>Compare homes</button></div>
   </aside>
 }
@@ -563,7 +565,7 @@ function ComparisonDialog({ properties, onRemove, onClose }: { properties: Prope
       <header><div><p className="section-index">Buyer workspace · comparison</p><h2 id="comparison-title">Compare selected homes</h2></div><button type="button" className="overlay-close" aria-label="Close comparison" onClick={onClose}>×</button></header>
       <div className="comparison-grid">{properties.map((property) => {
         const image = property.media.find((item) => item.kind === 'image')
-        return <article key={property.id}><div className="comparison-image">{image ? <img src={image.url} alt="" /> : <img src="/media/placeholders/architectural-home.svg?v=3" alt="" />}<button type="button" aria-label={`Remove ${property.title} from comparison`} onClick={() => onRemove(property.id)}>×</button></div><p>{property.city} · Co. {property.county}</p><h3>{property.title}</h3><dl><div><dt>Asking price</dt><dd>{euros.format(property.priceCents / 100)}</dd></div><div><dt>Bedrooms</dt><dd>{property.bedrooms}</dd></div><div><dt>Home</dt><dd>{titleCase(property.propertyType)}</dd></div><div><dt>Media</dt><dd>{property.media.length} items</dd></div></dl><a href={`/properties/${property.id}`}>View property <span aria-hidden="true">→</span></a></article>
+        return <article key={property.id}><div className="comparison-image">{image ? <img src={image.url} alt="" /> : <img src="/media/placeholders/architectural-home.svg?v=3" alt="" />}<button type="button" aria-label={`Remove ${property.title} from comparison`} onClick={() => onRemove(property.id)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17" /></svg></button></div><p>{property.city} · Co. {property.county}</p><h3>{property.title}</h3><dl><div><dt>Asking price</dt><dd>{euros.format(property.priceCents / 100)}</dd></div><div><dt>Bedrooms</dt><dd>{property.bedrooms}</dd></div><div><dt>Home</dt><dd>{titleCase(property.propertyType)}</dd></div><div><dt>Media</dt><dd>{property.media.length} items</dd></div></dl><a href={`/properties/${property.id}`}>View property <span aria-hidden="true">→</span></a></article>
       })}</div>
     </section>
   </Overlay>
@@ -873,15 +875,17 @@ function ViewingRequestDialog({ property, onClose }: { property: Property; onClo
 
   const slots = ['Thursday · 17:30', 'Saturday · 11:00', 'Saturday · 14:30']
   return <Overlay labelID="viewing-request-title" onClose={onClose}>
-    <section className="viewing-request-dialog">
-      <header><div><p className="section-index">Private viewing · request</p><h2 id="viewing-request-title">Request a viewing for {property.title}</h2><p>{property.addressLine1}, {property.city}</p></div><button type="button" className="overlay-close" aria-label="Close viewing request" onClick={onClose}>×</button></header>
+    <section className="viewing-request-dialog property-workspace-dialog">
+      <header><div><p className="section-index">Private viewing · request</p><h2 id="viewing-request-title">Request a viewing <span>for {property.title}</span></h2><p>{property.addressLine1}, {property.city}</p></div><button type="button" className="overlay-close" aria-label="Close viewing request" onClick={onClose}>×</button></header>
+      <div className="property-dialog-scroll">
       {!confirmed ? <form onSubmit={(event) => { event.preventDefault(); setConfirmed(true) }}>
         <fieldset><legend>Preferred sample time</legend><div className="viewing-slots">{slots.map((slot, index) => <label key={slot}><input type="radio" name="viewing-slot" value={slot} defaultChecked={index === 0} /><span>{slot}</span></label>)}</div></fieldset>
-        <div className="viewing-contact-fields"><label>Your name<input ref={nameRef} required autoComplete="name" /></label><label>Email address<input type="email" required autoComplete="email" /></label><label>Phone number <small>Optional</small><input type="tel" autoComplete="tel" /></label></div>
-        <label>Questions for the listing team <small>Optional</small><textarea rows={4} placeholder="Access needs, room questions or another suitable time…" /></label>
+        <div className="viewing-contact-fields"><label><span>Your name</span><input ref={nameRef} required autoComplete="name" placeholder="Full name" /></label><label><span>Email address</span><input type="email" required autoComplete="email" placeholder="you@example.com" /></label><label><span>Phone number <small>Optional</small></span><input type="tel" autoComplete="tel" placeholder="Your contact number" /></label></div>
+        <label><span>Questions for the listing team <small>Optional</small></span><textarea rows={4} placeholder="Tell us about access needs, questions or another suitable time…" /></label>
         <p className="viewing-disclaimer">This demonstration records no personal information. Live availability and secure delivery will connect to the staff workspace.</p>
         <button className="viewing-submit" type="submit">Send viewing request <span aria-hidden="true">→</span></button>
       </form> : <div className="viewing-confirmation" role="status"><span aria-hidden="true">✓</span><p className="section-index">Request prepared</p><h3>Your sample viewing request is ready.</h3><p>In the production workflow, the listing team would confirm the time and keep the conversation attached to this property.</p><button type="button" onClick={onClose}>Return to the property</button></div>}
+      </div>
     </section>
   </Overlay>
 }
@@ -962,8 +966,9 @@ function PropertyNotesDialog({ property, value, error, busy, mode, onSave, onClo
   const toggleQuestion = (question: string) => setQuestions((current) => current.includes(question) ? current.filter((item) => item !== question) : [...current, question])
 
   return <Overlay labelID="property-notes-title" onClose={onClose}>
-    <section className="property-notes-dialog">
-      <header><div><p className="section-index">Buyer workspace · private</p><h2 id="property-notes-title">Notes for {property.title}</h2><p>{property.addressLine1}, {property.city}</p></div><button type="button" className="overlay-close" aria-label="Close property notes" onClick={onClose}>×</button></header>
+    <section className="property-notes-dialog property-workspace-dialog">
+      <header><div><p className="section-index">Buyer workspace · private</p><h2 id="property-notes-title">Notes <span>for {property.title}</span></h2><p>{property.addressLine1}, {property.city}</p></div><button type="button" className="overlay-close" aria-label="Close property notes" onClick={onClose}>×</button></header>
+      <div className="property-dialog-scroll">
       <form onSubmit={(event) => { event.preventDefault(); onSave({ notes, questions }) }}>
         <label>Private notes<textarea ref={notesRef} rows={6} value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="What should you remember at the viewing?" /></label>
         <fieldset><legend>Questions for the viewing</legend><div className="property-question-list">{prompts.map((prompt) => <label key={prompt}><input type="checkbox" checked={questions.includes(prompt)} onChange={() => toggleQuestion(prompt)} /><span>{prompt}</span></label>)}</div></fieldset>
@@ -971,7 +976,8 @@ function PropertyNotesDialog({ property, value, error, busy, mode, onSave, onClo
         {error && <p role="alert">{error}</p>}
         <div><button type="button" disabled={busy} onClick={onClose}>Cancel</button><button type="submit" disabled={busy || mode === 'checking'}>{busy ? 'Saving…' : mode === 'checking' ? 'Checking account…' : 'Save property notes'}</button></div>
       </form>
-      {mode !== 'account' && <ClientSignInPrompt />}
+      {mode !== 'account' && <div className="property-dialog-account"><ClientSignInPrompt /></div>}
+      </div>
     </section>
   </Overlay>
 }

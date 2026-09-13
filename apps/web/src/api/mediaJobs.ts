@@ -51,11 +51,14 @@ export async function waitForMediaJob(
   if (!validJobID.test(jobId)) throw new Error('Invalid video job ID')
   let failures = 0
   while (!signal?.aborted) {
-    const { status, job } = await readMediaJob(jobId, signal)
+    const { status, job, retryAfter } = await readMediaJob(jobId, signal)
     // Retry only status reads, never the upload POST. Bound transient gateway
-    // recovery to three retries (1s, 2s, 4s); auth and missing jobs fail promptly.
-    if ([502, 503, 504].includes(status) && failures < 3) {
-      await delay(1000 * 2 ** failures++, signal)
+    // recovery to three retries (at least 1s, 2s, 4s); respect server cooldowns.
+    // Auth and missing jobs fail promptly. Never shorten a long server cooldown.
+    const retryDelay = Math.max(1000 * 2 ** failures, retryAfter ?? 0)
+    if ([429, 502, 503, 504].includes(status) && failures < 3 && retryDelay <= 60_000) {
+      failures++
+      await delay(retryDelay, signal)
       continue
     }
     if (!job) throw new Error(`Media job request failed with status ${status}`)
@@ -83,7 +86,13 @@ async function readMediaJob(jobId: string, signal?: AbortSignal) {
     })
     if (!response.ok) {
       await response.body?.cancel()
-      return { status: response.status, job: undefined }
+      const header = response.headers.get('Retry-After')?.trim()
+      // HTTP supports whole seconds or an HTTP date. Ignore malformed values;
+      // a cooldown over one minute surfaces recovery rather than retrying early.
+      const seconds = header && /^\d+$/.test(header) ? Number(header) * 1000 : undefined
+      const date = header && /^[A-Za-z]{3},/.test(header) ? Date.parse(header) : NaN
+      const retryAfter = seconds ?? (Number.isFinite(date) ? Math.max(0, date - Date.now()) : undefined)
+      return { status: response.status, job: undefined, retryAfter }
     }
     const job = parseMediaJob(await response.json(), jobId)
     return { status: response.status, job }

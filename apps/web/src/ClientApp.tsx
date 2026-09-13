@@ -10,6 +10,7 @@ import './App.css'
 import './ClientApp.css'
 import './ClientAccess.css'
 import { PasswordChangeFields } from './PasswordChangeFields'
+import { ShortlistInsights, ViewingChecklist } from './BuyerTools'
 
 type Client = { id: string; email: string }
 const euros = new Intl.NumberFormat('en-IE', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 })
@@ -32,6 +33,7 @@ async function readClient(response: Response): Promise<Client> {
 
 export function ClientApp({ pathname = '/client' }: { pathname?: string }) {
   const register = pathname.replace(/\/$/, '') === '/client/register'
+  const tool = pathname.replace(/\/$/, '') === '/client/insights' ? 'Shortlist insights' : pathname.replace(/\/$/, '') === '/client/viewing-checklist' ? 'Viewing checklist' : null
   const [status, setStatus] = useState<ClientSessionStatus>('loading')
   const [client, setClient] = useState<Client | null>(null)
   useWorkspaceAnchor(status === 'authenticated')
@@ -41,6 +43,7 @@ export function ClientApp({ pathname = '/client' }: { pathname?: string }) {
   const [message, setMessage] = useState('')
   const [savedProperties, setSavedProperties] = useState<Property[]>([])
   const [savedStatus, setSavedStatus] = useState<'loading' | 'ready' | 'error'>('loading')
+  const [savedAttempt, setSavedAttempt] = useState(0)
   const [savedSearches, setSavedSearches] = useState<ClientSavedSearch[]>([])
   const [searchesStatus, setSearchesStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
   const [email, setEmail] = useState('')
@@ -60,9 +63,9 @@ export function ClientApp({ pathname = '/client' }: { pathname?: string }) {
   }, [client, status])
   useEffect(() => {
     const previous = document.title
-    document.title = 'Client account — OpenHaus'
+    document.title = `${tool ?? 'Client account'} — OpenHaus`
     return () => { document.title = previous }
-  }, [])
+  }, [tool])
   useEffect(() => {
     const controller = new AbortController()
     async function check() {
@@ -82,13 +85,13 @@ export function ClientApp({ pathname = '/client' }: { pathname?: string }) {
   }, [attempt])
 
   useEffect(() => {
-    if (status !== 'authenticated') return
+    if (status !== 'authenticated' || tool === 'Viewing checklist') return
     const controller = new AbortController()
     fetchClientSavedProperties(controller.signal)
       .then(items => { if (!controller.signal.aborted) { setSavedProperties(items); setSavedStatus('ready') } })
       .catch(() => { if (!controller.signal.aborted) setSavedStatus('error') })
     return () => controller.abort()
-  }, [status])
+  }, [status, savedAttempt, tool])
 
   async function importBrowserShortlist() {
     setBusy(true); setError(''); setMessage('')
@@ -206,6 +209,16 @@ export function ClientApp({ pathname = '/client' }: { pathname?: string }) {
     } catch { setError('Could not reach account services. The account was not deleted.') }
     finally { setBusy(false) }
   }
+
+  if (status === 'authenticated' && tool) return <div className="site-shell">
+    <a className="skip-link" href="#client-content">Skip to content</a>
+    <SiteHeader pathname={pathname} client={client} clientSessionStatus={status} onClientSignOut={logout} />
+    <main className="client-main client-main-authenticated" id="client-content">
+      <header className="client-intro"><p className="eyebrow">OpenHaus / Buyer tools</p><h1>{tool}</h1><a href="/client">Back to client account</a></header>
+      {tool === 'Shortlist insights' ? <ShortlistInsights properties={savedProperties} status={savedStatus} onRetry={() => { setSavedStatus('loading'); setSavedAttempt(value => value + 1) }} /> : <ViewingChecklist />}
+      {error && <p ref={feedback} tabIndex={-1} role="alert">{error}</p>}
+    </main>
+  </div>
 
   return <div className="site-shell">
     <a className="skip-link" href="#client-content">Skip to content</a>

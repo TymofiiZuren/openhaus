@@ -684,6 +684,7 @@ describe('property catalogue', () => {
 
     await user.click(await screen.findByRole('button', { name: 'Arrange a viewing' }))
     const dialog = screen.getByRole('dialog', { name: `Request a viewing for ${property.title}` })
+    expect(dialog.closest('main')).toBeNull()
     expect(within(dialog).getByText(new RegExp(property.addressLine1))).toBeVisible()
     await user.type(within(dialog).getByLabelText('Your name'), 'Aisling Murphy')
     await user.type(within(dialog).getByLabelText('Email address'), 'aisling@example.com')
@@ -691,6 +692,40 @@ describe('property catalogue', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Send viewing request' }))
 
     expect(within(dialog).getByRole('status')).toHaveTextContent('Your sample viewing request is ready')
+  })
+
+  it.each([
+    ['Arrange a viewing', 'Request a viewing', 'Close viewing request', 'Send viewing request', 'Your name'],
+    ['Add property notes', 'Notes', 'Close property notes', 'Sign in', 'Private notes'],
+  ])('keeps keyboard focus inside %s and restores the page on Escape', async (triggerName, title, closeName, lastName, initialField) => {
+    window.history.replaceState({}, '', `/properties/${property.id}`)
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => Promise.resolve(
+      String(input) === '/api/v1/client/session'
+        ? Response.json({ error: 'Not signed in' }, { status: 401 })
+        : Response.json({ properties: [property] }),
+    ))
+    const user = userEvent.setup()
+    render(<App />)
+
+    const trigger = await screen.findByRole('button', { name: triggerName })
+    const previousOverflow = document.body.style.overflow
+    await user.click(trigger)
+    const dialog = screen.getByRole('dialog', { name: `${title} for ${property.title}` })
+    expect(dialog.closest('main')).toBeNull()
+    expect(document.body.style.overflow).toBe('hidden')
+    expect(within(dialog).getByLabelText(initialField)).toHaveFocus()
+
+    const close = within(dialog).getByRole('button', { name: closeName })
+    const last = await within(dialog).findByRole(lastName === 'Sign in' ? 'link' : 'button', { name: lastName })
+    close.focus()
+    await user.tab({ shift: true })
+    expect(last).toHaveFocus()
+    await user.tab()
+    expect(close).toHaveFocus()
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(trigger).toHaveFocus()
+    expect(document.body.style.overflow).toBe(previousOverflow)
   })
 
   it('keeps buyer notes attached to the property locally', async () => {

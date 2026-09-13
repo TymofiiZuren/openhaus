@@ -257,13 +257,13 @@
 :root .client-feedback { background: var(--yellow-soft); }
 :root .client-panel { border: 0; border-radius: 0; background: transparent; box-shadow: none; }
 
-/* Field focus uses a surface change; compound controls own their focus treatment. */
-:root :is(input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']),textarea,select) {
+/* The viewing dialog owns its outlined fields and keyboard focus treatment. */
+:root :is(input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']),textarea,select):not(.property-workspace-dialog *) {
   border: 0 !important;
   outline: 0 !important;
   box-shadow: none !important;
 }
-:root :is(input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']),textarea,select):focus-visible {
+:root :is(input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']),textarea,select):not(.property-workspace-dialog *):focus-visible {
   border: 0 !important;
   outline: 0 !important;
   box-shadow: none !important;

@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { Property } from './api/properties'
-import { areaForCoordinate, areasForCounty } from './administrativeAreas'
+import { areaForProperty, areasForCounty } from './administrativeAreas'
 import { GooglePropertyMap } from './GooglePropertyMap'
 import { PropertyImageCarousel } from './PropertyImageCarousel'
 
@@ -47,7 +47,7 @@ export function PropertyMap({ properties, selectedCounty, selectedArea, property
   const areaGroups = useMemo(() => {
     const byArea = new Map<string, Property[]>()
     for (const property of selectedGroup?.properties ?? []) {
-      const area = areaForCoordinate(property.county, {lat:property.latitude,lng:property.longitude})
+      const area = areaForProperty(property)
       if (!area) continue
       const group = byArea.get(area.name) ?? []
       group.push(property)

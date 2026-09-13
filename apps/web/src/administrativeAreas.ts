@@ -62,6 +62,13 @@ export function areaForCoordinate(county: string, coordinate: Coordinate): Admin
   return areasForCounty(county).find((area) => area.paths.filter((path) => pointInPolygon(coordinate, path)).length % 2 === 1)
 }
 
+// One assignment rule for map counts, area results and the catalogue. A saved
+// town is a browsing fallback for gaps in geometry, not a corrected coordinate.
+export function areaForProperty(property: { county: string; city: string; latitude: number; longitude: number }): AdministrativeArea | undefined {
+  return areaForCoordinate(property.county, { lat: property.latitude, lng: property.longitude })
+    ?? areasForCounty(property.county).find(area => area.name.trim().toLocaleLowerCase() === property.city.trim().toLocaleLowerCase())
+}
+
 function pointInPolygon(point: Coordinate, path: Coordinate[]) {
   const bounds=pathBounds.get(path)
   if (bounds && (point.lat<bounds.south||point.lat>bounds.north||point.lng<bounds.west||point.lng>bounds.east)) return false

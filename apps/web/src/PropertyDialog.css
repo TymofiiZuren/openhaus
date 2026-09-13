@@ -1,0 +1,68 @@
+/* Shared shell for property notes and viewing forms. The shell clips corners;
+   only the body scrolls, leaving the close control visible. */
+.overlay-layer:has(.property-workspace-dialog) { place-items: center; padding: 16px; }
+.property-workspace-dialog {
+  --dialog-space: 24px;
+  display: flex;
+  flex-direction: column;
+  width: min(680px, calc(100vw - 32px));
+  max-height: min(820px, calc(100dvh - 32px));
+  overflow: hidden;
+  border-radius: var(--radius-panel);
+}
+.property-workspace-dialog > header {
+  flex: 0 0 auto;
+  gap: 16px;
+  padding: var(--dialog-space);
+}
+.property-workspace-dialog > header > div { min-width: 0; }
+.property-workspace-dialog h2 {
+  margin: 8px 0;
+  font-size: clamp(1.5rem, 3vw, 2rem);
+  line-height: 1.15;
+  letter-spacing: -.025em;
+}
+.property-workspace-dialog h2 span {
+  display: block;
+  margin-top: 8px;
+  font-family: var(--font-family);
+  font-size: .9375rem;
+  font-weight: 500;
+  line-height: 1.45;
+  letter-spacing: normal;
+  overflow-wrap: anywhere;
+}
+.property-workspace-dialog header p:last-child { font-size: .8125rem; line-height: 1.5; }
+.property-dialog-scroll {
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
+  scrollbar-gutter: stable;
+  scroll-padding-block: 16px;
+}
+.property-dialog-scroll::-webkit-scrollbar { width: 6px; }
+.property-dialog-scroll::-webkit-scrollbar-thumb { background: var(--line-strong); border-radius: 8px; }
+.property-dialog-scroll::-webkit-scrollbar-track { background: transparent; }
+.property-workspace-dialog form { padding: var(--dialog-space); gap: 20px; }
+.property-dialog-account { padding: 0 var(--dialog-space) var(--dialog-space); font-size: .8125rem; }
+.property-workspace-dialog .property-question-list label,
+.property-workspace-dialog .viewing-slots label { border-radius: 8px; font-size: .8125rem; }
+.property-workspace-dialog .property-question-list input { flex-shrink: 0; }
+.property-workspace-dialog form > label,
+.property-workspace-dialog legend { font-size: .875rem; font-weight: 600; }
+.property-workspace-dialog textarea { min-height: 112px; padding: 12px 16px; border-radius: 8px; background: var(--control-surface); font: 400 1rem/1.5 var(--font-family); }
+.property-workspace-dialog form > div:last-child button,
+.property-workspace-dialog .viewing-submit { border-radius: 8px; font-size: .875rem; font-weight: 600; }
+.property-workspace-dialog form > p { font-size: .8125rem; line-height: 1.5; }
+@media (max-width: 600px) {
+  .property-workspace-dialog { --dialog-space: 16px; }
+  .property-workspace-dialog form > div:last-child { flex-wrap: wrap; }
+  .property-workspace-dialog form > div:last-child button { flex: 1 1 auto; }
+}
+@media (max-height: 500px) {
+  .property-workspace-dialog > header { padding-block: 12px; }
+  .property-workspace-dialog header .section-index,
+  .property-workspace-dialog header p:last-child { display: none; }
+}

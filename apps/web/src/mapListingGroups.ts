@@ -1,10 +1,11 @@
 import type { Property } from './api/properties'
-import { areaForCoordinate } from './administrativeAreas'
+import { areaForProperty } from './administrativeAreas'
 
 export function groupPropertiesForMap(properties: Property[], selectedCounty?: string | null, selectedArea?: string) {
   if (selectedCounty && selectedArea) {
     return properties.map((property) => ({
       label: property.title,
+      isProperty: true,
       markerLabel: compactPrice(property.priceCents),
       properties: [property],
       position: { lat: property.latitude, lng: property.longitude },
@@ -14,12 +15,18 @@ export function groupPropertiesForMap(properties: Property[], selectedCounty?: s
   const groups = new Map<string, Property[]>()
   for (const property of properties) {
     const area = selectedCounty
-      ? areaForCoordinate(property.county, { lat: property.latitude, lng: property.longitude })?.name ?? property.city
+      ? areaForProperty(property)?.name
       : property.county
-    groups.set(area, [...(groups.get(area) ?? []), property])
+    // Unresolved locations remain in the county results, but do not leak a
+    // house pin into the area-selection step.
+    if (!area) continue
+    const group = groups.get(area)
+    if (group) group.push(property)
+    else groups.set(area, [property])
   }
-  return [...groups.entries()].map(([label, groupedProperties]) => ({
+  const markers = [...groups.entries()].map(([label, groupedProperties]) => ({
     label,
+    isProperty: false,
     markerLabel: String(groupedProperties.length),
     properties: groupedProperties,
     position: {
@@ -27,6 +34,7 @@ export function groupPropertiesForMap(properties: Property[], selectedCounty?: s
       lng: groupedProperties.reduce((total, property) => total + property.longitude, 0) / groupedProperties.length,
     },
   }))
+  return markers
 }
 
 function compactPrice(priceCents: number) {

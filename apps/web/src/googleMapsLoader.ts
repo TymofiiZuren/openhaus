@@ -29,6 +29,7 @@ export type PolygonInstance = {
   setOptions(options: Record<string, unknown>): void
 }
 export type GoogleMaps = {
+  Point: new (x: number, y: number) => { x: number; y: number }
   Map: new (element: HTMLElement, options: Record<string, unknown>) => MapInstance
   Marker: new (options: Record<string, unknown>) => MarkerInstance
   InfoWindow: new (options: Record<string, unknown>) => InfoWindowInstance

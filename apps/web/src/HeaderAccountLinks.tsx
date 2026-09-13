@@ -48,12 +48,10 @@ export function HeaderAccountLinks({ signedIn = false, managerSignedIn = false, 
             <a href="/manager/analytics#coverage-title" aria-label="Media readiness"><span><strong>Media readiness</strong><small>Review photography and tour coverage</small></span><span aria-hidden="true">→</span></a>
             <a href="/manager/profile#manager-security-title" aria-label="Account security"><span><strong>Account security</strong><small>Password and active sessions</small></span><span aria-hidden="true">→</span></a>
           </> : <>
-            <a href="/client/login" aria-label={signedIn ? 'Client account' : 'Client sign in'}><span><strong>{signedIn ? 'Client account' : 'Client sign in'}</strong><small>{signedIn ? 'Saved homes, comparisons and notes' : 'Continue your property search'}</small></span><span aria-hidden="true">→</span></a>
+            <a href={signedIn ? '/client' : '/client/login'} aria-label={signedIn ? 'Client account' : 'Client sign in'}><span><strong>{signedIn ? 'Client account' : 'Client sign in'}</strong><small>{signedIn ? 'Saved homes, searches and account settings' : 'Continue your property search'}</small></span><span aria-hidden="true">→</span></a>
             {signedIn && <>
-              <a href="/client#saved-properties-title" aria-label="Saved homes"><span><strong>Saved homes</strong><small>Return to your personal shortlist</small></span><span aria-hidden="true">→</span></a>
-              <a href="/client#saved-searches-title" aria-label="Saved searches"><span><strong>Saved searches</strong><small>Revisit your saved search criteria</small></span><span aria-hidden="true">→</span></a>
-              <a href="/match" aria-label="Match Lab"><span><strong>Match Lab</strong><small>Rank homes around your priorities</small></span><span aria-hidden="true">→</span></a>
-              <a href="/client#client-security-title" aria-label="Account security"><span><strong>Account security</strong><small>Manage your password</small></span><span aria-hidden="true">→</span></a>
+              <a href="/client/insights" aria-label="Shortlist insights"><span><strong>Shortlist insights</strong><small>Compare prices and locations of saved homes</small></span><span aria-hidden="true">→</span></a>
+              <a href="/client/viewing-checklist" aria-label="Viewing checklist"><span><strong>Viewing checklist</strong><small>Keep track of questions during a visit</small></span><span aria-hidden="true">→</span></a>
             </>}
             {!signedIn && <a href="/manager/login" aria-label="Manager sign in / List a property"><span><strong>Manager sign in / List a property</strong><small>Publish and manage listings</small></span><span aria-hidden="true">→</span></a>}
           </>}

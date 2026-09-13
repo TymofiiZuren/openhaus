@@ -7,6 +7,44 @@ afterEach(() => {
 })
 
 describe('video processing status recovery', () => {
+  it.each([
+    [429, '5'], [503, '5'], [429, 'Tue, 08 Sep 2026 12:00:05 GMT'],
+  ])('respects Retry-After on status %d (%s)', async (status, retryAfter) => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-09-08T12:00:00Z'))
+    const ready = { id: 'job-1', status: 'ready' }
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(null, { status: Number(status), headers: { 'Retry-After': String(retryAfter) } }))
+      .mockResolvedValueOnce(Response.json(ready))
+    const result = waitForMediaJob('job-1', vi.fn())
+    await vi.advanceTimersByTimeAsync(4999)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(1)
+    await expect(result).resolves.toEqual(ready)
+  })
+
+  it.each(['nonsense', '-1', '0', 'Mon, 07 Sep 2026 12:00:00 GMT'])('keeps the minimum backoff for cooldown %s', async header => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-09-08T12:00:00Z'))
+    const ready = { id: 'job-1', status: 'ready' }
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(null, { status: 429, headers: { 'Retry-After': header } }))
+      .mockResolvedValueOnce(Response.json(ready))
+    const result = waitForMediaJob('job-1', vi.fn())
+    await vi.advanceTimersByTimeAsync(999)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(1)
+    await expect(result).resolves.toEqual(ready)
+  })
+
+  it('does not retry earlier than a long server cooldown', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, {
+      status: 429, headers: { 'Retry-After': '120' },
+    }))
+    await expect(waitForMediaJob('job-1', vi.fn())).rejects.toThrow('status 429')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
   it('rejects a mismatched job before notifying the interface', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({ id: 'another-job', status: 'ready' }))
     const update = vi.fn()
@@ -110,10 +148,10 @@ describe('video processing status recovery', () => {
     expect(fetchMock.mock.calls.every(([url, init]) => url === '/api/v1/manager/media-jobs/job-1' && !init?.method)).toBe(true)
   })
 
-  it('stops after three retries and never hides the final failure', async () => {
+  it.each([429, 503])('stops after three retries and never hides status %d', async status => {
     vi.useFakeTimers()
-    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 503 }))
-    const result = expect(waitForMediaJob('job-1', vi.fn())).rejects.toThrow('status 503')
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status }))
+    const result = expect(waitForMediaJob('job-1', vi.fn())).rejects.toThrow(`status ${status}`)
     await vi.runAllTimersAsync()
     await result
     expect(fetchMock).toHaveBeenCalledTimes(4)

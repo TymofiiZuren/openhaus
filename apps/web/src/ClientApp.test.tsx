@@ -14,6 +14,22 @@ function credentials() {
   fireEvent.change(screen.getByLabelText('Email address'), { target: { value: 'buyer@example.test' } })
   fireEvent.change(screen.getByLabelText('Password'), { target: { value: crypto.randomUUID() } })
 }
+it.each([
+  ['/client/insights', 'Shortlist insights'],
+  ['/client/viewing-checklist', 'Viewing checklist'],
+])('renders a distinct authenticated tool at %s', async (pathname, title) => {
+  api(response(200, { client: { id: 'buyer', email: 'buyer@example.test' } }), response(200, { properties: [] }))
+  render(<ClientApp pathname={pathname} />)
+  expect(await screen.findByRole('heading', { level: 1, name: title })).toBeVisible()
+  expect(screen.queryByRole('heading', { name: 'Change password' })).not.toBeInTheDocument()
+  expect(screen.queryByRole('heading', { name: 'Your client account.' })).not.toBeInTheDocument()
+})
+it('keeps buyer tools behind the existing session gate', async () => {
+  api(response(401))
+  render(<ClientApp pathname="/client/insights" />)
+  expect(await screen.findByLabelText('Email address')).toBeVisible()
+  expect(screen.queryByRole('region', { name: 'Shortlist analysis' })).not.toBeInTheDocument()
+})
 it.each(['/client/login', '/client/register'])('keeps access links separate from account dashboard tiles on %s', async pathname => {
   api(response(401))
   render(<ClientApp pathname={pathname} />)

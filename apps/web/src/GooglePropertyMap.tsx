@@ -53,6 +53,7 @@ function GoogleMapSession({ properties, selectedPropertyID, selectedCounty, sele
   const selectedAreaRef = useRef(selectedArea)
   const [status, setStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
   const [mapType, setMapType] = useState<'roadmap' | 'satellite'>('roadmap')
+  const [labelZoom, setLabelZoom] = useState(6)
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [visualTheme, setVisualTheme] = useState<'light' | 'dark'>(() => document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light')
   const visualThemeRef = useRef(visualTheme)
@@ -96,7 +97,8 @@ function GoogleMapSession({ properties, selectedPropertyID, selectedCounty, sele
           restriction: { latLngBounds: ireland.restriction, strictBounds: true },
         })
         const dragListener = map.current.addListener('dragstart', () => onDismiss.current())
-        mapListeners.current = [dragListener]
+        const idleListener = map.current.addListener('idle', () => setLabelZoom(map.current?.getZoom() ?? 6))
+        mapListeners.current = [dragListener, idleListener]
         const reportProviderFailure = () => {
           if (!container.current?.querySelector('.gm-err-container, .gm-err-message')) return false
           container.current.replaceChildren()
@@ -124,21 +126,28 @@ function GoogleMapSession({ properties, selectedPropertyID, selectedCounty, sele
     if (status !== 'ready' || !map.current || !window.google) return
     clearMarkers(markers.current)
     const maps = window.google.maps
-    markers.current = groupPropertiesForMap(properties, selectedCounty, selectedArea).map((group) => {
+    const groups = groupPropertiesForMap(properties, selectedCounty, selectedArea)
+    markers.current = groups.map((group) => {
       const selected = !!selectedPropertyID && group.properties.some((property) => property.id === selectedPropertyID)
       const marker = new maps.Marker({
         map: map.current,
         position: group.position,
         title: `${group.properties.length} ${group.properties.length === 1 ? 'home' : 'homes'} in ${group.label}`,
         icon: markerIcon(selected, group.markerLabel),
+        shape: { type: 'rect', coords: [0, 0, Math.max(70, 30 + group.markerLabel.length * 9), 44] },
+        optimized: false,
         zIndex: selected ? 10 : 1,
       })
-      const listeners = selectedCounty && selectedArea && group.properties.length === 1
+      const listeners = group.isProperty
         ? [marker.addListener('click', () => onPropertySelect.current(group.properties[0]))]
-        : []
+        : selectedCounty && !selectedArea && areas.some(area => area.name === group.label)
+          ? [marker.addListener('click', () => onAreaSelect.current(group.label))]
+          : !selectedCounty
+            ? [marker.addListener('click', () => onCountySelect.current(group.label))]
+            : []
       return { ids: group.properties.map((property) => property.id), count: group.properties.length, marker, listeners }
     })
-  }, [properties, selectedArea, selectedCounty, selectedPropertyID, status])
+  }, [areas, properties, selectedArea, selectedCounty, selectedPropertyID, status, labelZoom])
 
   useEffect(() => {
     if (status !== 'ready' || !map.current || !window.google) return
@@ -229,7 +238,7 @@ function GoogleMapSession({ properties, selectedPropertyID, selectedCounty, sele
     const selectedProperty = properties.find((property) => property.id === selectedPropertyID)
     const area = selectedArea && areas.find(candidate => sameLocation(candidate.name, selectedArea))
     if (selectedProperty) moveCamera(map.current, { lat: selectedProperty.latitude, lng: selectedProperty.longitude }, 14)
-    else if (area) focusArea(map.current, area)
+    else if (area) focusArea(map.current, area, properties)
     else applyCamera(map.current, selectedCounty, container.current?.clientWidth)
   }, [areas, cameraRequestKey, properties, selectedArea, selectedCounty, selectedPropertyID, status])
 
@@ -259,7 +268,7 @@ function GoogleMapSession({ properties, selectedPropertyID, selectedCounty, sele
     if (!map.current || !window.google) return
     onDismiss.current()
     const area = selectedArea && areas.find((candidate) => sameLocation(candidate.name, selectedArea))
-    if (area) focusArea(map.current, area)
+    if (area) focusArea(map.current, area, properties)
     else applyCamera(map.current, selectedCounty, container.current?.clientWidth)
   }
 
@@ -294,8 +303,11 @@ function GoogleMapSession({ properties, selectedPropertyID, selectedCounty, sele
     </>
   )
 }
-function clearMarkers(items: Array<{ marker: MarkerInstance; listeners: Listener[] }>) {
-  for (const item of items) { for (const listener of item.listeners) listener.remove(); item.marker.setMap(null) }
+function clearMarkers(items: MapMarker[]) {
+  for (const item of items) {
+    for (const listener of item.listeners) listener.remove()
+    item.marker.setMap(null)
+  }
 }
 
 function clearPolygons(items: Array<{ polygon: PolygonInstance; listeners: Listener[] }>) {
@@ -358,9 +370,15 @@ function moveCamera(map: MapInstance, center: { lat: number; lng: number }, zoom
   map.setZoom(zoom)
 }
 
-function focusArea(map: MapInstance, area: AdministrativeArea) {
+function focusArea(map: MapInstance, area: AdministrativeArea, properties: Property[]) {
   if (!window.google) return
-  fitCameraImmediately(map, area.paths.flat(), 72)
+  if (properties.length === 1) {
+    moveCamera(map, { lat: properties[0].latitude, lng: properties[0].longitude }, 14)
+    return
+  }
+  fitCameraImmediately(map, properties.length
+    ? properties.map(property => ({ lat: property.latitude, lng: property.longitude }))
+    : area.paths.flat(), 72)
 }
 
 function markerIcon(selected: boolean, label: string) {
@@ -368,7 +386,10 @@ function markerIcon(selected: boolean, label: string) {
   const fill = selected ? '#8e887f' : '#181817'
   const escapedLabel = label.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="46" viewBox="0 0 ${width} 46"><path d="M12 2h${width - 24}a10 10 0 0 1 10 10v14a10 10 0 0 1-10 10H${width / 2 + 6}L${width / 2} 44l-6-8H12A10 10 0 0 1 2 26V12A10 10 0 0 1 12 2Z" fill="${fill}" stroke="#ffffff" stroke-width="${selected ? 3 : 2}"/><text x="${width / 2}" y="23" fill="#ffffff" font-family="Arial,sans-serif" font-size="13" font-weight="700" text-anchor="middle">${escapedLabel}</text></svg>`
-  return { url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}` }
+  return {
+    url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`,
+    anchor: window.google ? new window.google.maps.Point(width / 2, 46) : undefined,
+  }
 }
 
 function polygonArea(path: Array<{ lat: number; lng: number }>) {
