@@ -1,6 +1,6 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
-import { loadAreasForCounty } from './administrativeAreas'
-beforeAll(() => Promise.all(['Dublin', 'Cork'].map(loadAreasForCounty)))
+import { areaForProperty, loadAreasForCounty } from './administrativeAreas'
+beforeAll(() => Promise.all(['Dublin', 'Cork', 'Wexford'].map(loadAreasForCounty)))
 import { applyCamera, areaStyle, countyStyle } from './GooglePropertyMap'
 import { mapStyleForTheme } from './mapStyles'
 import { mapViewport } from './countyBoundaries'
@@ -47,6 +47,51 @@ describe('regional map presentation', () => {
 })
 
 describe('map listing count groups', () => {
+  it('uses boundary membership first and never guesses an unmatched town', () => {
+    expect(areaForProperty({ ...baseProperty, city: 'Wrong town' })).toBeDefined()
+    const unmatched = { ...baseProperty, county: 'Wexford', city: 'Unknown', latitude: 52.34, longitude: -6.46 }
+    expect(areaForProperty(unmatched)).toBeUndefined()
+    expect(groupPropertiesForMap([unmatched], 'Wexford')).toEqual([])
+    expect(areaForProperty({ ...unmatched, city: ' wExFoRd ' })?.name).toBe('Wexford')
+  })
+  it('keeps numbered area pins when zoomed into town without selecting an area', () => {
+    const homes = [
+      { ...baseProperty, id: 'demo', county: 'Wexford', city: 'Wexford', priceCents: 49500000, latitude: 52.34, longitude: -6.46 },
+      { ...baseProperty, id: 'coastal', county: 'Wexford', city: 'Wexford', priceCents: 52500000, latitude: 52.3369, longitude: -6.4633 },
+    ]
+    const closeUp = groupPropertiesForMap(homes, 'Wexford')
+    expect(closeUp.map(group => group.markerLabel)).toEqual(['2'])
+    expect(closeUp.every(group => !group.isProperty)).toBe(true)
+    expect(groupPropertiesForMap(homes, 'Wexford', 'Wexford').map(group => group.markerLabel)).toEqual(['€495k', '€525k'])
+    expect(groupPropertiesForMap(homes, null).map(group => group.markerLabel)).toEqual(['2'])
+  })
+  it('preserves counts and listing order for a large county catalogue', () => {
+    const properties = Array.from({ length: 10000 }, (_, index) => ({ ...baseProperty, id: String(index) }))
+    const groups = groupPropertiesForMap(properties, null)
+    expect(groups).toHaveLength(1)
+    expect(groups[0].markerLabel).toBe('10000')
+    expect(groups[0].properties).toEqual(properties)
+    expect(properties).toHaveLength(10000)
+  })
+  it('keeps Wexford pin counts consistent with the homes inside each area', () => {
+    const properties = [
+      { ...baseProperty, id: 'wexford-demo', county: 'Wexford', city: 'Wexford', priceCents: 49500000, latitude: 52.34, longitude: -6.46 },
+      { ...baseProperty, id: 'wexford-coastal', county: 'Wexford', city: 'Wexford', priceCents: 52500000, latitude: 52.3369, longitude: -6.4633 },
+    ]
+    const groups = groupPropertiesForMap(properties, 'Wexford')
+    expect(groups.every(group => group.properties.length > 0)).toBe(true)
+    expect(groups.flatMap(group => group.properties.map(home => home.id)).sort()).toEqual(properties.map(home => home.id).sort())
+    expect(groups.some(group => group.isProperty)).toBe(false)
+    expect(groups).toHaveLength(1)
+    expect(groups[0]).toMatchObject({ label: 'Wexford', markerLabel: '2' })
+    for (const group of groups.filter(group => !group.isProperty)) {
+      const visible = properties.filter(home => areaForProperty(home)?.name === group.label)
+      expect(visible.map(home => home.id)).toEqual(group.properties.map(home => home.id))
+      const detail = groupPropertiesForMap(group.properties, 'Wexford', group.label)
+      expect(detail).toHaveLength(group.properties.length)
+      expect(detail.every(marker => marker.markerLabel.startsWith('€'))).toBe(true)
+    }
+  })
   it('groups the Ireland overview by county', () => {
     const groups = groupPropertiesForMap([
       baseProperty,
@@ -64,8 +109,9 @@ describe('map listing count groups', () => {
       { ...baseProperty, id: 'three', city: 'Kinsale', latitude: 51.705, longitude: -8.523 },
     ], 'Cork')
 
-    expect(groups).toHaveLength(2)
+    expect(groups.filter(group => group.properties.length > 0)).toHaveLength(2)
     expect(groups.map((group) => group.markerLabel)).toEqual(expect.arrayContaining(['2', '1']))
+    expect(groups.some(group => group.markerLabel === '0')).toBe(false)
   })
 
   it('reveals individual price markers only after a local area is selected', () => {

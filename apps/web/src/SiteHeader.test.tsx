@@ -106,7 +106,10 @@ it('shows the client account when an existing session is active', async () => {
 
   await userEvent.click(screen.getByRole('button', { name: 'Open navigation' }))
   const drawer = screen.getByRole('dialog', { name: 'Explore OpenHaus' })
-  expect(within(drawer).getByRole('link', { name: 'Client account' })).toHaveAttribute('href', '/client/login')
+  expect(within(drawer).getByRole('link', { name: 'Client account' })).toHaveAttribute('href', '/client')
+  expect(within(drawer).getByRole('link', { name: 'Shortlist insights' })).toHaveAttribute('href', '/client/insights')
+  expect(within(drawer).getByRole('link', { name: 'Viewing checklist' })).toHaveAttribute('href', '/client/viewing-checklist')
+  expect(within(drawer).queryByRole('link', { name: 'Saved homes' })).not.toBeInTheDocument()
   expect(within(drawer).queryByRole('link', { name: 'Client sign in' })).not.toBeInTheDocument()
   expect(within(drawer).queryByRole('link', { name: 'Manager sign in' })).not.toBeInTheDocument()
   expect(within(drawer).queryByRole('link', { name: 'List a property' })).not.toBeInTheDocument()

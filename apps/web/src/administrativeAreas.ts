@@ -10,7 +10,6 @@ export type AdministrativeArea = {
 type EncodedArea = { name: string; county: string; paths: string[] }
 const countyAssets = import.meta.glob<string>('./data/areas/*.json', { query: '?raw', import: 'default' })
 const pendingByCounty = new Map<string, Promise<void>>()
-const encodedByCounty = new Map<string, EncodedArea[]>()
 const decodedByCounty = new Map<string, AdministrativeArea[]>()
 type Bounds = { north: number; south: number; east: number; west: number }
 const pathBounds = new WeakMap<Coordinate[], Bounds>()
@@ -21,15 +20,17 @@ export const administrativeAreaAttribution = {
 }
 
 // The page owns loading/error state. Concurrent requests share one import;
-// failures are evicted so an explicit retry can try the asset again.
+// Decode before publishing readiness, so render-time reads cannot fail midway.
+// Failures are evicted so an explicit retry can try the asset again.
 export function loadAreasForCounty(county: string | null | undefined): Promise<void> {
   const key = county?.toLocaleLowerCase() ?? ''
   const loader = countyAssets[`./data/areas/${key}.json`]
-  if (!loader || encodedByCounty.has(key)) return Promise.resolve()
+  if (!loader || decodedByCounty.has(key)) return Promise.resolve()
   const pending = pendingByCounty.get(key)
   if (pending) return pending
   const request = loader().then(raw => {
-    encodedByCounty.set(key, JSON.parse(raw) as EncodedArea[])
+    const decoded = decodeAreas(JSON.parse(raw) as EncodedArea[])
+    decodedByCounty.set(key, decoded)
   }).finally(() => pendingByCounty.delete(key))
   pendingByCounty.set(key, request)
   return request
@@ -40,12 +41,12 @@ export function areasForCounty(county: string | null | undefined): Administrativ
   const key = county.toLocaleLowerCase()
   const existing = decodedByCounty.get(key)
   if (existing) return existing
-  const encoded = encodedByCounty.get(key)
-  if (!encoded) {
-    if (countyAssets[`./data/areas/${key}.json`]) throw new Error(`County geometry not loaded: ${county}`)
-    return [] // Do not grow the cache with arbitrary search strings.
-  }
-  const decoded = encoded.map(area => ({name: area.name, county: area.county, paths: area.paths.map(path => {
+  if (countyAssets[`./data/areas/${key}.json`]) throw new Error(`County geometry not loaded: ${county}`)
+  return [] // Do not grow the cache with arbitrary search strings.
+}
+
+function decodeAreas(encoded: EncodedArea[]): AdministrativeArea[] {
+  return encoded.map(area => ({name: area.name, county: area.county, paths: area.paths.map(path => {
     const points = decodeBoundary(path).map(([lat,lng])=>({lat,lng}))
     const bounds = {north:-Infinity,south:Infinity,east:-Infinity,west:Infinity}
     for (const point of points) {
@@ -55,12 +56,17 @@ export function areasForCounty(county: string | null | undefined): Administrativ
     pathBounds.set(points,bounds)
     return points
   })})).sort((left,right)=>left.name.localeCompare(right.name))
-  decodedByCounty.set(key,decoded)
-  return decoded
 }
 
 export function areaForCoordinate(county: string, coordinate: Coordinate): AdministrativeArea | undefined {
   return areasForCounty(county).find((area) => area.paths.filter((path) => pointInPolygon(coordinate, path)).length % 2 === 1)
+}
+
+// One assignment rule for map counts, area results and the catalogue. A saved
+// town is a browsing fallback for gaps in geometry, not a corrected coordinate.
+export function areaForProperty(property: { county: string; city: string; latitude: number; longitude: number }): AdministrativeArea | undefined {
+  return areaForCoordinate(property.county, { lat: property.latitude, lng: property.longitude })
+    ?? areasForCounty(property.county).find(area => area.name.trim().toLocaleLowerCase() === property.city.trim().toLocaleLowerCase())
 }
 
 function pointInPolygon(point: Coordinate, path: Coordinate[]) {

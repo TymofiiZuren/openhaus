@@ -27,7 +27,7 @@ function managerWorkspaceResponse(input: RequestInfo | URL, properties: unknown[
   return Promise.resolve(Response.json({ properties }))
 }
 
-afterEach(() => { vi.restoreAllMocks(); localStorage.removeItem(clientSessionHintKey); localStorage.removeItem(managerSessionHintKey); window.history.replaceState({}, '', '/') })
+afterEach(() => { vi.restoreAllMocks(); sessionStorage.clear(); localStorage.removeItem(clientSessionHintKey); localStorage.removeItem(managerSessionHintKey); window.history.replaceState({}, '', '/') })
 
 describe('manager application', () => {
   it('opens an unsaved draft form from the account-menu shortcut', async () => {
@@ -284,6 +284,72 @@ describe('manager application', () => {
     await user.type(screen.getByRole('searchbox', { name: 'Search your listings' }), 'no matching home')
     await user.click(screen.getByRole('button', { name: 'Reset filters' }))
     expect(screen.getByLabelText('Image description')).toHaveValue('Living room facing the garden')
+  })
+  it('explains interrupted uploads without starting processing', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(input => {
+      if (String(input).endsWith('/videos')) return Promise.resolve(Response.json({ error: { code: 'upload_interrupted' } }, { status: 408 }))
+      return managerWorkspaceResponse(input, [managedProperty])
+    })
+    const user = userEvent.setup()
+    render(<ManagerApp />)
+    await user.upload(await screen.findByLabelText(`Choose video for ${managedProperty.title}`), new File(['video'], 'tour.mp4', { type: 'video/mp4' }))
+    await user.click(screen.getByRole('button', { name: 'Upload video' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Video upload was interrupted. Please try uploading again.')
+    expect(fetchMock.mock.calls.some(([input]) => String(input).includes('/media-jobs/'))).toBe(false)
+    expect(screen.getByRole('button', { name: 'Upload video' })).toBeEnabled()
+  })
+  it.each(['ready', 'failed'])('reconnects to an accepted video job ending in %s without uploading again', async status => {
+    let checks = 0
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(input => {
+      if (String(input).endsWith('/videos')) return Promise.resolve(Response.json({ id: 'accepted-job', status: 'pending' }))
+      if (String(input).includes('/media-jobs/')) {
+        checks++
+        return checks < 3 ? Promise.reject(checks === 1 ? new TypeError('Network unavailable') : new DOMException('Status timed out', 'TimeoutError')) : Promise.resolve(Response.json({ id: 'accepted-job', status, errorMessage: 'Video encoding failed.' }))
+      }
+      return managerWorkspaceResponse(input, [{ ...managedProperty, media: checks >= 3 && status === 'ready' ? [{ kind: 'video', url: '/media/recovered.mp4', position: 0, altText: 'Video' }] : managedProperty.media }])
+    })
+    const user = userEvent.setup()
+    render(<ManagerApp />)
+    await user.upload(await screen.findByLabelText(`Choose video for ${managedProperty.title}`), new File(['video'], 'tour.mp4', { type: 'video/mp4' }))
+    await user.click(screen.getByRole('button', { name: 'Upload video' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Video uploaded. Processing status is unavailable.')
+    expect(screen.queryByRole('button', { name: 'Upload video' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Check processing again' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Video uploaded. Processing status is unavailable.')
+    await user.click(screen.getByRole('button', { name: 'Check processing again' }))
+    if (status === 'failed') {
+      expect(await screen.findByRole('alert')).toHaveTextContent('Video encoding failed.')
+      expect(screen.getByRole('button', { name: 'Upload video' })).toBeEnabled()
+    } else {
+      expect(await screen.findByText('Video tour ready.')).toBeVisible()
+      expect(screen.queryByRole('button', { name: 'Check processing again' })).not.toBeInTheDocument()
+    }
+    expect(fetchMock.mock.calls.filter(([input]) => String(input).endsWith('/videos'))).toHaveLength(1)
+    expect(fetchMock.mock.calls.filter(([input]) => String(input).includes('/media-jobs/')).every(([input]) => String(input).endsWith('/accepted-job'))).toBe(true)
+  })
+  it('restores an accepted job after remount and clears it after confirmed failure', async () => {
+    let disconnected = true
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(input => {
+      if (String(input).endsWith('/videos')) return Promise.resolve(Response.json({ id: 'saved-job', status: 'pending' }))
+      if (String(input).includes('/media-jobs/')) return disconnected ? Promise.reject(new TypeError('offline')) : Promise.resolve(Response.json({ id: 'saved-job', status: 'failed', errorMessage: 'Encoding failed.' }))
+      return managerWorkspaceResponse(input, [managedProperty])
+    })
+    const user = userEvent.setup()
+    const first = render(<ManagerApp />)
+    await user.upload(await screen.findByLabelText(`Choose video for ${managedProperty.title}`), new File(['video'], 'tour.mp4', { type: 'video/mp4' }))
+    await user.click(screen.getByRole('button', { name: 'Upload video' }))
+    await screen.findByRole('button', { name: 'Check processing again' })
+    first.unmount()
+    const second = render(<ManagerApp />)
+    expect(await screen.findByRole('button', { name: 'Check processing again' })).toBeEnabled()
+    disconnected = false
+    await user.click(screen.getByRole('button', { name: 'Check processing again' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Encoding failed.')
+    second.unmount()
+    render(<ManagerApp />)
+    expect(await screen.findByRole('button', { name: 'Upload video' })).toBeDisabled()
+    expect(screen.queryByRole('button', { name: 'Check processing again' })).not.toBeInTheDocument()
+    expect(fetchMock.mock.calls.filter(([input]) => String(input).endsWith('/videos'))).toHaveLength(1)
   })
   it('retries a failed media refresh without uploading the video twice', async () => {
     let reads = 0

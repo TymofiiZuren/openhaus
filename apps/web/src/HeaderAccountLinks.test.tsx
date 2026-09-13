@@ -3,12 +3,15 @@ import userEvent from '@testing-library/user-event'
 import { expect, it, vi } from 'vitest'
 import { HeaderAccountLinks } from './HeaderAccountLinks'
 
-it('offers direct buyer workspace shortcuts', () => {
+it('offers distinct buyer tools without duplicate account anchors', () => {
   render(<HeaderAccountLinks signedIn />)
   fireEvent.click(screen.getByRole('button', { name: 'Account options' }))
-  expect(screen.getByRole('link', { name: 'Saved homes' })).toHaveAttribute('href', '/client#saved-properties-title')
-  expect(screen.getByRole('link', { name: 'Saved searches' })).toHaveAttribute('href', '/client#saved-searches-title')
-  expect(screen.getByRole('link', { name: 'Account security' })).toHaveAttribute('href', '/client#client-security-title')
+  expect(screen.getByRole('link', { name: 'Client account' })).toHaveAttribute('href', '/client')
+  expect(screen.getByRole('link', { name: 'Shortlist insights' })).toHaveAttribute('href', '/client/insights')
+  expect(screen.getByRole('link', { name: 'Viewing checklist' })).toHaveAttribute('href', '/client/viewing-checklist')
+  const paths = screen.getAllByRole('link').map(link => new URL(link.getAttribute('href')!, 'https://example.test').pathname)
+  expect(new Set(paths).size).toBe(paths.length)
+  expect(screen.queryByRole('link', { name: 'Match Lab' })).not.toBeInTheDocument()
 })
 
 it('offers manager creation and review shortcuts', () => {

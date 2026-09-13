@@ -6,7 +6,8 @@ import { AuthFields } from './AuthFields'
 import { clientSessionHintKey, managerSessionHintKey, SiteHeader, type HeaderClient } from './SiteHeader'
 import { displayAccountIdentifier } from './accountIdentifier'
 import { useWorkspaceAnchor } from './useWorkspaceAnchor'
-import { uploadPropertyVideo, waitForMediaJob, type MediaJob } from './api/mediaJobs'
+import { readVideoRecovery, saveVideoRecovery, clearVideoRecovery } from './videoRecovery'
+import { uploadPropertyVideo, waitForMediaJob, VideoUploadInterruptedError, type MediaJob } from './api/mediaJobs'
 import {
   fetchManagedProperties,
   fetchManagerSession,
@@ -165,7 +166,7 @@ export function ManagerApp() {
         {(state.status === 'signed-out' || state.status === 'error' || state.status === 'loading') && (
           <ManagerLogin onSubmit={signIn} busy={state.status === 'loading'} error={state.status === 'error' ? state.message : undefined} notice={state.status === 'signed-out' ? state.notice : undefined} />
         )}
-        {state.status === 'ready' && (analytics ? <ManagerAnalytics properties={state.properties} /> : profile ? <ManagerProfile manager={state.manager} onSignedOut={(notice) => { setManagerHint(false); setState({ status: 'signed-out', notice }) }} /> : <ManagerDashboard properties={state.properties} />)}
+        {state.status === 'ready' && (analytics ? <ManagerAnalytics properties={state.properties} /> : profile ? <ManagerProfile manager={state.manager} onSignedOut={(notice) => { setManagerHint(false); setState({ status: 'signed-out', notice }) }} /> : <ManagerDashboard key={state.manager.id} managerID={state.manager.id} properties={state.properties} />)}
       </main>
     </div>
   )
@@ -335,7 +336,7 @@ function ManagerProfile({ manager, onSignedOut }: { manager: ManagerIdentity; on
   </section>
 }
 
-function ManagerDashboard({ properties }: { properties: ManagedProperty[] }) {
+function ManagerDashboard({ properties, managerID }: { properties: ManagedProperty[]; managerID: string }) {
   const [items, setItems] = useState(properties)
   const [editing, setEditing] = useState<ManagedProperty | 'new' | undefined>(() => new URLSearchParams(window.location.search).get('action') === 'new' ? 'new' : undefined)
   const [saveError, setSaveError] = useState<string>()
@@ -410,7 +411,7 @@ function ManagerDashboard({ properties }: { properties: ManagedProperty[] }) {
                 </div>
                 <div hidden={compact && expandedID !== property.id}><ManagerReadinessChecklist property={property} onEdit={() => setEditing(property)} /></div>
               </div>
-<div className="manager-property-meta" id={`manager-tools-${property.id}`} hidden={compact && expandedID !== property.id}><p className="manager-panel-kicker">Listing workspace</p><h3>Listing essentials</h3><dl><div><dt>Price</dt><dd>{euros.format(property.priceCents / 100)}</dd></div><div><dt>Bedrooms</dt><dd>{property.bedrooms}</dd></div><div><dt>Type</dt><dd>{titleCase(property.propertyType)}</dd></div></dl><div className="manager-row-actions"><a href={`/manager/preview/${property.id}`} target="_blank" rel="noreferrer">Preview listing</a><button type="button" aria-label={`Edit ${property.title}`} onClick={() => setEditing(property)}>Edit listing</button>{property.status === 'published' && <a href={`/properties/${property.id}`}>View public listing <span aria-hidden="true">→</span></a>}</div><div className="manager-immersive-tools"><section className="manager-tour-tools" aria-label={`360° tour settings for ${property.title}`}><h3>360° tour</h3><ManagerPanoramaForm property={property} onAttached={(media) => setItems((current) => current.map((item) => item.id === property.id ? { ...item, media: [...item.media.filter((entry) => entry.kind !== 'panorama'), media] } : item))} onRemoved={() => setItems((current) => current.map((item) => item.id === property.id ? { ...item, media: item.media.filter((entry) => entry.kind !== 'panorama') } : item))} /><ManagerTourPreview property={property} /></section><section className="manager-video-tools" aria-label={`Video settings for ${property.title}`}><h3>Video walkthrough</h3><ManagerVideoUpload property={property} onReady={(media) => setItems((current) => current.map((item) => item.id === property.id ? { ...item, media: [...item.media.filter((entry) => entry.kind !== 'video'), ...media] } : item))} /></section></div></div>
+<div className="manager-property-meta" id={`manager-tools-${property.id}`} hidden={compact && expandedID !== property.id}><p className="manager-panel-kicker">Listing workspace</p><h3>Listing essentials</h3><dl><div><dt>Price</dt><dd>{euros.format(property.priceCents / 100)}</dd></div><div><dt>Bedrooms</dt><dd>{property.bedrooms}</dd></div><div><dt>Type</dt><dd>{titleCase(property.propertyType)}</dd></div></dl><div className="manager-row-actions"><a href={`/manager/preview/${property.id}`} target="_blank" rel="noreferrer">Preview listing</a><button type="button" aria-label={`Edit ${property.title}`} onClick={() => setEditing(property)}>Edit listing</button>{property.status === 'published' && <a href={`/properties/${property.id}`}>View public listing <span aria-hidden="true">→</span></a>}</div><div className="manager-immersive-tools"><section className="manager-tour-tools" aria-label={`360° tour settings for ${property.title}`}><h3>360° tour</h3><ManagerPanoramaForm property={property} onAttached={(media) => setItems((current) => current.map((item) => item.id === property.id ? { ...item, media: [...item.media.filter((entry) => entry.kind !== 'panorama'), media] } : item))} onRemoved={() => setItems((current) => current.map((item) => item.id === property.id ? { ...item, media: item.media.filter((entry) => entry.kind !== 'panorama') } : item))} /><ManagerTourPreview property={property} /></section><section className="manager-video-tools" aria-label={`Video settings for ${property.title}`}><h3>Video walkthrough</h3><ManagerVideoUpload managerID={managerID} property={property} onReady={(media) => setItems((current) => current.map((item) => item.id === property.id ? { ...item, media: [...item.media.filter((entry) => entry.kind !== 'video'), ...media] } : item))} /></section></div></div>
               <div className="manager-property-library" hidden={compact && expandedID !== property.id}><p className="manager-panel-kicker">03 / Media library</p>
                 <ManagerImages onUpdated={(media) => setItems((current) => current.map((item) => item.id === property.id ? { ...item, media: item.media.map((entry) => entry.url === media.url ? { ...entry, altText: media.altText } : entry) } : item))} propertyID={property.id} media={property.media} onUploaded={(media) => setItems((current) => current.map((item) => item.id === property.id ? {...item,media:[...item.media,media]} : item))} onOrdered={(media) => setItems((current) => current.map((item) => item.id === property.id ? {...item,media} : item))}/>
               </div>
@@ -451,11 +452,14 @@ function ManagerPanoramaForm({ property, onAttached, onRemoved }: { property: Ma
   </form>
 }
 
-type UploadState = { status: 'idle' } | { status: 'busy'; job?: MediaJob } | { status: 'ready' } | { status: 'refreshing' } | { status: 'refresh-error' } | { status: 'error'; message: string }
+type UploadState = { status: 'idle' } | { status: 'busy'; job?: Pick<MediaJob, 'id' | 'status'> } | { status: 'status-error'; jobID: string } | { status: 'ready' } | { status: 'refreshing' } | { status: 'refresh-error' } | { status: 'error'; message: string }
 
-function ManagerVideoUpload({ property, onReady }: { property: ManagedProperty; onReady: (media: ManagedProperty['media']) => void }) {
+function ManagerVideoUpload({ property, managerID, onReady }: { property: ManagedProperty; managerID: string; onReady: (media: ManagedProperty['media']) => void }) {
   const [file, setFile] = useState<File>()
-  const [state, setState] = useState<UploadState>({ status: 'idle' })
+  const [state, setState] = useState<UploadState>(() => {
+    const jobID = readVideoRecovery(managerID, property.id)
+    return jobID ? { status: 'status-error', jobID } : { status: 'idle' }
+  })
   const controller = useRef<AbortController | undefined>(undefined)
   useEffect(() => () => controller.current?.abort(), [])
 
@@ -467,6 +471,7 @@ function ManagerVideoUpload({ property, onReady }: { property: ManagedProperty; 
       const videos = saved?.media.filter((item) => item.kind === 'video')
       if (!videos?.length) throw new Error('Processed video not available')
       onReady(videos)
+      clearVideoRecovery(managerID, property.id)
       setFile(undefined)
       setState({ status: 'ready' })
     } catch (error) {
@@ -491,6 +496,23 @@ function ManagerVideoUpload({ property, onReady }: { property: ManagedProperty; 
     setFile(selected)
   }
 
+  async function checkProcessing(jobID: string) {
+    controller.current?.abort()
+    controller.current = new AbortController()
+    setState({ status: 'busy', job: { id: jobID, status: 'pending' } })
+    try {
+      const completed = await waitForMediaJob(jobID, (job) => setState({ status: 'busy', job }), controller.current.signal)
+      if (completed.status === 'ready') await refreshMedia()
+      else {
+        clearVideoRecovery(managerID, property.id)
+        setState({ status: 'error', message: completed.errorMessage || 'Video processing failed.' })
+      }
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return
+      setState({ status: 'status-error', jobID })
+    }
+  }
+
   async function upload(event: FormEvent) {
     event.preventDefault()
     if (!file || state.status === 'busy') return
@@ -499,16 +521,18 @@ function ManagerVideoUpload({ property, onReady }: { property: ManagedProperty; 
     try {
       setState({ status: 'busy' })
       const queued = await uploadPropertyVideo(property.id, file, controller.current.signal)
-      setState({ status: 'busy', job: queued })
-      const completed = await waitForMediaJob(queued.id, (job) => setState({ status: 'busy', job }), controller.current.signal)
-      if (completed.status === 'ready') await refreshMedia()
-      else setState({ status: 'error', message: completed.errorMessage || 'Video processing failed.' })
+      saveVideoRecovery(managerID, property.id, queued.id)
+      await checkProcessing(queued.id)
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') return
-      setState({ status: 'error', message: 'The video could not be uploaded. Try again.' })
+      setState({ status: 'error', message: error instanceof VideoUploadInterruptedError ? error.message : 'The video could not be uploaded. Try again.' })
     }
   }
 
+  if (state.status === 'status-error') return <div className="manager-video-upload">
+    <span role="alert">Video uploaded. Processing status is unavailable. Check again without uploading another copy.</span>
+    <button type="button" onClick={() => checkProcessing(state.jobID)}>Check processing again</button>
+  </div>
   if (state.status === 'refreshing' || state.status === 'refresh-error') return <div className="manager-video-upload">
     {state.status === 'refreshing' ? <span role="status">Video processed. Updating listing readiness…</span> : <><span role="alert">Video processed, but listing readiness could not be refreshed. Retry without uploading again.</span><button type="button" onClick={refreshMedia}>Refresh listing media</button></>}
   </div>

@@ -44,6 +44,17 @@ it('opens client registration without exposing a form when accounts are disabled
 })
 
 it.each([
+  ['/client/insights', 'Shortlist insights'],
+  ['/client/viewing-checklist/', 'Viewing checklist'],
+])('routes %s to its own authenticated buyer tool', async (pathname, title) => {
+  vi.spyOn(globalThis, 'fetch').mockImplementation(async input => String(input).endsWith('/saved-properties')
+    ? Response.json({ properties: [] })
+    : Response.json({ client: { id: 'buyer', email: 'buyer@example.test' } }))
+  render(<Application pathname={pathname} />)
+  expect(await screen.findByRole('heading', { level: 1, name: title })).toBeVisible()
+})
+
+it.each([
   ['/about', 'A fuller picture of home.'],
   ['/contact', 'Start a conversation.'],
   ['/help', 'A little clarity.'],

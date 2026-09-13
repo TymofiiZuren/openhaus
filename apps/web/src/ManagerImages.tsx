@@ -42,7 +42,8 @@ export function ManagerImages({propertyID,media,onUploaded,onOrdered,onUpdated}:
   <div className="manager-image-grid">{photos.length===0&&plans.length===0&&<div className="manager-gallery-empty"><span aria-hidden="true">＋</span><strong>Give this home its first impression</strong><p>Upload a photo to start the gallery, or a floor plan to show how the rooms connect.</p></div>}{[...photos,...plans].map(item=>{
    const index=photos.indexOf(item)
    const src=item.url.replace('/api/v1/property-images/','/api/v1/manager/property-images/')
-   return <figure key={item.url}><a href={src} target="_blank" rel="noreferrer" aria-label={`Open image: ${item.altText}`}><img src={src} alt={item.altText} loading="lazy"/></a><figcaption><span className="manager-media-kind">{index===0?'Cover photo':item.kind==='floor_plan'?'Floor plan':`Photo ${index+1}`}</span><span>{item.altText}</span></figcaption>
+   const thumbnail=/^\/api\/v1\/manager\/property-images\/[A-Za-z0-9]+\.(png|jpg)$/.test(src)?`${src}?size=thumbnail`:src
+   return <figure key={item.url}><a href={src} target="_blank" rel="noreferrer" aria-label={`Open image: ${item.altText}`}><img src={thumbnail} alt={item.altText} loading="lazy"/></a><figcaption><span className="manager-media-kind">{index===0?'Cover photo':item.kind==='floor_plan'?'Floor plan':`Photo ${index+1}`}</span><span>{item.altText}</span></figcaption>
     {onUpdated&&<ImageDescriptionEditor propertyID={propertyID} media={item} disabled={busy} onUpdated={onUpdated}/>}
     {index>=0&&<div className="manager-image-actions">
      <button type="button" disabled={busy||index===0} onClick={()=>reorder(index,0)} aria-label={`Make cover: ${item.altText}`}>Make cover</button>

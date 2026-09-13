@@ -29,29 +29,54 @@ func NewProcessor(queue Queue, ffmpegPath, outputRoot, publicPrefix string) *Pro
 }
 
 func (processor *Processor) Run(ctx context.Context) error {
+	if ctx.Err() != nil {
+		return nil
+	}
 	if err := os.MkdirAll(processor.outputRoot, 0o750); err != nil {
 		return err
 	}
-	ticker := time.NewTicker(time.Second)
-	defer ticker.Stop()
+	delay := time.Second
 	for {
-		err := processor.ProcessNext(ctx)
-		if err != nil && !errors.Is(err, ErrNotFound) {
-			log.Printf("process media job: %v", err)
+		if ctx.Err() != nil {
+			return nil
 		}
+		err := processor.ProcessNext(ctx)
+		if ctx.Err() != nil {
+			return nil
+		}
+		failed := err != nil && !errors.Is(err, ErrNotFound)
+		if failed {
+			log.Printf("process media job: %v", err)
+		} else {
+			delay = time.Second
+		}
+		// Wait after the attempt ends; a ticker can leave an immediate tick queued
+		// behind a long encode. This only delays polling, never replays a job.
+		timer := time.NewTimer(delay)
 		select {
 		case <-ctx.Done():
+			timer.Stop()
 			return nil
-		case <-ticker.C:
+		case <-timer.C:
+		}
+		if failed {
+			delay = min(delay*2, 30*time.Second)
 		}
 	}
 }
 
 func (processor *Processor) ProcessNext(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if err := os.MkdirAll(processor.outputRoot, 0o750); err != nil {
 		return fmt.Errorf("create media output directory: %w", err)
 	}
-	job, err := processor.queue.ClaimNext(ctx)
+	// Bound queue acquisition separately from the much longer encoding deadline.
+	// An uncertain claim must not trigger a failure transition or source cleanup.
+	claimCtx, cancelClaim := context.WithTimeout(ctx, 5*time.Second)
+	job, err := processor.queue.ClaimNext(claimCtx)
+	cancelClaim()
 	if err != nil {
 		return err
 	}
@@ -68,8 +93,14 @@ func (processor *Processor) ProcessNext(ctx context.Context) error {
 	}
 	encodeCtx, cancel := context.WithTimeout(ctx, 20*time.Minute)
 	defer cancel()
+	// Bound both encoded dimensions without enlarging small sources. Even sizes
+	// support yuv420p; scale preserves display aspect ratio through sample aspect ratio.
 	command := exec.CommandContext(encodeCtx, processor.ffmpegPath,
-		"-nostdin", "-hide_banner", "-loglevel", "error", "-y", "-i", job.SourcePath, "-vf", "fps=30,scale=1920:-2:flags=lanczos",
+		"-nostdin", "-hide_banner", "-loglevel", "error", "-y", "-i", job.SourcePath,
+		// Require real video, excluding attached cover art; audio is optional.
+		// Drop source tags/chapters rather than leaking them into public tours.
+		"-map", "0:V:0", "-map", "0:a:0?", "-map_metadata", "-1", "-map_metadata:s", "-1", "-map_chapters", "-1",
+		"-vf", "fps=30,scale=w='min(1920,iw)':h='min(1080,ih)':force_original_aspect_ratio=decrease:force_divisible_by=2:flags=lanczos",
 		"-c:v", "libx264", "-preset", "medium", "-crf", "24", "-pix_fmt", "yuv420p",
 		"-movflags", "+faststart", "-c:a", "aac", "-b:a", "128k", stagingPath)
 	// Encoder diagnostics may include private paths or malicious metadata. Do not

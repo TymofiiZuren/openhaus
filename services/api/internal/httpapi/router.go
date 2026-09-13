@@ -464,7 +464,12 @@ func uploadVideo(uploader VideoUploader) http.HandlerFunc {
 				continue
 			}
 			job, uploadErr := uploader.AcceptUpload(request.Context(), request.PathValue("propertyID"), part.FileName(), part)
-			_ = part.Close()
+			// Part.Close drains unread bytes. This handler returns after this part,
+			// so leave body cleanup to net/http rather than reading a rejected upload.
+			if errors.Is(uploadErr, context.Canceled) || errors.Is(uploadErr, context.DeadlineExceeded) {
+				writeError(response, http.StatusRequestTimeout, "upload_interrupted", "video upload was interrupted; try uploading again")
+				return
+			}
 			var maxBytesError *http.MaxBytesError
 			if errors.As(uploadErr, &maxBytesError) {
 				writeError(response, http.StatusRequestEntityTooLarge, "video_too_large", "video exceeds the 2 GiB upload limit")

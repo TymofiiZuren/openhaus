@@ -1,15 +1,15 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import { useState } from 'react'
 import { beforeAll, describe, expect, it, vi } from 'vitest'
 import { loadAreasForCounty } from './administrativeAreas'
-beforeAll(() => Promise.all(['Dublin', 'Cork'].map(loadAreasForCounty)))
+beforeAll(() => Promise.all(['Dublin', 'Cork', 'Wexford'].map(loadAreasForCounty)))
 import type { Property } from './api/properties'
 
 let googleMapRenderCount = 0
 vi.mock('./GooglePropertyMap', () => ({
-  GooglePropertyMap: ({ properties, selectedPropertyID }: { properties: Property[]; selectedPropertyID?: string }) => {
+  GooglePropertyMap: ({ properties, selectedPropertyID, onSelectCounty, onSelectArea }: { properties: Property[]; selectedPropertyID?: string; onSelectCounty: (county: string) => void; onSelectArea: (area: string) => void }) => {
     googleMapRenderCount += 1
-    return <div data-testid="map-properties" data-selected-property={selectedPropertyID}>{properties.map((property) => property.title).join(',')}</div>
+    return <><div data-testid="map-properties" data-selected-property={selectedPropertyID}>{properties.map((property) => property.title).join(',')}</div><button onClick={() => onSelectCounty('Wexford')}>Wexford county pin</button><button onClick={() => onSelectArea('Wexford')}>Wexford area pin</button></>
   },
 }))
 
@@ -42,6 +42,41 @@ const sharedProps = {
 }
 
 describe('property map listing visibility', () => {
+  it('keeps map and results synchronized through county, area, preview and back navigation', async () => {
+    const user = (await import('@testing-library/user-event')).default.setup()
+    const homes = [
+      dublinProperty,
+      { ...corkProperty, id: 'townhouse', title: 'Wexford townhouse', city: 'Wexford', county: 'Wexford', latitude: 52.34, longitude: -6.46 },
+      { ...corkProperty, id: 'coastal', title: 'Wexford coastal home', city: 'Wexford', county: 'Wexford', latitude: 52.3369, longitude: -6.4633 },
+    ]
+    function Harness() {
+      const [county, setCounty] = useState<string | null>(null)
+      const [area, setArea] = useState<string>()
+      return <PropertyMap {...sharedProps} properties={homes} selectedCounty={county} selectedArea={area} onCountyChange={value => { setCounty(value); setArea(undefined) }} onAreaChange={setArea} />
+    }
+    render(<Harness />)
+    const expectHomes = (expected: Property[]) => {
+      expect(screen.getByTestId('map-properties').textContent).toBe(expected.map(home => home.title).join(','))
+      const rail = within(screen.getByRole('complementary', { name: 'Homes matching your search' }))
+      expect(rail.getAllByRole('button', { name: /^Select .* on map$/ })).toHaveLength(expected.length)
+      for (const home of expected) expect(rail.getByRole('button', { name: `Select ${home.title} on map` })).toBeVisible()
+    }
+    expectHomes(homes)
+    await user.click(screen.getByRole('button', { name: 'Wexford county pin' }))
+    expectHomes(homes.slice(1))
+    await user.click(screen.getByRole('button', { name: 'Wexford area pin' }))
+    expectHomes(homes.slice(1))
+    await user.click(screen.getByRole('button', { name: 'Select Wexford coastal home on map' }))
+    expect(screen.getByRole('article', { name: 'Preview Wexford coastal home' })).toBeVisible()
+    await user.click(screen.getByRole('button', { name: 'Back to all Wexford' }))
+    expectHomes(homes.slice(1))
+    expect(screen.queryByRole('article', { name: 'Preview Wexford coastal home' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Select Wexford townhouse on map' }))
+    expect(screen.getByRole('article', { name: 'Preview Wexford townhouse' })).toBeVisible()
+    await user.click(screen.getByRole('button', { name: 'All Ireland' }))
+    expectHomes(homes)
+    expect(screen.queryByRole('article', { name: 'Preview Wexford townhouse' })).not.toBeInTheDocument()
+  })
   it('does not redraw the map while typing into the search field', async () => {
     const user = (await import('@testing-library/user-event')).default.setup()
     googleMapRenderCount = 0

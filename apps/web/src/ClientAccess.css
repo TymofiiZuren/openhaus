@@ -1,0 +1,25 @@
+/* Access screens own their layout; account dashboard tiles never apply here. */
+.client-access-main { width: min(1040px, 100%); margin-inline: auto; padding: clamp(40px, 7vw, 96px) 32px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 480px); gap: 64px; align-items: start; color: var(--ink); }
+.client-access-intro { display: grid; gap: 24px; padding-top: 32px; }
+.client-access-intro h1 { margin: 0; max-width: 10ch; font: 600 clamp(2.5rem, 4vw, 3.5rem)/1.06 var(--font-family); letter-spacing: -.05em; text-wrap: balance; }
+.client-access-intro .eyebrow { margin: 0; color: var(--muted); }
+.client-access-main a { color: var(--ink); text-decoration-thickness: 1px; text-underline-offset: 5px; }
+.client-access-main a:hover { color: var(--accent); }
+.client-access-intro a { max-width: 28ch; line-height: 1.6; }
+.client-access-panel { display: grid; gap: 24px; padding: 32px; min-width: 0; border-radius: var(--radius-panel); background: var(--surface); }
+.client-access-panel h2 { margin: 0; font: 600 1.65rem/1.2 var(--font-family); letter-spacing: -.035em; }
+.client-access-panel p { margin: 0; line-height: 1.6; color: var(--muted); }
+.client-access-panel form { display: grid; gap: 24px; }
+.client-access-panel form > button, .client-access-panel > button { min-height: 52px; padding: 12px 24px; border: 0; border-radius: var(--radius-control); background: var(--ink); color: var(--paper); font: inherit; font-weight: 500; cursor: pointer; }
+.client-access-panel form > button:hover, .client-access-panel > button:hover { opacity: .85; }
+.client-access-panel button:disabled { opacity: .5; cursor: wait; }
+.client-access-notice { font-size: .8rem; }
+.client-access-links { display: flex; flex-wrap: wrap; gap: 8px 24px; padding-top: 16px; border-top: 1px solid var(--line); }
+.client-access-links a { display: inline-flex; align-items: center; min-height: 44px; font-size: .85rem; line-height: 1.5; }
+.client-access-main :is(a, button):focus-visible { outline: 2px solid var(--ink); outline-offset: 4px; }
+@media (max-width: 760px) {
+  .client-access-main { max-width: 544px; grid-template-columns: minmax(0, 1fr); gap: 32px; padding: 32px 24px; }
+  .client-access-intro { padding-top: 0; gap: 16px; }
+  .client-access-intro h1 { max-width: 15ch; }
+  .client-access-panel { padding: 24px; }
+}

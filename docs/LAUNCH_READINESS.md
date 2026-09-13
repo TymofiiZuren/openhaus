@@ -1,6 +1,68 @@
 # OpenHaus launch readiness
 
-Working estimate: approximately 58% of the planned public product, based on the product roadmap and implementation review, not an audited score or legal certification.
+## September 13 pull-request checkpoint
+
+Stage: advanced portfolio demonstration / pre-beta, not production-approved.
+This increment includes county-to-area map navigation, shared property dialogs,
+buyer shortlist insights and a browser-local viewing checklist. The native C++
+panorama converter and Go bundle CLI are standalone tools, not integrated with
+the upload queue or public panorama viewer.
+
+Fresh checks: 378 frontend tests passed on the full rerun; build and lint passed
+with the existing large-map-chunk warning and three fast-refresh warnings. The
+first run failed one manager-navigation test (377 passed); that test passed both
+in isolation and in the full rerun. Treat this as an unresolved intermittent test
+signal, not a proven production defect or a silently clean first run.
+
+All Go tests and vet passed, as did targeted race checks, real FFmpeg encoding
+tests, and media-job store tests using isolated PostgreSQL temporary tables.
+Native C++ warning-as-error compilation, AddressSanitizer/UndefinedBehaviorSanitizer
+tests and CLI rejection tests passed. New Go contract tests reject malformed,
+truncated, oversized and failed native-processor output. This does not establish
+complete database integration, crash recovery, real-device accessibility or
+production performance coverage. No aggregate coverage percentage is claimed.
+
+No public deployment, new production dependency or schema migration is part of
+this checkpoint. Release gates below remain open, particularly worker leases,
+object storage, account verification/recovery and delivery-backed workflows.
+
+## September 9 production-hardening increment
+
+Still pre-beta, not cleared for public production. `mediajob.Store.Complete` now
+locks and checks job state before publication. Repeating a ready completion with
+the same output URL succeeds without another gallery row; conflicting output or
+completion of pending/failed jobs is rejected. Failure only transitions a processing
+job, preserves an already-failed result on replay, and cannot overwrite ready media.
+
+Validation: real PostgreSQL tests reproduce duplicate publication before the fix
+and exercise completion replay, conflicting completion, invalid transitions, late
+failure, repeated failure and missing jobs after it. Tests use session-local copies
+of the actual table definitions with a `pg_temp`-only search path, not application
+records. This is not a multi-worker crash/lease test or full migration test.
+
+No schema changes, new dependencies, public deployment or account-gate bypass.
+The worker still needs fenced leases, reclaim limits, object storage, and crash
+reconciliation. Same-output replay does not verify object bytes; immutable,
+attempt-scoped object keys and checksums belong to the storage/lease increment.
+See [deployment proposal](DEPLOYMENT_PLAN.md) for the proposed hosting split and
+approval-dependent choices.
+
+Current working stage (2026-09-08): advanced demonstration / pre-beta, not approved for public production use. Historical percentages below are planning estimates, not a current readiness score. Feature count and passing unit tests do not establish operational readiness.
+
+Latest focused review: signed-in account navigation no longer uses signed-out copy. Media Lab has bounded local analysis and tested distribution algorithms, and the server has upload sanitisation, orientation correction, thumbnails and atomic video publication. These are separate verified slices, not an end-to-end launch audit. Priority gates remain verified email/recovery, worker leases and crash recovery with idempotent completion, delivery-backed notifications/enquiries, backup restoration and retention procedures, and supported-device performance/accessibility testing. The map bundle remains large. Do not imply recent source changes have been deployed merely because tests and builds pass.
+
+## September 8 checkpoint and remaining launch gates
+
+The accumulated map recovery, account presentation, image derivatives and Media Lab work was committed locally as `750ae6c`. It was not pushed or deployed. Validation included the full frontend suite (342 tests at that checkpoint), build/lint, `go test ./...`, `go vet ./...`, race checks for `internal/mediajob` and `internal/httpapi`, and the real FFmpeg encoding-boundary test with small, portrait, 4K, odd-sized and anamorphic fixtures. Existing map bundle and fast-refresh warnings remain. `TEST_DATABASE_URL` was not configured, so this checkpoint does not establish database integration readiness.
+
+Code-backed blockers remain:
+
+- `services/api/cmd/api/main.go` refuses enabled buyer accounts outside development pending email verification and recovery. Keep this gate; do not bypass it to launch.
+- `services/api/internal/mediajob/store.go` claims only pending jobs. A worker crash after claiming can leave a processing job stranded. Leases, reclaim rules and idempotent completion need a coordinated schema/worker design and failure-injection tests.
+- Saved-search delivery and real viewing/enquiry delivery remain unfinished product integrations, not demonstrated by persistence alone.
+- Backup restoration, retention enforcement, production security/accessibility checks and supported-device performance still require evidence before public launch.
+
+The next consequential backend increment should be crash-safe media-job recovery, followed by verified account recovery and delivery-backed workflows. These require explicit design decisions; no production infrastructure or external service has been provisioned by this checkpoint.
 
 ## Delivered foundations
 

@@ -29,8 +29,6 @@
 .client-searches article button { border: 0; border-bottom: 1px solid currentColor; background: transparent; color: var(--accent); font: inherit; cursor: pointer; }
 .client-security > div { display: grid; align-content: start; gap: 8px; }
 .client-security h3 { margin: 0; font: 400 1.45rem/1.2 var(--display-font); }
-.client-security form label { color: var(--muted); font-size: .82rem; }
-.client-security form input { width: 100%; min-height: 48px; padding: 10px 12px; border: 1px solid var(--line-strong); border-radius: var(--radius-control); background: var(--surface); color: var(--ink); font: inherit; }
 .client-danger { display: grid; grid-template-columns: minmax(180px,.72fr) minmax(0,1.28fr); gap: 28px; padding-top: 28px; border-top: 1px solid var(--line); }
 .client-danger > div { display: grid; align-content: start; gap: 8px; }
 .client-danger h3 { margin: 0; color: var(--danger); font: 400 1.45rem/1.2 var(--display-font); }
@@ -85,13 +83,11 @@
 .client-workspace-grid .client-searches,.client-workspace-grid .client-saved { padding: 0; border: 0; }
 .client-searches h3,.client-saved h3,.client-security h3,.client-danger h3 { font-family: var(--font-family); font-weight: 600; letter-spacing: -.035em; }
 .client-searches > button { padding-inline: 0; border: 0; border-bottom: 1px solid currentColor; border-radius: 0; }
-.client-security,.client-danger { grid-template-columns: minmax(220px,.6fr) minmax(0,1.4fr); gap: clamp(32px,5vw,72px); padding-block: clamp(36px,5vw,64px); }
-.client-security form,.client-danger form { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px 16px; }
-.client-security form label:not(:first-child),.client-danger form label:not(:first-child) { margin-top: 8px; }
-.client-security form label:first-child,.client-security form input:first-of-type { grid-column: 1 / -1; }
-.client-security form input,.client-danger form input { min-height: 52px; padding-inline: 14px; border: 0; background: var(--control-surface); }
-.client-security form > button,.client-danger form > button { grid-column: 1 / -1; justify-self: start; margin-top: 8px; }
-.client-danger { margin-top: 4px; }
+.client-security,.client-danger { grid-template-columns: minmax(220px,.6fr) minmax(0,1.4fr); gap: 32px; padding-block: 40px; }
+.client-security form,.client-danger form { width: 100%; max-width: 560px; min-width: 0; grid-template-columns: minmax(0,1fr); gap: 8px; }
+.client-danger form label:not(:first-child) { margin-top: 16px; }
+.client-danger form input { min-height: 52px; padding-inline: 14px; border: 0; background: var(--control-surface); }
+.client-security form > button,.client-danger form > button { justify-self: start; max-width: 100%; margin-top: 16px; }
 .client-danger form button { border: 0; }
 @media (max-width: 980px) { .client-main { grid-template-columns: 1fr; gap: 36px; } .client-intro { position: static; } .client-intro h1 { max-width: 14ch; font-size: clamp(2.8rem,9vw,4.6rem); } }
 @media (max-width: 720px) { .client-main { padding-inline: 18px; } .client-account-overview { grid-template-columns: 52px minmax(0,1fr); padding: 24px 20px; gap: 16px; } .client-profile-mark { width: 52px; } .client-account-overview .client-profile,.client-account-overview .client-account-actions { grid-column: 1 / -1; } .client-account-overview .client-profile,.client-links,.client-workspace-grid { grid-template-columns: 1fr; } .client-links { margin-bottom: 40px; } .client-security,.client-danger { grid-template-columns: 1fr; } .client-security form,.client-danger form { grid-template-columns: 1fr; } .client-security form label,.client-security form input,.client-security form > button,.client-danger form label,.client-danger form input,.client-danger form > button { grid-column: 1; } }

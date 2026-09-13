@@ -8,6 +8,9 @@ import { fetchClientSavedSearches, removeClientSavedSearch, type ClientSavedSear
 import type { Property } from './api/properties'
 import './App.css'
 import './ClientApp.css'
+import './ClientAccess.css'
+import { PasswordChangeFields } from './PasswordChangeFields'
+import { ShortlistInsights, ViewingChecklist } from './BuyerTools'
 
 type Client = { id: string; email: string }
 const euros = new Intl.NumberFormat('en-IE', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 })
@@ -30,6 +33,7 @@ async function readClient(response: Response): Promise<Client> {
 
 export function ClientApp({ pathname = '/client' }: { pathname?: string }) {
   const register = pathname.replace(/\/$/, '') === '/client/register'
+  const tool = pathname.replace(/\/$/, '') === '/client/insights' ? 'Shortlist insights' : pathname.replace(/\/$/, '') === '/client/viewing-checklist' ? 'Viewing checklist' : null
   const [status, setStatus] = useState<ClientSessionStatus>('loading')
   const [client, setClient] = useState<Client | null>(null)
   useWorkspaceAnchor(status === 'authenticated')
@@ -39,6 +43,7 @@ export function ClientApp({ pathname = '/client' }: { pathname?: string }) {
   const [message, setMessage] = useState('')
   const [savedProperties, setSavedProperties] = useState<Property[]>([])
   const [savedStatus, setSavedStatus] = useState<'loading' | 'ready' | 'error'>('loading')
+  const [savedAttempt, setSavedAttempt] = useState(0)
   const [savedSearches, setSavedSearches] = useState<ClientSavedSearch[]>([])
   const [searchesStatus, setSearchesStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
   const [email, setEmail] = useState('')
@@ -58,9 +63,9 @@ export function ClientApp({ pathname = '/client' }: { pathname?: string }) {
   }, [client, status])
   useEffect(() => {
     const previous = document.title
-    document.title = 'Client account — OpenHaus'
+    document.title = `${tool ?? 'Client account'} — OpenHaus`
     return () => { document.title = previous }
-  }, [])
+  }, [tool])
   useEffect(() => {
     const controller = new AbortController()
     async function check() {
@@ -80,13 +85,13 @@ export function ClientApp({ pathname = '/client' }: { pathname?: string }) {
   }, [attempt])
 
   useEffect(() => {
-    if (status !== 'authenticated') return
+    if (status !== 'authenticated' || tool === 'Viewing checklist') return
     const controller = new AbortController()
     fetchClientSavedProperties(controller.signal)
       .then(items => { if (!controller.signal.aborted) { setSavedProperties(items); setSavedStatus('ready') } })
       .catch(() => { if (!controller.signal.aborted) setSavedStatus('error') })
     return () => controller.abort()
-  }, [status])
+  }, [status, savedAttempt, tool])
 
   async function importBrowserShortlist() {
     setBusy(true); setError(''); setMessage('')
@@ -205,24 +210,34 @@ export function ClientApp({ pathname = '/client' }: { pathname?: string }) {
     finally { setBusy(false) }
   }
 
+  if (status === 'authenticated' && tool) return <div className="site-shell">
+    <a className="skip-link" href="#client-content">Skip to content</a>
+    <SiteHeader pathname={pathname} client={client} clientSessionStatus={status} onClientSignOut={logout} />
+    <main className="client-main client-main-authenticated" id="client-content">
+      <header className="client-intro"><p className="eyebrow">OpenHaus / Buyer tools</p><h1>{tool}</h1><a href="/client">Back to client account</a></header>
+      {tool === 'Shortlist insights' ? <ShortlistInsights properties={savedProperties} status={savedStatus} onRetry={() => { setSavedStatus('loading'); setSavedAttempt(value => value + 1) }} /> : <ViewingChecklist />}
+      {error && <p ref={feedback} tabIndex={-1} role="alert">{error}</p>}
+    </main>
+  </div>
+
   return <div className="site-shell">
     <a className="skip-link" href="#client-content">Skip to content</a>
     <SiteHeader pathname={pathname} client={client} clientSessionStatus={status} onClientSignOut={logout} />
-    <main className={`client-main ${status === 'authenticated' ? 'client-main-authenticated' : ''}`} id="client-content">
-      <header className="client-intro"><p className="eyebrow">OpenHaus / {register ? 'Registration' : 'Sign in'}</p><h1>{status === 'authenticated' ? 'Your client account.' : register ? 'Make room for what’s next.' : 'Welcome back.'}</h1><a href="/#explore">Continue browsing without signing in</a></header>
-      <section className="client-panel" aria-label="Client account" aria-busy={status === 'loading' || busy}>
+    <main className={status === 'authenticated' ? 'client-main client-main-authenticated' : 'client-access-main'} id="client-content">
+      <header className={status === 'authenticated' ? 'client-intro' : 'client-access-intro'}><p className="eyebrow">OpenHaus / {status === 'authenticated' ? 'Account' : register ? 'Registration' : 'Sign in'}</p><h1>{status === 'authenticated' ? 'Your client account.' : register ? 'Make room for what’s next.' : 'Welcome back.'}</h1><a href="/#explore">{status === 'authenticated' ? 'Back to homes' : 'Continue browsing without signing in'}</a></header>
+      <section className={status === 'authenticated' ? 'client-panel' : 'client-access-panel'} aria-label="Client account" aria-busy={status === 'loading' || busy}>
         {status === 'loading' && <p role="status">Checking account availability…</p>}
         {status === 'disabled' && <><h2>Client accounts are not enabled.</h2><p>Sign-in is unavailable on this installation. Browsing, comparisons and property notes work without an account.</p><a href="/#explore">Return to the property map</a></>}
         {status === 'unavailable' && <><h2>Account services are unavailable.</h2><p>Check your connection and try again. Your saved browser notes are unaffected.</p><button onClick={() => { setStatus('loading'); setAttempt(value => value + 1) }}>Try again</button></>}
         {status === 'authenticated' && client && <><section className="client-account-overview" aria-label="Account overview"><span className="client-profile-mark" aria-hidden="true">{client.email.slice(0, 1).toUpperCase()}</span><div className="client-profile-heading"><p className="eyebrow">Client profile</p><h2>{client.email}</h2><p>Your saved properties, searches and private notes stay connected to this account.</p></div><dl className="client-profile"><div><dt>Account identifier</dt><dd title={client.id}>{displayAccountIdentifier(client.id)}</dd></div><div><dt>Workspace</dt><dd>Buyer</dd></div></dl><div className="client-account-actions"><button type="button" disabled={busy} onClick={() => void importBrowserShortlist()}>Import browser comparison</button><button type="button" disabled={busy} onClick={() => void logout()}>{busy ? 'Please wait…' : 'Sign out'}</button></div></section><nav className="client-links" aria-label="Account shortcuts"><a href="/#explore">Continue your property search <span aria-hidden="true">→</span></a><a href="/api/v1/client/export" download>Download my account data <span aria-hidden="true">↓</span></a><a href="/privacy">Manage browser data <span aria-hidden="true">→</span></a></nav><div className="client-workspace-grid"><section className="client-searches" aria-labelledby="saved-searches-title"><div><p className="eyebrow">Property alerts</p><h3 id="saved-searches-title">Saved searches</h3></div>{searchesStatus === 'idle' && <button type="button" onClick={() => void loadSavedSearches()}>Load saved searches</button>}{searchesStatus === 'loading' && <p role="status">Loading saved searches…</p>}{searchesStatus === 'error' && <><p role="alert">Saved searches are temporarily unavailable.</p><button type="button" onClick={() => void loadSavedSearches()}>Try again</button></>}{searchesStatus === 'ready' && savedSearches.length === 0 && <p>No account-saved searches yet. Set filters in the catalogue and choose Save search.</p>}{savedSearches.map(item => <article key={item.id}><div><strong>{item.location}</strong><span>{item.minimumBedrooms ? `${item.minimumBedrooms}+ bedrooms` : 'Any bedrooms'} · {item.propertyType === 'all' ? 'All property types' : item.propertyType} · {item.frequency}</span></div><a href={savedSearchHref(item)}>View results</a><button type="button" disabled={busy} onClick={() => void deleteSavedSearch(item.id)}>Remove</button></article>)}</section><section className="client-saved" aria-labelledby="saved-properties-title"><div><p className="eyebrow">Buyer workspace</p><h3 id="saved-properties-title">Saved properties</h3></div>{savedStatus === 'loading' && <p role="status">Loading saved properties…</p>}{savedStatus === 'error' && <p role="alert">Saved properties are temporarily unavailable.</p>}{savedStatus === 'ready' && savedProperties.length === 0 && <p>No account-saved homes yet. Save a home from its property page or import your browser comparison.</p>}{savedProperties.map(property => {
           const cover = property.media.find(item => item.kind === 'image')?.url ?? '/media/placeholders/architectural-home.svg?v=3'
           return <article key={property.id}><img src={cover} alt="" loading="lazy" /><div><span>{property.city} · Co. {property.county}</span><strong>{property.title}</strong><small>{euros.format(property.priceCents / 100)} · {property.bedrooms} bedrooms</small></div><div><a href={`/properties/${property.id}`}>View home</a><button type="button" disabled={busy} onClick={() => void removeSaved(property.id)}>Remove</button></div></article>
-        })}</section></div><section className="client-security" aria-labelledby="client-security-title"><div><p className="eyebrow">Account security</p><h3 id="client-security-title">Change password</h3><p>This signs your client account out on every device.</p></div><form onSubmit={event => void changePassword(event)}><label htmlFor="client-current-password">Current password</label><input id="client-current-password" type="password" autoComplete="current-password" value={currentPassword} onChange={event => setCurrentPassword(event.target.value)} disabled={busy} required /><label htmlFor="client-new-password">New password</label><input id="client-new-password" type="password" autoComplete="new-password" value={newPassword} onChange={event => setNewPassword(event.target.value)} disabled={busy} minLength={12} maxLength={72} required /><label htmlFor="client-confirm-password">Confirm new password</label><input id="client-confirm-password" type="password" autoComplete="new-password" value={passwordConfirmation} onChange={event => setPasswordConfirmation(event.target.value)} disabled={busy} minLength={12} maxLength={72} required /><button type="submit" disabled={busy}>{busy ? 'Updating…' : 'Change password'}</button></form></section><section className="client-danger" aria-labelledby="client-danger-title"><div><p className="eyebrow">Permanent action</p><h3 id="client-danger-title">Delete buyer account</h3><p>This permanently removes your account, saved homes, saved searches, private notes and every active buyer session.</p></div><form onSubmit={event => void deleteAccount(event)}><label htmlFor="client-delete-password">Current password for account deletion</label><input id="client-delete-password" type="password" autoComplete="current-password" value={deletionPassword} onChange={event => setDeletionPassword(event.target.value)} disabled={busy} maxLength={72} required /><label htmlFor="client-delete-confirmation">Type DELETE to confirm</label><input id="client-delete-confirmation" type="text" autoComplete="off" value={deletionConfirmation} onChange={event => setDeletionConfirmation(event.target.value)} disabled={busy} required /><button type="submit" disabled={busy || deletionConfirmation !== 'DELETE'}>{busy ? 'Deleting…' : 'Delete my account permanently'}</button></form></section></>}
+        })}</section></div><section className="client-security" aria-labelledby="client-security-title"><div><p className="eyebrow">Account security</p><h3 id="client-security-title">Change password</h3><p>This signs your client account out on every device.</p></div><form onSubmit={event => void changePassword(event)}><PasswordChangeFields currentPassword={currentPassword} newPassword={newPassword} confirmation={passwordConfirmation} onCurrentPassword={setCurrentPassword} onNewPassword={setNewPassword} onConfirmation={setPasswordConfirmation} disabled={busy} /><button type="submit" disabled={busy}>{busy ? 'Updating…' : 'Change password'}</button></form></section><section className="client-danger" aria-labelledby="client-danger-title"><div><p className="eyebrow">Permanent action</p><h3 id="client-danger-title">Delete buyer account</h3><p>This permanently removes your account, saved homes, saved searches, private notes and every active buyer session.</p></div><form onSubmit={event => void deleteAccount(event)}><label htmlFor="client-delete-password">Current password for account deletion</label><input id="client-delete-password" type="password" autoComplete="current-password" value={deletionPassword} onChange={event => setDeletionPassword(event.target.value)} disabled={busy} maxLength={72} required /><label htmlFor="client-delete-confirmation">Type DELETE to confirm</label><input id="client-delete-confirmation" type="text" autoComplete="off" value={deletionConfirmation} onChange={event => setDeletionConfirmation(event.target.value)} disabled={busy} required /><button type="submit" disabled={busy || deletionConfirmation !== 'DELETE'}>{busy ? 'Deleting…' : 'Delete my account permanently'}</button></form></section></>}
         {status === 'anonymous' && <><h2>{register ? 'Create your account' : 'Sign in to OpenHaus'}</h2>
           <form onSubmit={event => void submit(event)}>
             <AuthFields prefix="client" email={email} password={password} onEmail={setEmail} onPassword={setPassword} disabled={busy} register={register} />
             <button disabled={busy} type="submit">{busy ? 'Please wait…' : register ? 'Create development account' : 'Sign in'}</button>
-          </form><p className="client-notice">Development accounts only. Use a test address and a unique password. Email verification and password recovery are not available yet.</p><div className="client-links"><a href={register ? '/client/login' : '/client/register'}>{register ? 'Already have an account? Sign in' : 'Create a development account'}</a><a href="/manager/login">Staff sign-in</a></div></>}
+          </form><p className="client-access-notice">Development accounts only. Use a test address and a unique password. Email verification and password recovery are not available yet.</p><nav className="client-access-links" aria-label="Sign-in alternatives"><a href={register ? '/client/login' : '/client/register'}>{register ? 'Already have an account? Sign in' : 'Create a development account'}</a><a href="/manager/login">Staff sign-in</a></nav></>}
         {(error || message) && <p ref={feedback} tabIndex={-1} className="client-feedback" role={error ? 'alert' : 'status'}>{error || message}</p>}
       </section>
     </main>

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import { ClientApp } from './ClientApp'
 
@@ -14,6 +14,32 @@ function credentials() {
   fireEvent.change(screen.getByLabelText('Email address'), { target: { value: 'buyer@example.test' } })
   fireEvent.change(screen.getByLabelText('Password'), { target: { value: crypto.randomUUID() } })
 }
+it.each([
+  ['/client/insights', 'Shortlist insights'],
+  ['/client/viewing-checklist', 'Viewing checklist'],
+])('renders a distinct authenticated tool at %s', async (pathname, title) => {
+  api(response(200, { client: { id: 'buyer', email: 'buyer@example.test' } }), response(200, { properties: [] }))
+  render(<ClientApp pathname={pathname} />)
+  expect(await screen.findByRole('heading', { level: 1, name: title })).toBeVisible()
+  expect(screen.queryByRole('heading', { name: 'Change password' })).not.toBeInTheDocument()
+  expect(screen.queryByRole('heading', { name: 'Your client account.' })).not.toBeInTheDocument()
+})
+it('keeps buyer tools behind the existing session gate', async () => {
+  api(response(401))
+  render(<ClientApp pathname="/client/insights" />)
+  expect(await screen.findByLabelText('Email address')).toBeVisible()
+  expect(screen.queryByRole('region', { name: 'Shortlist analysis' })).not.toBeInTheDocument()
+})
+it.each(['/client/login', '/client/register'])('keeps access links separate from account dashboard tiles on %s', async pathname => {
+  api(response(401))
+  render(<ClientApp pathname={pathname} />)
+  await screen.findByLabelText('Email address')
+  const navigation = screen.getByRole('navigation', { name: 'Sign-in alternatives' })
+  expect(navigation.querySelectorAll('a')).toHaveLength(2)
+  expect(screen.getByRole('link', { name: 'Continue browsing without signing in' })).toHaveAttribute('href', '/#explore')
+  expect(screen.queryByRole('navigation', { name: 'Account shortcuts' })).not.toBeInTheDocument()
+  expect(screen.getByLabelText('Password')).toHaveAttribute('autocomplete', pathname.endsWith('register') ? 'new-password' : 'current-password')
+})
 it('does not offer a broken form when accounts are disabled', async () => {
   api(response(404))
   render(<ClientApp />)
@@ -81,6 +107,9 @@ it('shows account identity and changes the password before requiring sign-in aga
   render(<ClientApp />)
 
   expect(await screen.findByRole('region', { name: 'Account overview' })).toBeVisible()
+  expect(screen.queryByText('Continue browsing without signing in')).not.toBeInTheDocument()
+  expect(screen.getByRole('link', { name: 'Back to homes' })).toHaveAttribute('href', '/#explore')
+  expect(screen.getByText('OpenHaus / Account')).toBeVisible()
   expect(screen.getByRole('navigation', { name: 'Account shortcuts' })).toBeVisible()
   expect(await screen.findByText('OH-BUYERIDE')).toHaveAttribute('title', 'buyer-identifier')
   expect(screen.getByRole('heading', { name: 'buyer@example.test' })).toBeVisible()
@@ -90,7 +119,7 @@ it('shows account identity and changes the password before requiring sign-in aga
   fireEvent.change(screen.getByLabelText('Confirm new password'), { target: { value: 'new password phrase' } })
   fireEvent.click(screen.getByRole('button', { name: 'Change password' }))
 
-  expect(await screen.findByRole('status')).toHaveTextContent('Password updated')
+  await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Password updated'))
   expect(screen.getByRole('button', { name: 'Sign in' })).toBeVisible()
   expect(fetcher.mock.calls[2][0]).toBe('/api/v1/client/password')
   expect(fetcher.mock.calls[2][1]).toMatchObject({ method: 'PUT', credentials: 'same-origin' })
@@ -109,7 +138,7 @@ it('requires explicit confirmation and the current password before deleting the 
   fireEvent.change(screen.getByLabelText('Type DELETE to confirm'), { target: { value: 'DELETE' } })
   fireEvent.click(screen.getByRole('button', { name: 'Delete my account permanently' }))
 
-  expect(await screen.findByRole('status')).toHaveTextContent('account has been deleted')
+  await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('account has been deleted'))
   expect(screen.getByRole('button', { name: 'Sign in' })).toBeVisible()
   expect(fetcher.mock.calls[2][0]).toBe('/api/v1/client/account')
   expect(fetcher.mock.calls[2][1]).toMatchObject({ method: 'DELETE', credentials: 'same-origin' })

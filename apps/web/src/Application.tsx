@@ -37,7 +37,7 @@ export class ApplicationBoundary extends Component<{ children: ReactNode }, { fa
 export function Application({ pathname = window.location.pathname }: { pathname?: string }) {
   const path = pathname.replace(/\/$/, '') || '/'
   const manager = path === '/manager' || path === '/manager/login' || path === '/manager/analytics' || path === '/manager/profile' || /^\/manager\/preview\/[^/]+$/.test(path)
-  const client = path === '/client' || path === '/client/login' || path === '/client/register'
+  const client = ['/client', '/client/login', '/client/register', '/client/insights', '/client/viewing-checklist'].includes(path)
   const information = pathname.replace(/\/$/, '').slice(1)
   const informationPage = information === 'about' || information === 'contact' || information === 'help' || information === 'privacy' || information === 'services' || information === 'buyers' || information === 'sellers' || information === 'accessibility' || information === 'terms' || information === 'roadmap' ? information : undefined
   const agentMatch = path.match(/^\/agents(?:\/([^/]+))?$/)

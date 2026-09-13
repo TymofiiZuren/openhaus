@@ -18,6 +18,7 @@ it('filters help answers and gives a useful empty state', async () => {
 it('requires confirmation and only clears browser-saved buyer data', async () => {
   localStorage.setItem('openhaus:property-notes:one', 'private notes')
   localStorage.setItem('openhaus:comparison:v1', '["one"]')
+  localStorage.setItem('openhaus:viewing-checklist:v1', '[]')
   localStorage.setItem('openhaus-appearance', 'dark')
   localStorage.setItem('unrelated', 'keep')
   render(<InformationPages page="privacy" />)
@@ -27,6 +28,7 @@ it('requires confirmation and only clears browser-saved buyer data', async () =>
   await userEvent.click(clear)
   expect(localStorage.getItem('openhaus:property-notes:one')).toBeNull()
   expect(localStorage.getItem('openhaus:comparison:v1')).toBeNull()
+  expect(localStorage.getItem('openhaus:viewing-checklist:v1')).toBeNull()
   expect(localStorage.getItem('openhaus-appearance')).toBe('dark')
   expect(localStorage.getItem('unrelated')).toBe('keep')
   expect(screen.getByRole('status')).toHaveTextContent('Cleared')

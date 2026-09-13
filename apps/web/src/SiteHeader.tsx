@@ -201,10 +201,9 @@ export function SiteHeader({ pathname = window.location.pathname, client, client
           <a href="/manager/analytics#coverage-title">Media readiness</a>
           <a href="/manager/profile#manager-security-title">Account security</a>
           <button type="button" onClick={() => void signOut()}>Log out</button>
-        </> : <><a href="/client/login">{signedIn ? 'Client account' : 'Client sign in'}</a>{signedIn && <>
-          <a href="/client#saved-properties-title">Saved homes</a>
-          <a href="/client#saved-searches-title">Saved searches</a>
-          <a href="/client#client-security-title">Account security</a>
+        </> : <><a href={signedIn ? '/client' : '/client/login'}>{signedIn ? 'Client account' : 'Client sign in'}</a>{signedIn && <>
+          <a href="/client/insights">Shortlist insights</a>
+          <a href="/client/viewing-checklist">Viewing checklist</a>
           <button type="button" onClick={() => void signOut()}>Log out</button>
         </>}{!signedIn && <><a href="/manager/login">Manager sign in</a><a className="public-side-menu-listing" href="/manager/login">List a property</a></>}</>}</div>
       </aside>

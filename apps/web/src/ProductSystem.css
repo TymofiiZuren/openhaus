@@ -257,13 +257,13 @@
 :root .client-feedback { background: var(--yellow-soft); }
 :root .client-panel { border: 0; border-radius: 0; background: transparent; box-shadow: none; }
 
-/* Field focus uses a surface change; compound controls own their focus treatment. */
-:root :is(input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']),textarea,select) {
+/* The viewing dialog owns its outlined fields and keyboard focus treatment. */
+:root :is(input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']),textarea,select):not(.property-workspace-dialog *) {
   border: 0 !important;
   outline: 0 !important;
   box-shadow: none !important;
 }
-:root :is(input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']),textarea,select):focus-visible {
+:root :is(input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']),textarea,select):not(.property-workspace-dialog *):focus-visible {
   border: 0 !important;
   outline: 0 !important;
   box-shadow: none !important;
@@ -373,8 +373,8 @@
 }
 :root .overlay-layer { background: rgba(0, 0, 0, .74); }
 :root main { animation: openhaus-page-enter var(--motion-normal) var(--motion-ease) both; }
-:root :is(.property-card, .client-panel, .information-body, .agent-directory-card, .agent-profile, .manager-property-row, .match-card, .area-row) { transition: border-color var(--motion-fast) var(--motion-ease), background-color var(--motion-fast) var(--motion-ease), box-shadow var(--motion-normal) var(--motion-ease); }
-:root :is(.property-card, .client-panel, .information-body, .agent-directory-card, .agent-profile, .manager-property-row, .match-card, .area-row):hover { border-color: var(--line-strong); box-shadow: var(--panel-shadow); }
+:root :is(.property-card, .information-body, .agent-directory-card, .agent-profile, .manager-property-row, .match-card, .area-row) { transition: border-color var(--motion-fast) var(--motion-ease), background-color var(--motion-fast) var(--motion-ease), box-shadow var(--motion-normal) var(--motion-ease); }
+:root :is(.property-card, .information-body, .agent-directory-card, .agent-profile, .manager-property-row, .match-card, .area-row):hover { border-color: var(--line-strong); box-shadow: var(--panel-shadow); }
 
 @keyframes openhaus-page-enter { from { opacity: 0; transform: translate3d(0, 8px, 0); } to { opacity: 1; transform: none; } }
 
