@@ -57,9 +57,20 @@ func (store *Store) Complete(ctx context.Context, jobID, outputURL, mediaID stri
 		return err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	var propertyID string
-	if err := tx.QueryRow(ctx, `SELECT property_id::text FROM media_jobs WHERE id = $1 FOR UPDATE`, jobID).Scan(&propertyID); err != nil {
+	var propertyID, status, savedOutput string
+	if err := tx.QueryRow(ctx, `SELECT property_id::text, status::text, COALESCE(output_path, '') FROM media_jobs WHERE id = $1 FOR UPDATE`, jobID).Scan(&propertyID, &status, &savedOutput); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrNotFound
+		}
 		return err
+	}
+	// A lost commit response can be retried without publishing another gallery
+	// item. The row lock serializes replay with completion and failure.
+	if status == StatusReady && savedOutput == outputURL {
+		return nil
+	}
+	if status != StatusProcessing {
+		return ErrInvalidTransition
 	}
 	// Serialize completions for one property so two workers cannot choose the
 	// same gallery position concurrently.
@@ -82,8 +93,24 @@ func (store *Store) Complete(ctx context.Context, jobID, outputURL, mediaID stri
 }
 
 func (store *Store) Fail(ctx context.Context, jobID, message string) error {
-	_, err := store.database.Exec(ctx, `
-		UPDATE media_jobs SET status = 'failed', error_message = $2, completed_at = NOW() WHERE id = $1
+	result, err := store.database.Exec(ctx, `
+		UPDATE media_jobs SET status = 'failed', error_message = $2, completed_at = NOW() WHERE id = $1 AND status = 'processing'
 	`, jobID, message)
-	return err
+	if err != nil {
+		return err
+	}
+	if result.RowsAffected() == 1 {
+		return nil
+	}
+	var status string
+	if err := store.database.QueryRow(ctx, `SELECT status::text FROM media_jobs WHERE id = $1`, jobID).Scan(&status); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrNotFound
+		}
+		return err
+	}
+	if status == StatusFailed {
+		return nil
+	}
+	return ErrInvalidTransition
 }

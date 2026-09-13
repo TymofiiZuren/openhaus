@@ -8,11 +8,91 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/TymofiiZuren/openhaus/services/api/internal/mediajob"
 )
+
+func TestProcessorEncodingStreamPolicy(t *testing.T) {
+	if os.Getenv("MEDIA_TEST_FFMPEG") != "1" {
+		t.Skip("set MEDIA_TEST_FFMPEG=1 for real encoding policy tests")
+	}
+	ffmpeg, err := exec.LookPath("ffmpeg")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ffprobe, err := exec.LookPath("ffprobe")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, audioOnly := range []bool{true, false} {
+		t.Run(fmt.Sprintf("audioOnly=%t", audioOnly), func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+			defer cancel()
+			root := t.TempDir()
+			source := filepath.Join(root, "source.mp4")
+			args := []string{"-v", "error", "-f", "lavfi", "-i", "sine=frequency=440:duration=0.2"}
+			if !audioOnly {
+				metadata := filepath.Join(root, "chapters.txt")
+				if err := os.WriteFile(metadata, []byte(";FFMETADATA1\n[CHAPTER]\nTIMEBASE=1/1000\nSTART=0\nEND=200\ntitle=source-marker\n"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				args = append(args, "-f", "lavfi", "-i", "color=c=blue:size=64x48:rate=30:duration=0.2",
+					"-f", "lavfi", "-i", "color=c=red:size=128x96:rate=30:duration=0.2",
+					"-f", "ffmetadata", "-i", metadata,
+					"-map", "1:v", "-map", "2:v", "-map", "0:a", "-map_chapters", "3",
+					"-c:v", "libx264", "-metadata:s:v:0", "handler_name=source-marker")
+			}
+			args = append(args, "-c:a", "aac", "-metadata", "title=source-marker", "-metadata", "comment=source-marker", "-metadata:s:a:0", "handler_name=source-marker", source)
+			if output, err := exec.CommandContext(ctx, ffmpeg, args...).CombinedOutput(); err != nil {
+				t.Fatalf("fixture: %v (diagnostic bytes: %d)", err, len(output))
+			}
+			queue := &queueStub{job: mediajob.Job{ID: "policy", SourcePath: source}}
+			err := mediajob.NewProcessor(queue, ffmpeg, root, "/media").ProcessNext(ctx)
+			published := filepath.Join(root, "policy.mp4")
+			if audioOnly {
+				if err == nil || queue.failedJobID != "policy" || queue.completedJobID != "" {
+					t.Fatal("audio-only source was not rejected")
+				}
+				if _, err := os.Stat(published); !os.IsNotExist(err) {
+					t.Fatal("rejected source published output")
+				}
+				if _, err := os.Stat(source); err != nil {
+					t.Fatal("failed source was not retained")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			output, err := exec.CommandContext(ctx, ffprobe, "-v", "error", "-show_streams", "-show_format", "-show_chapters", "-of", "json", published).Output()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if strings.Contains(string(output), "source-marker") {
+				t.Fatal("source metadata copied to published video")
+			}
+			var probe struct {
+				Streams []struct {
+					Type  string `json:"codec_type"`
+					Width int    `json:"width"`
+				}
+				Chapters []json.RawMessage
+			}
+			if err := json.Unmarshal(output, &probe); err != nil {
+				t.Fatal(err)
+			}
+			if len(probe.Streams) != 2 || probe.Streams[0].Type != "video" || probe.Streams[1].Type != "audio" || len(probe.Chapters) != 0 {
+				t.Fatal("unexpected output stream policy")
+			}
+			if probe.Streams[0].Width != 64 {
+				t.Fatal("did not select the first video track")
+			}
+		})
+	}
+}
 
 // Synthetic fixtures keep this opt-in contract test independent of private uploads.
 func TestProcessorEncodingBounds(t *testing.T) {

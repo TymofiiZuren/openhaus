@@ -21,8 +21,9 @@ const (
 )
 
 var (
-	ErrNotFound         = errors.New("media job not found")
-	ErrUnsupportedMedia = errors.New("unsupported media type")
+	ErrNotFound          = errors.New("media job not found")
+	ErrUnsupportedMedia  = errors.New("unsupported media type")
+	ErrInvalidTransition = errors.New("invalid media job transition")
 )
 
 type Job struct {
