@@ -8,6 +8,7 @@ import (
 	"github.com/TymofiiZuren/openhaus/services/api/internal/panorama"
 	"io"
 	"os"
+	"os/exec"
 	"os/signal"
 	"time"
 )
@@ -20,7 +21,13 @@ func run() error {
 	verify := flag.String("verify", "", "verify an existing bundle directory without modifying it")
 	flag.Parse()
 	if *verify != "" {
-		if *input != "" || *output != "" || *native != "" || flag.NArg() != 0 {
+		conversionFlag := false
+		flag.Visit(func(value *flag.Flag) {
+			if value.Name != "verify" {
+				conversionFlag = true
+			}
+		})
+		if conversionFlag || flag.NArg() != 0 {
 			return fmt.Errorf("-verify cannot be combined with conversion arguments")
 		}
 		if err := panorama.VerifyBundle(*verify); err != nil {
@@ -31,6 +38,13 @@ func run() error {
 	}
 	if *input == "" || *output == "" || *native == "" || flag.NArg() != 0 {
 		return fmt.Errorf("require -input, -output and -native; see -help")
+	}
+	if *size < 1 || *size > 2048 {
+		return fmt.Errorf("face size must be 1..2048")
+	}
+	executable, err := exec.LookPath(*native)
+	if err != nil {
+		return fmt.Errorf("native converter is not executable: %w", err)
 	}
 	file, err := os.Open(*input)
 	if err != nil {
@@ -55,7 +69,7 @@ func run() error {
 	defer stop()
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Minute)
 	defer cancel()
-	if err := panorama.WriteBundle(ctx, *native, data, *output, *size); err != nil {
+	if err := panorama.WriteBundle(ctx, executable, data, *output, *size); err != nil {
 		return err
 	}
 	fmt.Println("Panorama bundle ready:", *output+"/bundle/manifest.json")

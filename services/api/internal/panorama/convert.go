@@ -42,6 +42,23 @@ func Convert(ctx context.Context, executable string, encoded []byte, face string
 	default:
 		return nil, errors.New("invalid face")
 	}
+	source, err := prepareSource(ctx, encoded)
+	if err != nil {
+		return nil, err
+	}
+	return source.convert(ctx, executable, face, size)
+}
+
+// Reused only within one conversion request, never cached across callers.
+type preparedSource struct {
+	width, height int
+	raw           []byte
+}
+
+func prepareSource(ctx context.Context, encoded []byte) (*preparedSource, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if len(encoded) == 0 || len(encoded) > 32<<20 {
 		return nil, errors.New("image must be between 1 byte and 32 MiB")
 	}
@@ -68,12 +85,30 @@ func Convert(ctx context.Context, executable string, encoded []byte, face string
 			raw[offset], raw[offset+1], raw[offset+2] = byte(r>>8), byte(g>>8), byte(b>>8)
 		}
 	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return &preparedSource{width: config.Width, height: config.Height, raw: raw}, nil
+}
+
+func (source *preparedSource) convert(ctx context.Context, executable, face string, size int) ([]byte, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if size < 1 || size > 2048 {
+		return nil, errors.New("face size must be 1..2048")
+	}
+	switch face {
+	case "front", "right", "back", "left", "top", "bottom":
+	default:
+		return nil, errors.New("invalid face")
+	}
 	nativeCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	header := fmt.Sprintf("P6\n%d %d\n255\n", size, size)
 	output := &boundedOutput{limit: len(header) + size*size*3}
-	command := exec.CommandContext(nativeCtx, executable, strconv.Itoa(config.Width), strconv.Itoa(config.Height), face, strconv.Itoa(size))
-	command.Stdin = bytes.NewReader(raw)
+	command := exec.CommandContext(nativeCtx, executable, strconv.Itoa(source.width), strconv.Itoa(source.height), face, strconv.Itoa(size))
+	command.Stdin = bytes.NewReader(source.raw)
 	command.Stdout = output
 	command.WaitDelay = time.Second
 	if err := command.Run(); err != nil {

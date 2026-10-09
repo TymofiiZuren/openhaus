@@ -51,7 +51,7 @@ func TestProcessorEncodingStreamPolicy(t *testing.T) {
 			}
 			queue := &queueStub{job: mediajob.Job{ID: "policy", SourcePath: source}}
 			err := mediajob.NewProcessor(queue, ffmpeg, root, "/media").ProcessNext(ctx)
-			published := filepath.Join(root, "policy.mp4")
+			published := filepath.Join(root, "policy-0.mp4")
 			if audioOnly {
 				if err == nil || queue.failedJobID != "policy" || queue.completedJobID != "" {
 					t.Fatal("audio-only source was not rejected")
@@ -131,10 +131,10 @@ func TestProcessorEncodingBounds(t *testing.T) {
 			if err := mediajob.NewProcessor(queue, ffmpeg, root, "/media").ProcessNext(ctx); err != nil {
 				t.Fatal(err)
 			}
-			if queue.completedURL != "/media/bounded.mp4" {
+			if queue.completedURL != "/media/bounded-0.mp4" {
 				t.Fatalf("completion = %q", queue.completedURL)
 			}
-			published := filepath.Join(root, "bounded.mp4")
+			published := filepath.Join(root, "bounded-0.mp4")
 			output, err := exec.CommandContext(ctx, ffprobe, "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height,sample_aspect_ratio,codec_name,pix_fmt,r_frame_rate", "-of", "json", published).Output()
 			if err != nil {
 				t.Fatal(err)

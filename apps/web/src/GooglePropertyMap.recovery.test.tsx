@@ -40,6 +40,10 @@ it.each([false, true])('keeps pins clickable and geographically anchored (Irelan
     Map: class extends Overlay {
       moveCamera = moveCamera
       getZoom() { return zoom }
+      getCenter() {
+        const center = moveCamera.mock.lastCall?.[0].center
+        return center ? { lat: () => center.lat, lng: () => center.lng } : undefined
+      }
       addListener(event: string, callback: () => void) {
         if (event === 'idle') idle = callback
         return { remove: vi.fn() }
@@ -93,6 +97,21 @@ it.each([false, true])('keeps pins clickable and geographically anchored (Irelan
   act(() => closeUpPins.find(pin => pin.title.includes('Coastal home'))?.click?.())
   expect(select).toHaveBeenLastCalledWith(homes[1])
   expect(selectArea).toHaveBeenCalledTimes(1)
+  rerender(<GooglePropertyMap {...mapProps} selectedArea="Wexford" selectedPropertyID="coastal" />)
+  expect(moveCamera.mock.lastCall?.[0]).toEqual({ center: { lat: homes[1].latitude, lng: homes[1].longitude }, zoom: 17 })
+  zoom = 19
+  rerender(<GooglePropertyMap {...mapProps} selectedArea="Wexford" selectedPropertyID="demo" />)
+  expect(moveCamera.mock.lastCall?.[0].zoom).toBe(19)
+  vi.spyOn(window, 'requestAnimationFrame').mockImplementation(callback => { callback(0); return 1 })
+  const closeUpCamera = moveCamera.mock.lastCall?.[0]
+  // Entering and leaving fullscreen must preserve the current camera.
+  for (let i = 0; i < 2; i++) {
+    act(() => document.dispatchEvent(new Event('fullscreenchange')))
+    expect(moveCamera.mock.lastCall?.[0]).toEqual(closeUpCamera)
+  }
+  const movesBeforeDismiss = moveCamera.mock.calls.length
+  rerender(<GooglePropertyMap {...mapProps} selectedArea="Wexford" />)
+  expect(moveCamera).toHaveBeenCalledTimes(movesBeforeDismiss)
   rerender(<GooglePropertyMap {...mapProps} />)
   expect(pins.filter(pin => !detached.includes(pin)).map(pin => pin.title)).toEqual(['2 homes in Wexford'])
   verifyCleanup()
@@ -127,4 +146,78 @@ it('does not offer a retry when map configuration is absent', () => {
   expect(screen.getByText('Map is not available.')).toBeVisible()
   expect(screen.queryByRole('button', { name: 'Retry map' })).not.toBeInTheDocument()
   expect(loadGoogleMaps).not.toHaveBeenCalled()
+})
+
+it('tracks fullscreen controls, coalesces rapid resizes and cancels pending work on navigation', async () => {
+  vi.stubEnv('VITE_GOOGLE_MAPS_API_KEY', 'test-key')
+  const frames = new Map<number, FrameRequestCallback>()
+  let nextFrame = 0
+  vi.spyOn(window, 'requestAnimationFrame').mockImplementation(callback => {
+    frames.set(++nextFrame, callback)
+    return nextFrame
+  })
+  vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(id => { frames.delete(id) })
+  const moveCamera = vi.fn(), resize = vi.fn()
+  class Overlay {
+    setMap() {}
+    setOptions() {}
+    addListener() { return { remove: vi.fn() } }
+  }
+  const maps = {
+    Map: class extends Overlay {
+      moveCamera = moveCamera
+      getZoom() { return 18 }
+      getCenter() { return { lat: () => 52.34, lng: () => -6.46 } }
+    },
+    Polygon: Overlay,
+    event: { trigger: resize },
+  } as unknown as GoogleMaps
+  window.google = { maps }
+  vi.mocked(loadGoogleMaps).mockResolvedValue(maps)
+  let fullscreen: Element | null = null
+  const original = Object.getOwnPropertyDescriptor(document, 'fullscreenElement')
+  Object.defineProperty(document, 'fullscreenElement', { configurable: true, get: () => fullscreen })
+  const { container, unmount } = render(<div className="map-stage"><GooglePropertyMap {...props} /></div>)
+  try {
+    const open = await screen.findByRole('button', { name: 'Open full screen map' })
+    const stage = container.querySelector<HTMLElement>('.map-stage')!
+    await userEvent.click(open)
+    expect(await screen.findByRole('alert')).toHaveTextContent('Fullscreen is unavailable in this browser. You can continue using the map here.')
+    await userEvent.click(screen.getByRole('button', { name: 'Dismiss fullscreen message' }))
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    stage.requestFullscreen = vi.fn().mockRejectedValue(new Error('Browser policy denied request'))
+    await userEvent.click(open)
+    expect(await screen.findByRole('alert')).toHaveTextContent('Could not open fullscreen. You can continue using the map here or try again.')
+    expect(open).toHaveAttribute('aria-pressed', 'false')
+    stage.requestFullscreen = vi.fn(async () => {
+      fullscreen = stage
+      document.dispatchEvent(new Event('fullscreenchange'))
+    })
+    await userEvent.click(open)
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(stage.requestFullscreen).toHaveBeenCalledOnce()
+    expect(screen.getByRole('button', { name: 'Exit full screen map' })).toHaveAttribute('aria-pressed', 'true')
+    // Escape/browser UI can leave fullscreen without clicking our control.
+    act(() => { fullscreen = null; document.dispatchEvent(new Event('fullscreenchange')) })
+    expect(screen.getByRole('button', { name: 'Open full screen map' })).toHaveAttribute('aria-pressed', 'false')
+    expect(frames.size).toBe(1)
+    act(() => {
+      const pending = [...frames.values()]
+      frames.clear()
+      pending.forEach(callback => callback(0))
+    })
+    expect(resize).toHaveBeenCalledOnce()
+    expect(resize.mock.calls[0][1]).toBe('resize')
+    expect(moveCamera.mock.lastCall?.[0]).toEqual({ center: { lat: 52.34, lng: -6.46 }, zoom: 18 })
+    act(() => document.dispatchEvent(new Event('fullscreenchange')))
+    expect(frames.size).toBe(1)
+    unmount()
+    expect(frames.size).toBe(0)
+    act(() => document.dispatchEvent(new Event('fullscreenchange')))
+    expect(frames.size).toBe(0)
+  } finally {
+    unmount()
+    if (original) Object.defineProperty(document, 'fullscreenElement', original)
+    else Reflect.deleteProperty(document, 'fullscreenElement')
+  }
 })

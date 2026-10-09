@@ -3,12 +3,69 @@ package mediajob_test
 import (
 	"context"
 	"errors"
+	"fmt"
+	"path/filepath"
 	"testing"
 	"testing/synctest"
 	"time"
 
 	"github.com/TymofiiZuren/openhaus/services/api/internal/mediajob"
 )
+
+type drainingQueue struct {
+	claims              int
+	completed           []string
+	cancel              context.CancelFunc
+	stopAfterCompletion bool
+}
+
+func (q *drainingQueue) ClaimNext(context.Context) (mediajob.Job, error) {
+	q.claims++
+	if q.claims > 2 {
+		q.cancel()
+		return mediajob.Job{}, mediajob.ErrNotFound
+	}
+	return mediajob.Job{ID: fmt.Sprintf("job-%d", q.claims), Attempts: 1}, nil
+}
+func (q *drainingQueue) Complete(_ context.Context, id string, _ int16, _, _ string) error {
+	q.completed = append(q.completed, id)
+	if q.stopAfterCompletion {
+		q.cancel()
+	}
+	return nil
+}
+func (*drainingQueue) Fail(context.Context, string, int16, string) error {
+	return errors.New("unexpected encoding failure")
+}
+
+func TestRunnerDrainsSuccessfulJobsWithoutPollingDelay(t *testing.T) {
+	for _, stopAfterCompletion := range []bool{false, true} {
+		t.Run(fmt.Sprintf("shutdownAfterCompletion=%t", stopAfterCompletion), func(t *testing.T) {
+			root := t.TempDir()
+			encoder := writeExecutable(t, root, "encoder", "#!/bin/sh\nfor last; do :; done\nprintf video > \"$last\"\n")
+			// Less than the idle polling interval: queued work must progress without
+			// sleeping for that interval after each successful encode.
+			ctx, cancel := context.WithTimeout(context.Background(), 750*time.Millisecond)
+			defer cancel()
+			queue := &drainingQueue{cancel: cancel, stopAfterCompletion: stopAfterCompletion}
+			if err := mediajob.NewProcessor(queue, encoder, filepath.Join(root, "output"), "/media").Run(ctx); err != nil {
+				t.Fatal(err)
+			}
+			wantClaims, wantCompleted := 3, 2
+			if stopAfterCompletion {
+				wantClaims, wantCompleted = 1, 1
+			}
+			if queue.claims != wantClaims || len(queue.completed) != wantCompleted {
+				t.Fatalf("claims=%d, completed=%v; want %d claims and %d completed jobs", queue.claims, queue.completed, wantClaims, wantCompleted)
+			}
+			for i, id := range queue.completed {
+				if id != fmt.Sprintf("job-%d", i+1) {
+					t.Fatalf("job repeated or skipped: %v", queue.completed)
+				}
+			}
+		})
+	}
+}
 
 type pollingQueue struct {
 	times  []time.Time
@@ -60,10 +117,10 @@ func (queue *pollingQueue) ClaimNext(context.Context) (mediajob.Job, error) {
 	queue.cancel()
 	return mediajob.Job{}, mediajob.ErrNotFound
 }
-func (*pollingQueue) Complete(context.Context, string, string, string) error {
+func (*pollingQueue) Complete(context.Context, string, int16, string, string) error {
 	panic("unexpected completion")
 }
-func (*pollingQueue) Fail(context.Context, string, string) error {
+func (*pollingQueue) Fail(context.Context, string, int16, string) error {
 	panic("unexpected failure transition")
 }
 

@@ -49,6 +49,7 @@ export function SiteHeader({ pathname = window.location.pathname, client, client
   const controlledSession = clientSessionStatus !== undefined
   const controlledManagerSession = managerSessionStatus !== undefined
   const sessionStatus = controlledSession ? clientSessionStatus : discoveredStatus
+  const clientAccountsEnabled = sessionStatus !== 'disabled'
   const sessionClient = controlledSession ? client ?? null : discoveredClient
   const signedIn = sessionStatus === 'authenticated' && sessionClient !== null
   const managerIdentity = controlledManagerSession ? manager ?? null : discoveredManager
@@ -188,7 +189,7 @@ export function SiteHeader({ pathname = window.location.pathname, client, client
       <nav className="public-header-navigation" aria-label="Primary navigation">
         {links.map(([label, href]) => <a key={href} href={href} aria-current={isCurrent(href) ? 'page' : undefined}>{label}</a>)}
       </nav>
-      <div className="public-header-actions"><OpenHausGuideButton open={guideOpen} onOpen={onOpenGuide} /><ThemeControl /><HeaderAccountLinks signedIn={signedIn} managerSignedIn={!signedIn && managerSignedIn} identity={signedIn ? sessionClient : managerIdentity} pending={sessionStatus === 'loading' || managerStatusPending} onSignOut={signedIn || managerSignedIn ? signOut : undefined} /><button ref={menuTrigger} className="public-menu-trigger" type="button" aria-label="Open navigation" aria-expanded={menuOpen} aria-controls={menuId} onClick={() => setMenuOpen(true)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" /></svg></button></div>
+<div className="public-header-actions"><OpenHausGuideButton open={guideOpen} onOpen={onOpenGuide} /><ThemeControl /><HeaderAccountLinks clientAccountsEnabled={clientAccountsEnabled} signedIn={signedIn} managerSignedIn={!signedIn && managerSignedIn} identity={signedIn ? sessionClient : managerIdentity} pending={sessionStatus === 'loading' || managerStatusPending} onSignOut={signedIn || managerSignedIn ? signOut : undefined} /><button ref={menuTrigger} className="public-menu-trigger" type="button" aria-label="Open navigation" aria-expanded={menuOpen} aria-controls={menuId} onClick={() => setMenuOpen(true)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" /></svg></button></div>
     </header>
     {menuOpen && createPortal(<div className="public-drawer-layer" onKeyDown={handleMenuKeyDown}>
       <button className="public-menu-scrim" type="button" tabIndex={-1} aria-label="Close navigation backdrop" onClick={closeMenu} />
@@ -201,7 +202,7 @@ export function SiteHeader({ pathname = window.location.pathname, client, client
           <a href="/manager/analytics#coverage-title">Media readiness</a>
           <a href="/manager/profile#manager-security-title">Account security</a>
           <button type="button" onClick={() => void signOut()}>Log out</button>
-        </> : <><a href={signedIn ? '/client' : '/client/login'}>{signedIn ? 'Client account' : 'Client sign in'}</a>{signedIn && <>
+        </> : <>{(signedIn || clientAccountsEnabled) && <a href={signedIn ? '/client' : '/client/login'}>{signedIn ? 'Client account' : 'Client sign in'}</a>}{signedIn && <>
           <a href="/client/insights">Shortlist insights</a>
           <a href="/client/viewing-checklist">Viewing checklist</a>
           <button type="button" onClick={() => void signOut()}>Log out</button>

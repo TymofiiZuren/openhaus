@@ -9,6 +9,20 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
+it.each([404, 401, 503])('reflects buyer account availability in both menus for session status %s', async (status) => {
+  vi.spyOn(globalThis, 'fetch').mockImplementation(async input =>
+    new Response(null, { status: String(input) === '/api/v1/client/session' ? status : 401 }))
+  render(<SiteHeader pathname="/" />)
+  await userEvent.click(await screen.findByRole('button', { name: 'Sign in options' }))
+  const menu = screen.getByRole('navigation', { name: 'Sign-in options' })
+  expect(Boolean(within(menu).queryByRole('link', { name: 'Client sign in' }))).toBe(status !== 404)
+  expect(within(menu).getByRole('link', { name: 'Manager sign in / List a property' })).toHaveAttribute('href', '/manager/login')
+  await userEvent.click(screen.getByRole('button', { name: 'Open navigation' }))
+  const drawer = screen.getByRole('dialog', { name: 'Explore OpenHaus' })
+  expect(Boolean(within(drawer).queryByRole('link', { name: 'Client sign in' }))).toBe(status !== 404)
+  expect(within(drawer).getByRole('link', { name: 'Manager sign in' })).toHaveAttribute('href', '/manager/login')
+})
+
 it('shows manager workspace navigation when a manager session is active', async () => {
   localStorage.setItem(managerSessionHintKey, 'active')
   const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (_input, init) => init?.method === 'DELETE'

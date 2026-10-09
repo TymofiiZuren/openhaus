@@ -130,12 +130,11 @@ function AreaIndexPage({ properties }: { properties: Property[] }) {
     </header>
     <section className="area-index" aria-label="Area index">
       <header><p>Signal board</p><span>Derived from the current OpenHaus catalogue</span></header>
-      {areas.map((area, index) => <article key={area.county} className="area-row">
-        <span className="area-rank">{String(index + 1).padStart(2, '0')}</span>
-        <div className="area-name"><p>County</p><h2>{area.county}</h2><a href={`/?county=${encodeURIComponent(area.county)}#explore`}>Explore live homes <span aria-hidden="true">↗</span></a></div>
-        <dl><div><dt>Supply</dt><dd>{area.inventory} live {area.inventory === 1 ? 'home' : 'homes'}</dd></div><div><dt>Median ask</dt><dd>{euros.format(area.medianPriceCents / 100)}</dd></div><div><dt>Typical space</dt><dd>{area.averageBedrooms} bedrooms</dd></div><div><dt>Leading type</dt><dd>{titleCase(area.leadingType)}</dd></div></dl>
-        <div className="area-readiness"><span>Media-ready listings</span><strong>{area.mediaReadiness}%</strong><div aria-hidden="true"><i style={{ width: `${area.mediaReadiness}%` }} /></div></div>
-      </article>)}
+      <div className="county-cards">{areas.map(area => <article key={area.county} className="county-card" aria-label={`${area.county} overview`}>
+        <header><div><p>County</p><h2>{area.county}</h2></div><span className="county-supply">{area.inventory} live {area.inventory === 1 ? 'home' : 'homes'}</span></header>
+        <dl className="county-facts"><div className="county-price"><dt>Median asking price</dt><dd>{euros.format(area.medianPriceCents / 100)}</dd></div><div><dt>Typical space</dt><dd>{area.averageBedrooms} bedrooms</dd></div><div><dt>Leading type</dt><dd>{titleCase(area.leadingType)}</dd></div></dl>
+        <footer><p><strong>{area.mediaReadiness}%</strong> media-ready listings</p><a href={`/?county=${encodeURIComponent(area.county)}#explore`} aria-label={`Explore homes in ${area.county}`}>Explore homes <span aria-hidden="true">↗</span></a></footer>
+      </article>)}</div>
       {areas.length === 0 && <div className="discovery-empty"><h2>The area index is waiting for catalogue data.</h2><a href="/">Return home</a></div>}
     </section>
   </>

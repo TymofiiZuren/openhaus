@@ -55,6 +55,7 @@ function GoogleMapSession({ properties, selectedPropertyID, selectedCounty, sele
   const [mapType, setMapType] = useState<'roadmap' | 'satellite'>('roadmap')
   const [labelZoom, setLabelZoom] = useState(6)
   const [isFullscreen, setIsFullscreen] = useState(false)
+  const [fullscreenError, setFullscreenError] = useState('')
   const [visualTheme, setVisualTheme] = useState<'light' | 'dark'>(() => document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light')
   const visualThemeRef = useRef(visualTheme)
   const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string | undefined
@@ -215,17 +216,27 @@ function GoogleMapSession({ properties, selectedPropertyID, selectedCounty, sele
   }, [cameraRequestKey, selectedCounty, status])
 
   useEffect(() => {
+    let resizeFrame: number | undefined
     const handleFullscreenChange = () => {
       const stage = container.current?.closest('.map-stage')
       setIsFullscreen(document.fullscreenElement === stage)
-      requestAnimationFrame(() => {
+      setFullscreenError('')
+      if (resizeFrame !== undefined) cancelAnimationFrame(resizeFrame)
+      resizeFrame = requestAnimationFrame(() => {
         if (!map.current || !window.google) return
+        // Fullscreen changes the viewport, not the chosen location. Preserve
+        // the actual camera, including any manual pan or closer zoom.
+        const center = map.current.getCenter()
+        const zoom = map.current.getZoom()
         window.google.maps.event?.trigger(map.current, 'resize')
-        applyCamera(map.current, selectedCountyRef.current, container.current?.clientWidth)
+        if (center && zoom !== undefined) moveCamera(map.current, { lat: center.lat(), lng: center.lng() }, zoom)
       })
     }
     document.addEventListener('fullscreenchange', handleFullscreenChange)
-    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange)
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange)
+      if (resizeFrame !== undefined) cancelAnimationFrame(resizeFrame)
+    }
   }, [])
 
   useEffect(() => {
@@ -237,7 +248,9 @@ function GoogleMapSession({ properties, selectedPropertyID, selectedCounty, sele
     if (previous?.geography === geography && (!selectedPropertyID || previous.property === selectedPropertyID)) return
     const selectedProperty = properties.find((property) => property.id === selectedPropertyID)
     const area = selectedArea && areas.find(candidate => sameLocation(candidate.name, selectedArea))
-    if (selectedProperty) moveCamera(map.current, { lat: selectedProperty.latitude, lng: selectedProperty.longitude }, 14)
+    // Property selection should reveal street-level context, without zooming
+    // back out when the buyer is already looking more closely.
+    if (selectedProperty) moveCamera(map.current, { lat: selectedProperty.latitude, lng: selectedProperty.longitude }, Math.max(17, map.current.getZoom() ?? 17))
     else if (area) focusArea(map.current, area, properties)
     else applyCamera(map.current, selectedCounty, container.current?.clientWidth)
   }, [areas, cameraRequestKey, properties, selectedArea, selectedCounty, selectedPropertyID, status])
@@ -275,8 +288,20 @@ function GoogleMapSession({ properties, selectedPropertyID, selectedCounty, sele
   async function toggleFullscreen() {
     const stage = container.current?.closest<HTMLElement>('.map-stage')
     if (!stage) return
-    if (document.fullscreenElement === stage) await document.exitFullscreen()
-    else await stage.requestFullscreen()
+    const exiting = document.fullscreenElement === stage
+    setFullscreenError('')
+    if (typeof (exiting ? document.exitFullscreen : stage.requestFullscreen) !== 'function') {
+      setFullscreenError('Fullscreen is unavailable in this browser. You can continue using the map here.')
+      return
+    }
+    try {
+      if (exiting) await document.exitFullscreen()
+      else await stage.requestFullscreen()
+    } catch {
+      setFullscreenError(exiting
+        ? 'Could not exit fullscreen. Use Escape or your browser’s fullscreen control, or try again.'
+        : 'Could not open fullscreen. You can continue using the map here or try again.')
+    }
   }
 
   return (
@@ -285,6 +310,7 @@ function GoogleMapSession({ properties, selectedPropertyID, selectedCounty, sele
       {status === 'loading' && <div className="map-loading" role="status">Loading map…</div>}
       {status === 'ready' && (
         <div className="openhaus-map-ui">
+          {fullscreenError && <div className="map-fullscreen-message"><p role="alert">{fullscreenError}</p><button type="button" aria-label="Dismiss fullscreen message" onClick={() => setFullscreenError('')}>Dismiss</button></div>}
           <div className="map-type-control" aria-label="Map appearance">
             <button type="button" aria-pressed={mapType === 'roadmap'} onClick={() => changeMapType('roadmap')}>Map</button>
             <button type="button" aria-pressed={mapType === 'satellite'} onClick={() => changeMapType('satellite')}>Satellite</button>

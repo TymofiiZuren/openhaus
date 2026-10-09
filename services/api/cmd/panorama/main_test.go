@@ -36,6 +36,25 @@ func TestCommandEndToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 	output := filepath.Join(directory, "tour")
+	for _, tc := range []struct {
+		name    string
+		args    []string
+		message string
+	}{
+		{"invalid size before file access", []string{"-input", filepath.Join(directory, "missing.png"), "-output", output, "-native", native, "-size", "0"}, "face size must be 1..2048"},
+		{"missing native converter", []string{"-input", input, "-output", output, "-native", filepath.Join(directory, "missing-native")}, "native converter is not executable"},
+		{"verification with explicit size", []string{"-verify", directory, "-size", "1024"}, "-verify cannot be combined with conversion arguments"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			message, err := exec.Command(cli, tc.args...).CombinedOutput()
+			if err == nil || !strings.Contains(string(message), tc.message) {
+				t.Fatalf("expected %q, got %v: %s", tc.message, err, message)
+			}
+			if _, err := os.Stat(output); !os.IsNotExist(err) {
+				t.Fatalf("preflight failure created output: %v", err)
+			}
+		})
+	}
 	args := []string{"-input", input, "-output", output, "-native", native, "-size", "16"}
 	message, err := exec.Command(cli, args...).CombinedOutput()
 	if err != nil || !strings.Contains(string(message), "bundle ready") {

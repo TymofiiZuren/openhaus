@@ -27,6 +27,15 @@ go test -race ./internal/mediafingerprint ./cmd/media-audit
 
 The tool refuses to overwrite output. Updating the UI to another report filename is an explicit versioned change. Image decoding is bounded to 10 MiB / 24 megapixels and 1000 input files. Symlinks/nonregular image entries are rejected. This is an offline trusted-directory tool, not an upload endpoint or a sandbox against concurrent filesystem mutation.
 
+Newly generated version-1 reports also include an additive `storage` summary:
+`totalBytes`, `duplicateFiles`, `redundantBytes`, and `exactDuplicateGroups`.
+Groups require matching SHA-256 and file size, not merely a similar perceptual
+hash, and list filenames in stable input order. Duplicate files and redundant
+bytes count copies beyond one per group. These are review estimates, not a
+recommendation to delete files: separate listings may intentionally reference
+copies. The tool never changes source media. Existing reports remain valid;
+the current Media Lab does not display this new offline summary.
+
 ## Algorithmic substance
 
 1. Box-average all source pixels into a 9×8 grayscale grid: O(width × height) time, constant scratch space.

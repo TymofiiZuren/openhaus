@@ -1,0 +1,9 @@
+.cubemap-viewer { display: grid; gap: 16px; min-width: 0; }
+.cubemap-viewer .cubemap-stage { position: relative; height: clamp(240px, 50vw, 400px); overflow: hidden; isolation: isolate; background: var(--surface); perspective-origin: 50% 50%; touch-action: pan-y pinch-zoom; cursor: grab; border: 1px solid var(--line); border-radius: 6px; }
+.cubemap-stage:active { cursor: grabbing; }
+.cubemap-stage:focus-visible { outline: 2px solid var(--ink); outline-offset: 4px; }
+.cubemap-cube { position: absolute; left: 50%; top: 50%; width: 1000px; height: 1000px; transform-style: preserve-3d; transform-origin: center; pointer-events: none; }
+.cubemap-viewer .cubemap-face { position: absolute; inset: 0; width: 1000px; height: 1000px; max-width: none; aspect-ratio: auto; object-fit: fill; border-radius: 0; user-select: none; }
+.cubemap-controls { display: flex; flex-wrap: wrap; gap: 8px; }
+.cubemap-position { font-variant-numeric: tabular-nums; color: var(--muted); font-size: .875rem; }
+.cubemap-message { position: absolute; inset: 0; display: grid; place-content: center; padding: 24px; }

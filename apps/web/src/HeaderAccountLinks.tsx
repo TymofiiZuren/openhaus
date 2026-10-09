@@ -4,7 +4,7 @@ import './HeaderAccountLinks.css'
 
 type AccountIdentity = { id: string; email: string }
 
-export function HeaderAccountLinks({ signedIn = false, managerSignedIn = false, identity, pending = false, onSignOut }: { signedIn?: boolean; managerSignedIn?: boolean; identity?: AccountIdentity | null; pending?: boolean; onSignOut?: () => void | Promise<void> }) {
+export function HeaderAccountLinks({ signedIn = false, managerSignedIn = false, clientAccountsEnabled = true, identity, pending = false, onSignOut }: { signedIn?: boolean; managerSignedIn?: boolean; clientAccountsEnabled?: boolean; identity?: AccountIdentity | null; pending?: boolean; onSignOut?: () => void | Promise<void> }) {
   const { open, setOpen, onPointerEnter, onPointerLeave, onTriggerClick } = useHoverDropdown()
   const root = useRef<HTMLDivElement>(null)
   const accountTrigger = useRef<HTMLButtonElement>(null)
@@ -48,7 +48,7 @@ export function HeaderAccountLinks({ signedIn = false, managerSignedIn = false, 
             <a href="/manager/analytics#coverage-title" aria-label="Media readiness"><span><strong>Media readiness</strong><small>Review photography and tour coverage</small></span><span aria-hidden="true">→</span></a>
             <a href="/manager/profile#manager-security-title" aria-label="Account security"><span><strong>Account security</strong><small>Password and active sessions</small></span><span aria-hidden="true">→</span></a>
           </> : <>
-            <a href={signedIn ? '/client' : '/client/login'} aria-label={signedIn ? 'Client account' : 'Client sign in'}><span><strong>{signedIn ? 'Client account' : 'Client sign in'}</strong><small>{signedIn ? 'Saved homes, searches and account settings' : 'Continue your property search'}</small></span><span aria-hidden="true">→</span></a>
+            {(signedIn || clientAccountsEnabled) && <a href={signedIn ? '/client' : '/client/login'} aria-label={signedIn ? 'Client account' : 'Client sign in'}><span><strong>{signedIn ? 'Client account' : 'Client sign in'}</strong><small>{signedIn ? 'Saved homes, searches and account settings' : 'Continue your property search'}</small></span><span aria-hidden="true">→</span></a>}
             {signedIn && <>
               <a href="/client/insights" aria-label="Shortlist insights"><span><strong>Shortlist insights</strong><small>Compare prices and locations of saved homes</small></span><span aria-hidden="true">→</span></a>
               <a href="/client/viewing-checklist" aria-label="Viewing checklist"><span><strong>Viewing checklist</strong><small>Keep track of questions during a visit</small></span><span aria-hidden="true">→</span></a>

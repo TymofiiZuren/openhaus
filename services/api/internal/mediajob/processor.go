@@ -15,9 +15,13 @@ import (
 
 type Queue interface {
 	ClaimNext(context.Context) (Job, error)
-	Complete(context.Context, string, string, string) error
-	Fail(context.Context, string, string) error
+	Complete(context.Context, string, int16, string, string) error
+	Fail(context.Context, string, int16, string) error
 }
+
+// ErrQueueEmpty means no work was claimed, not that a claimed job disappeared
+// during completion. Callers may treat only this result as a healthy idle run.
+var ErrQueueEmpty = errors.New("no media jobs available")
 
 type Processor struct {
 	queue                                Queue
@@ -44,7 +48,13 @@ func (processor *Processor) Run(ctx context.Context) error {
 		if ctx.Err() != nil {
 			return nil
 		}
-		failed := err != nil && !errors.Is(err, ErrNotFound)
+		if err == nil {
+			// Drain available work sequentially. Polling delay is only for idle
+			// queues or failures, not a pause between successfully published jobs.
+			delay = time.Second
+			continue
+		}
+		failed := err != nil && !errors.Is(err, ErrQueueEmpty)
 		if failed {
 			log.Printf("process media job: %v", err)
 		} else {
@@ -77,31 +87,36 @@ func (processor *Processor) ProcessNext(ctx context.Context) error {
 	claimCtx, cancelClaim := context.WithTimeout(ctx, 5*time.Second)
 	job, err := processor.queue.ClaimNext(claimCtx)
 	cancelClaim()
+	if errors.Is(err, ErrNotFound) {
+		return ErrQueueEmpty
+	}
 	if err != nil {
 		return err
 	}
-	outputPath := filepath.Join(processor.outputRoot, job.ID+".mp4")
+	outputPath := filepath.Join(processor.outputRoot, fmt.Sprintf("%s-%d.mp4", job.ID, job.Attempts))
 	// Stage on the same filesystem so rename publishes a complete file atomically.
 	staging, err := os.CreateTemp(processor.outputRoot, ".processing-*.mp4")
 	if err != nil {
-		return processor.recordFailure(ctx, job.ID, err)
+		return processor.recordFailure(ctx, job, err)
 	}
 	stagingPath := staging.Name()
 	defer os.Remove(stagingPath)
 	if err := staging.Close(); err != nil {
-		return processor.recordFailure(ctx, job.ID, err)
+		return processor.recordFailure(ctx, job, err)
 	}
 	encodeCtx, cancel := context.WithTimeout(ctx, 20*time.Minute)
 	defer cancel()
 	// Bound both encoded dimensions without enlarging small sources. Even sizes
 	// support yuv420p; scale preserves display aspect ratio through sample aspect ratio.
 	command := exec.CommandContext(encodeCtx, processor.ffmpegPath,
-		"-nostdin", "-hide_banner", "-loglevel", "error", "-y", "-i", job.SourcePath,
+		// Bound each thread pool independently; codec options before -i apply
+		// to decoding, while codec options after -i apply to the output encoder.
+		"-nostdin", "-hide_banner", "-loglevel", "error", "-y", "-filter_threads", "2", "-threads", "2", "-i", job.SourcePath,
 		// Require real video, excluding attached cover art; audio is optional.
 		// Drop source tags/chapters rather than leaking them into public tours.
 		"-map", "0:V:0", "-map", "0:a:0?", "-map_metadata", "-1", "-map_metadata:s", "-1", "-map_chapters", "-1",
 		"-vf", "fps=30,scale=w='min(1920,iw)':h='min(1080,ih)':force_original_aspect_ratio=decrease:force_divisible_by=2:flags=lanczos",
-		"-c:v", "libx264", "-preset", "medium", "-crf", "24", "-pix_fmt", "yuv420p",
+		"-c:v", "libx264", "-threads", "2", "-preset", "medium", "-crf", "24", "-pix_fmt", "yuv420p",
 		"-movflags", "+faststart", "-c:a", "aac", "-b:a", "128k", stagingPath)
 	// Encoder diagnostics may include private paths or malicious metadata. Do not
 	// accumulate or log them; retain the process exit status and context error.
@@ -111,40 +126,46 @@ func (processor *Processor) ProcessNext(ctx context.Context) error {
 		if encodeCtx.Err() != nil {
 			runErr = encodeCtx.Err()
 		}
-		return processor.recordFailure(ctx, job.ID, fmt.Errorf("ffmpeg failed: %w", runErr))
+		return processor.recordFailure(ctx, job, fmt.Errorf("ffmpeg failed: %w", runErr))
 	}
 	if err := encodeCtx.Err(); err != nil {
-		return processor.recordFailure(ctx, job.ID, err)
+		return processor.recordFailure(ctx, job, err)
 	}
 	info, err := os.Stat(stagingPath)
 	if err != nil {
-		return processor.recordFailure(ctx, job.ID, err)
+		return processor.recordFailure(ctx, job, err)
 	}
 	if !info.Mode().IsRegular() || info.Size() == 0 {
-		return processor.recordFailure(ctx, job.ID, errors.New("encoder produced no video"))
+		return processor.recordFailure(ctx, job, errors.New("encoder produced no video"))
 	}
 	mediaID, err := newUUID()
 	if err != nil {
-		return processor.recordFailure(ctx, job.ID, err)
+		return processor.recordFailure(ctx, job, err)
 	}
 	if err := os.Rename(stagingPath, outputPath); err != nil {
-		return processor.recordFailure(ctx, job.ID, err)
+		return processor.recordFailure(ctx, job, err)
 	}
 	outputURL := processor.publicPrefix + "/" + filepath.Base(outputPath)
 	// Finish the short database transition even if shutdown interrupted the caller.
 	completionCtx, finish := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer finish()
-	if err := processor.queue.Complete(completionCtx, job.ID, outputURL, mediaID); err != nil {
+	if err := processor.queue.Complete(completionCtx, job.ID, job.Attempts, outputURL, mediaID); err != nil {
 		return err
 	}
 	_ = os.Remove(job.SourcePath)
 	return nil
 }
 
-func (processor *Processor) recordFailure(ctx context.Context, jobID string, cause error) error {
+func (processor *Processor) recordFailure(ctx context.Context, job Job, cause error) error {
+	// Worker shutdown is not an encoding failure. Keep the claim and source so
+	// stale-claim recovery can retry; ProcessNext still removes partial output.
+	// The encoder's own deadline remains a failure when the parent is active.
+	if err := ctx.Err(); err != nil {
+		return errors.Join(cause, err)
+	}
 	recordCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancel()
-	if err := processor.queue.Fail(recordCtx, jobID, "video processing failed"); err != nil {
+	if err := processor.queue.Fail(recordCtx, job.ID, job.Attempts, "video processing failed"); err != nil {
 		return errors.Join(cause, fmt.Errorf("record failure: %w", err))
 	}
 	return cause

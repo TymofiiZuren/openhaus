@@ -2,6 +2,7 @@ export type MediaJob = {
   id: string
   status: 'pending' | 'processing' | 'ready' | 'failed'
   errorMessage?: string
+  attempts?: number
 }
 
 const validJobID = /^[a-zA-Z0-9-]{1,128}$/
@@ -13,10 +14,11 @@ function parseMediaJob(value: unknown, expectedID?: string): MediaJob {
   const data = value as Record<string, unknown>
   if (typeof data.id !== 'string' || !validJobID.test(data.id) || (expectedID !== undefined && data.id !== expectedID)
     || (data.status !== 'pending' && data.status !== 'processing' && data.status !== 'ready' && data.status !== 'failed')
-    || (data.errorMessage !== undefined && typeof data.errorMessage !== 'string')) {
+    || (data.errorMessage !== undefined && typeof data.errorMessage !== 'string')
+    || (data.attempts !== undefined && (typeof data.attempts !== 'number' || !Number.isInteger(data.attempts) || data.attempts < 0 || data.attempts > 32767))) {
     throw new Error('Invalid video job response')
   }
-  return { id: data.id, status: data.status, ...(data.errorMessage === undefined ? {} : { errorMessage: data.errorMessage }) }
+  return { id: data.id, status: data.status, ...(data.errorMessage === undefined ? {} : { errorMessage: data.errorMessage }), ...(data.attempts === undefined ? {} : { attempts: data.attempts as number }) }
 }
 
 export class VideoUploadInterruptedError extends Error {
@@ -56,12 +58,13 @@ export async function waitForMediaJob(
     // recovery to three retries (at least 1s, 2s, 4s); respect server cooldowns.
     // Auth and missing jobs fail promptly. Never shorten a long server cooldown.
     const retryDelay = Math.max(1000 * 2 ** failures, retryAfter ?? 0)
-    if ([429, 502, 503, 504].includes(status) && failures < 3 && retryDelay <= 60_000) {
+    // Status 0 is an internal transport-failure sentinel, not an HTTP response.
+    if ([0, 429, 502, 503, 504].includes(status) && failures < 3 && retryDelay <= 60_000) {
       failures++
       await delay(retryDelay, signal)
       continue
     }
-    if (!job) throw new Error(`Media job request failed with status ${status}`)
+    if (!job) throw new Error(status === 0 ? 'Media job connection failed. Please try checking its status again.' : `Media job request failed with status ${status}`)
     failures = 0
     onUpdate(job)
     if (job.status === 'ready' || job.status === 'failed') return job
@@ -80,10 +83,20 @@ async function readMediaJob(jobId: string, signal?: AbortSignal) {
     controller.abort(new DOMException('Video status check timed out', 'TimeoutError'))
   }, 15_000)
   try {
-    const response = await fetch(`/api/v1/manager/media-jobs/${jobId}`, {
-      headers: { Accept: 'application/json' },
-      signal: controller.signal,
-    })
+    let response: Response
+    try {
+      response = await fetch(`/api/v1/manager/media-jobs/${jobId}`, {
+        headers: { Accept: 'application/json' },
+        signal: controller.signal,
+      })
+    } catch (error) {
+      // Fetch reports transport failures as TypeError. Keep decoding errors,
+      // request deadlines and caller cancellation out of the retry path.
+      if (error instanceof TypeError && !controller.signal.aborted) {
+        return { status: 0, job: undefined }
+      }
+      throw error
+    }
     if (!response.ok) {
       await response.body?.cancel()
       const header = response.headers.get('Retry-After')?.trim()

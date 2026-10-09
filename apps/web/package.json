@@ -9,6 +9,7 @@
     "lint": "oxlint",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:preview": "npm run build && node --test scripts/preview-smoke.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

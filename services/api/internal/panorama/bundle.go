@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -21,11 +22,25 @@ type faceRecord struct {
 // bundle/ child, which appears after every face and the manifest are complete.
 // The caller must use a trusted local parent directory.
 func WriteBundle(ctx context.Context, executable string, encoded []byte, output string, size int) error {
-	return writeBundle(ctx, executable, encoded, output, size, Convert)
+	var source *preparedSource
+	return writeBundle(ctx, executable, encoded, output, size, func(ctx context.Context, executable string, encoded []byte, face string, size int) ([]byte, error) {
+		if size < 1 || size > 2048 {
+			return nil, errors.New("face size must be 1..2048")
+		}
+		if source == nil {
+			// Reserve the output first, then decode the source once for six faces.
+			var err error
+			source, err = prepareSource(ctx, encoded)
+			if err != nil {
+				return nil, err
+			}
+		}
+		return source.convert(ctx, executable, face, size)
+	})
 }
 
 func writeBundle(ctx context.Context, executable string, encoded []byte, output string, size int,
-	convert func(context.Context, string, []byte, string, int) ([]byte, error)) error {
+	convert func(context.Context, string, []byte, string, int) ([]byte, error)) (result error) {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -35,14 +50,21 @@ func writeBundle(ctx context.Context, executable string, encoded []byte, output 
 	published := false
 	defer func() {
 		if !published {
-			_ = os.Remove(output)
+			if err := os.Remove(output); err != nil && !os.IsNotExist(err) {
+				result = errors.Join(result, fmt.Errorf("clean up output directory: %w", err))
+			}
 		}
 	}()
 	staging, err := os.MkdirTemp(output, ".pending-")
 	if err != nil {
 		return err
 	}
-	defer os.RemoveAll(staging) // Only this invocation's private staging directory.
+	defer func() {
+		// Only this invocation's private staging directory, never the output root.
+		if err := os.RemoveAll(staging); err != nil {
+			result = errors.Join(result, fmt.Errorf("clean up staged bundle: %w", err))
+		}
+	}()
 	manifest := bundleManifest{Version: 1, Projection: "cubemap-x-right-y-up-z-front", FaceSize: size}
 	for _, face := range []string{"front", "right", "back", "left", "top", "bottom"} {
 		if err := ctx.Err(); err != nil {

@@ -20,10 +20,16 @@ go run ./cmd/panorama -native ../../.scratch/panorama/convert -input /absolute/p
 ```
 
 Use a new output path whose parent exists. The command never overwrites an
-existing destination. It creates that directory with owner-only permissions,
+existing destination. It checks the face-size range and native executable
+availability before reading the input or creating output. These setup checks
+do not establish trust in the executable; use only your own compiled converter.
+It creates that directory with owner-only permissions,
 converts in private staging, verifies the complete bundle, then renames it to `bundle/`.
 Only `bundle/manifest.json` signals readiness. Normal errors clean up the staging
-directory; abrupt termination may leave a private `.pending-*` directory. No
+directory. Cleanup failures are returned alongside the original error, preserving
+`errors.Is` checks such as cancellation. An unexpected file in the output root
+is not recursively deleted; the cleanup error explains why that path cannot be
+reused yet. Abrupt termination may leave a private `.pending-*` directory. No
 crash recovery or power-loss durability guarantee is provided. Files are local,
 not publicly served or uploaded. Ctrl-C cancels; the command has a three-minute
 overall deadline, subject to the synchronous codec limitation below.
@@ -33,6 +39,9 @@ Verify a completed bundle without changing any files:
 ```sh
 go run ./cmd/panorama -verify ../../.scratch/my-tour/bundle
 ```
+
+Verification is a separate mode: do not combine `-verify` with conversion
+flags, including an explicitly supplied `-size`.
 
 Verification checks manifest version/projection, exactly six distinct known
 faces, fixed local filenames, byte counts, SHA-256 digests, matching dimensions
@@ -52,8 +61,10 @@ onto black. Colour profiles and EXIF orientation are not applied.
 
 The source image, RGB input, native source buffer and output buffers coexist.
 This is not a low-memory public upload endpoint. The future worker must limit
-concurrency and enforce process-level memory/CPU limits. Each face currently
-decodes and transfers the source again; batch processing is a later optimization.
+concurrency and enforce process-level memory/CPU limits. A bundle decodes and
+prepares its RGB source once, reusing it sequentially for all six faces without
+caching across requests. Each face still starts a native process and transfers
+the RGB source; native batch processing remains a later optimization.
 
 From `services/api`, run:
 

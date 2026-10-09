@@ -86,6 +86,10 @@ type MediaJobGetter interface {
 	Get(context.Context, string) (mediajob.Job, error)
 }
 
+type MediaQueueReader interface {
+	QueueStatus(context.Context) (mediajob.QueueStatus, error)
+}
+
 // Dependencies contains the external services used by the HTTP API.
 type Dependencies struct {
 	ClientAuth            ClientAuthenticator
@@ -100,6 +104,7 @@ type Dependencies struct {
 	Properties            PropertyLister
 	Videos                VideoUploader
 	Jobs                  MediaJobGetter
+	QueueStatus           MediaQueueReader
 	ManagerAuth           ManagerAuthenticator
 	ManagerProperties     ManagerPropertyLister
 	ManagerPropertyWriter ManagerPropertyWriter
@@ -125,6 +130,7 @@ func NewRouter(dependencies Dependencies) http.Handler {
 	router.HandleFunc("GET /api/v1/properties", listProperties(dependencies.Properties))
 	router.Handle("POST /api/v1/manager/properties/{propertyID}/videos", requireManager(dependencies.ManagerAuth, uploadVideo(dependencies.Videos)))
 	router.Handle("GET /api/v1/manager/media-jobs/{jobID}", requireManager(dependencies.ManagerAuth, getMediaJob(dependencies.Jobs)))
+	router.Handle("GET /api/v1/manager/media-queue", requireManager(dependencies.ManagerAuth, mediaQueueStatus(dependencies.QueueStatus)))
 	router.HandleFunc("POST /api/v1/manager/session", managerLogin(dependencies.ManagerAuth, dependencies.SecureCookies))
 	router.HandleFunc("GET /api/v1/manager/session", managerSession(dependencies.ManagerAuth))
 	router.HandleFunc("DELETE /api/v1/manager/session", managerLogout(dependencies.ManagerAuth, dependencies.SecureCookies))
@@ -138,8 +144,33 @@ func NewRouter(dependencies Dependencies) http.Handler {
 	return securityHeaders(router)
 }
 
+func mediaQueueStatus(store MediaQueueReader) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if store == nil {
+			writeError(w, http.StatusServiceUnavailable, "queue_unavailable", "media queue status is unavailable")
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), dependencyTimeout)
+		defer cancel()
+		status, err := store.QueueStatus(ctx)
+		if err != nil {
+			writeError(w, http.StatusServiceUnavailable, "queue_unavailable", "media queue status is unavailable")
+			return
+		}
+		writeJSON(w, http.StatusOK, status)
+	}
+}
+
 func securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		// Apply before routing so authentication failures and missing private
+		// endpoints receive the same cache protection as successful responses.
+		for _, prefix := range []string{"/api/v1/manager", "/api/v1/client"} {
+			if request.URL.Path == prefix || strings.HasPrefix(request.URL.Path, prefix+"/") {
+				response.Header().Set("Cache-Control", "no-store")
+				break
+			}
+		}
 		response.Header().Set("X-Content-Type-Options", "nosniff")
 		response.Header().Set("X-Frame-Options", "DENY")
 		response.Header().Set("Referrer-Policy", "no-referrer")

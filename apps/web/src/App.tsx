@@ -13,6 +13,7 @@ import { createPropertySearchIndex } from './propertySearch'
 import { isShowcaseProperty } from './showcaseProperties'
 import { createConciergeReply, type ConciergeCriteria, type ConciergeReply } from './propertyConcierge'
 import { findSellingAgent } from './sellingAgents'
+import { comparisonCSV } from './comparisonExport'
 const PropertyMap = lazy(() => import('./PropertyMap').then((module) => ({ default: module.PropertyMap })))
 const SpatialMediaViewer = lazy(() => import('./SpatialMediaViewer').then((module) => ({ default: module.SpatialMediaViewer })))
 type AreaTools = typeof import('./administrativeAreas')
@@ -32,6 +33,10 @@ function initialSearchNumber(name: string, allowed: number[]): number {
   const value = Number(new URLSearchParams(window.location.search).get(name) ?? 0)
   return allowed.includes(value) ? value : 0
 }
+function initialPropertyType(): string {
+  const value = new URLSearchParams(window.location.search).get('type') ?? 'all'
+  return propertyTypes.has(value) ? value : 'all'
+}
 function readShortlist(): string[] {
   try {
     const saved: unknown = JSON.parse(localStorage.getItem(shortlistKey) ?? '[]')
@@ -43,7 +48,6 @@ function HomepageHero({ query, propertyCount, onQueryChange, onAskOpenHaus }: { 
   return <section className="home-hero" aria-label="Find your next home">
     <div className="home-hero-layout">
       <div className="home-hero-copy">
-        <p className="eyebrow">OpenHaus / Property discovery</p>
         <h1 id="home-hero-title"><span>Find the address.</span>{' '}<span>See the whole picture.</span></h1>
         <p>A faster way to search Irish homes, compare the facts and inspect every available photograph, plan and tour.</p>
         <form className="home-hero-search" role="search" onSubmit={(event) => { event.preventDefault(); document.getElementById('explore')?.scrollIntoView() }}>
@@ -56,8 +60,7 @@ function HomepageHero({ query, propertyCount, onQueryChange, onAskOpenHaus }: { 
       </div>
     </div>
     <aside className="home-hero-desk" aria-label="Live property desk">
-      <header><span>OpenHaus / Live</span><strong>IRL</strong></header>
-      <div className="home-hero-desk-heading"><p>Property intelligence</p><span>STATUS</span></div>
+      <h2>Property intelligence</h2>
       <dl>
         <div><dt>Homes available</dt><dd>{propertyCount === undefined ? 'Loading' : propertyCount}</dd><span>LIVE</span></div>
         <div><dt>Search coverage</dt><dd>All Ireland</dd><span>26 counties</span></div>
@@ -67,11 +70,15 @@ function HomepageHero({ query, propertyCount, onQueryChange, onAskOpenHaus }: { 
       <a href="/match">Build your match model <span aria-hidden="true">→</span></a>
     </aside>
     <dl className="home-hero-facts">
-      <div><dt>01 / Search</dt><dd>Address and area</dd></div>
-      <div><dt>02 / Inspect</dt><dd>Photography and plans</dd></div>
-      <div><dt>03 / Decide</dt><dd>Explainable match signals</dd></div>
+      <div><dt>Search</dt><dd>Address and area</dd></div>
+      <div><dt>Inspect</dt><dd>Photography and plans</dd></div>
+      <div><dt>Decide</dt><dd>Explainable match signals</dd></div>
     </dl>
   </section>
+}
+
+function parseSortOrder(value: string | null) {
+  return value === 'price-low' || value === 'price-high' ? value : 'recent'
 }
 
 function App() {
@@ -81,10 +88,18 @@ function App() {
   const [selectedArea, setSelectedArea] = useState<string | undefined>(() => new URLSearchParams(window.location.search).get('area') ?? undefined)
   const [propertyQuery, setPropertyQuery] = useState(() => (new URLSearchParams(window.location.search).get('query') ?? '').slice(0, 160))
   const [minimumBedrooms, setMinimumBedrooms] = useState(() => initialSearchNumber('beds', [0, 2, 3, 4]))
-  const [propertyType, setPropertyType] = useState(() => { const value = new URLSearchParams(window.location.search).get('type') ?? 'all'; return propertyTypes.has(value) ? value : 'all' })
+  const [propertyType, setPropertyType] = useState(initialPropertyType)
   const [maximumPrice, setMaximumPrice] = useState(() => initialSearchNumber('maxPrice', [0, 650000, 800000, 1000000]))
   const [spatialToursOnly, setSpatialToursOnly] = useState(() => new URLSearchParams(window.location.search).get('tour') === 'true')
-  const [sortOrder, setSortOrder] = useState('recent')
+  const [sortOrder, setSortOrder] = useState(() => parseSortOrder(new URLSearchParams(window.location.search).get('sort')))
+  function changeSortOrder(value: string) {
+    const order = parseSortOrder(value)
+    const url = new URL(window.location.href)
+    if (order === 'recent') url.searchParams.delete('sort')
+    else url.searchParams.set('sort', order)
+    window.history.replaceState(window.history.state, '', url)
+    setSortOrder(order)
+  }
   const [saveSearchOpen, setSaveSearchOpen] = useState(false)
   const [shortlistedPropertyIDs, setShortlistedPropertyIDs] = useState<string[]>(readShortlist)
   const [compareOpen, setCompareOpen] = useState(false)
@@ -187,14 +202,36 @@ function App() {
   }, [])
 
   useEffect(() => {
-    const restoreCounty = () => {
+    const restoreSearch = () => {
       const parameters = new URLSearchParams(window.location.search)
       setSelectedCounty(parameters.get('county'))
       setSelectedArea(parameters.get('area') ?? undefined)
+      setSortOrder(parseSortOrder(parameters.get('sort')))
+      setPropertyQuery((parameters.get('query') ?? '').slice(0, 160))
+      setMinimumBedrooms(initialSearchNumber('beds', [0, 2, 3, 4]))
+      setMaximumPrice(initialSearchNumber('maxPrice', [0, 650000, 800000, 1000000]))
+      setPropertyType(initialPropertyType())
+      setSpatialToursOnly(parameters.get('tour') === 'true')
     }
-    window.addEventListener('popstate', restoreCounty)
-    return () => window.removeEventListener('popstate', restoreCounty)
+    window.addEventListener('popstate', restoreSearch)
+    return () => window.removeEventListener('popstate', restoreSearch)
   }, [])
+
+  useEffect(() => {
+    const url = new URL(window.location.href)
+    const filters = {
+      query: propertyQuery,
+      beds: minimumBedrooms ? String(minimumBedrooms) : '',
+      maxPrice: maximumPrice ? String(maximumPrice) : '',
+      type: propertyType === 'all' ? '' : propertyType,
+      tour: spatialToursOnly ? 'true' : '',
+    }
+    for (const [name, value] of Object.entries(filters)) {
+      if (value) url.searchParams.set(name, value)
+      else url.searchParams.delete(name)
+    }
+    if (url.href !== window.location.href) window.history.replaceState(window.history.state, '', url)
+  }, [propertyQuery, minimumBedrooms, maximumPrice, propertyType, spatialToursOnly])
 
   useEffect(() => {
     if (state.status !== 'success' || !selectedCounty) return
@@ -318,10 +355,10 @@ function App() {
         </div>
         <section className="catalogue" id="homes" aria-label="Homes for sale">
           <div className="catalogue-heading">
-            <div><p className="eyebrow">Properties for sale</p><h2>{effectiveSelectedCounty ? `Homes in ${effectiveSelectedCounty}` : 'Recently added homes'}</h2><span className="signature-note" aria-hidden="true">Curated for you</span></div>
+            <div><h2>{effectiveSelectedCounty ? `Homes in ${effectiveSelectedCounty}` : 'Recently added homes'}</h2><span className="signature-note" aria-hidden="true">Curated for you</span></div>
             <p className="catalogue-introduction">A live catalogue of homes with location, spatial media and decision context kept together.</p>
             {state.status === 'success' && (
-              <div className="catalogue-actions"><button type="button" onClick={() => setSaveSearchOpen(true)}>Save search</button><label>Sort by <select aria-label="Sort properties" value={sortOrder} onChange={(event) => setSortOrder(event.target.value)}><option value="recent">Most recent</option><option value="price-low">Price: low to high</option><option value="price-high">Price: high to low</option></select></label><p aria-live="polite">{visibleProperties.length} {visibleProperties.length === 1 ? 'home' : 'homes'}</p></div>
+              <div className="catalogue-actions"><button type="button" onClick={() => setSaveSearchOpen(true)}>Save search</button><label>Sort by <select aria-label="Sort properties" value={sortOrder} onChange={(event) => changeSortOrder(event.target.value)}><option value="recent">Most recent</option><option value="price-low">Price: low to high</option><option value="price-high">Price: high to low</option></select></label><p aria-live="polite">{visibleProperties.length} {visibleProperties.length === 1 ? 'home' : 'homes'}</p></div>
             )}
           </div>
           {state.status === 'loading' && <LoadingState />}
@@ -419,21 +456,28 @@ function SaveSearchDialog({ matchingHomes, location, county, area, minimumBedroo
   </Overlay>
 }
 
-function Overlay({ labelID, onClose, children }: { labelID: string; onClose: () => void; children: ReactNode }) {
+function Overlay({ labelID, onClose, children, placement = 'corner' }: { labelID: string; onClose: () => void; children: ReactNode; placement?: 'corner' | 'center' }) {
   const dialogRef = useRef<HTMLDivElement>(null)
   const onCloseRef = useRef(onClose)
   useEffect(() => { onCloseRef.current = onClose }, [onClose])
-  useEffect(() => {
+  useLayoutEffect(() => {
     const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null
     const previousOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
+    const controls = () => [...(dialogRef.current?.querySelectorAll<HTMLElement>('button,a[href],input,select,textarea,[tabindex]') ?? [])]
+      .filter(element => element.tabIndex >= 0 && !element.matches(':disabled') && !element.closest('[hidden],[inert]'))
+    // Capture the opener before child forms run their autofocus effects.
+    if (!dialogRef.current?.contains(document.activeElement)) {
+      (controls()[0] ?? dialogRef.current)?.focus({ preventScroll: true })
+    }
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') { onCloseRef.current(); return }
       if (event.key !== 'Tab' || !dialogRef.current) return
-      const controls = [...dialogRef.current.querySelectorAll<HTMLElement>('button:not([disabled]),a[href],input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])')]
-      if (controls.length === 0) return
-      const first = controls[0]
-      const last = controls[controls.length - 1]
+      const available = controls()
+      if (available.length === 0) { event.preventDefault(); dialogRef.current.focus(); return }
+      const first = available[0]
+      const last = available[available.length - 1]
+      if (!available.includes(document.activeElement as HTMLElement)) { event.preventDefault(); (event.shiftKey ? last : first).focus(); return }
       if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus() }
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus() }
     }
@@ -444,7 +488,7 @@ function Overlay({ labelID, onClose, children }: { labelID: string; onClose: () 
       previouslyFocused?.focus({ preventScroll: true })
     }
   }, [])
-  return createPortal(<div className="overlay-layer" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}><div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby={labelID}>{children}</div></div>, document.body)
+  return createPortal(<div className={`overlay-layer${placement === 'center' ? ' overlay-layer-centered' : ''}`} role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}><div ref={dialogRef} role="dialog" tabIndex={-1} aria-modal="true" aria-labelledby={labelID}>{children}</div></div>, document.body)
 }
 
 function GuidePopover({ anchor, labelID, onClose, children }: { anchor: HTMLElement | null; labelID: string; onClose: () => void; children: ReactNode }) {
@@ -560,10 +604,33 @@ function ComparisonTray({ properties, onCompare, onRemove, onClear }: { properti
 }
 
 function ComparisonDialog({ properties, onRemove, onClose }: { properties: Property[]; onRemove: (propertyID: string) => void; onClose: () => void }) {
-  return <Overlay labelID="comparison-title" onClose={onClose}>
+  const [downloadStatus, setDownloadStatus] = useState('')
+  function downloadComparison() {
+    let url: string | undefined
+    try {
+      url = URL.createObjectURL(new Blob([comparisonCSV(properties, window.location.origin)], { type: 'text/csv;charset=utf-8' }))
+      const link = document.createElement('a')
+      link.href = url
+      link.download = 'openhaus-comparison.csv'
+      document.body.append(link)
+      try { link.click() } finally { link.remove() }
+      setDownloadStatus('Comparison download prepared. Check your browser downloads.')
+    } catch {
+      setDownloadStatus('The download could not be prepared. Please try again.')
+    } finally {
+      if (url) {
+        const downloadURL = url
+        window.setTimeout(() => URL.revokeObjectURL(downloadURL), 1000)
+      }
+    }
+  }
+  return <Overlay labelID="comparison-title" onClose={onClose} placement="center">
     <section className="comparison-dialog">
-      <header><div><p className="section-index">Buyer workspace · comparison</p><h2 id="comparison-title">Compare selected homes</h2></div><button type="button" className="overlay-close" aria-label="Close comparison" onClick={onClose}>×</button></header>
-      <div className="comparison-grid">{properties.map((property) => {
+      <header><div><h2 id="comparison-title">Compare selected homes</h2></div><button type="button" className="overlay-close" aria-label="Close comparison" onClick={onClose}>×</button></header>
+      <div className="comparison-toolbar"><p>{properties.length} {properties.length === 1 ? 'home' : 'homes'} selected. Export public listing facts only; private notes are not included.</p><button type="button" onClick={downloadComparison} disabled={properties.length === 0}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M4 17v4h16v-4" /></svg>Download comparison CSV</button></div>
+      {downloadStatus && <p className="comparison-feedback" role="status">{downloadStatus}</p>}
+      {properties.length === 0 && <div className="comparison-empty"><p>No homes selected. Return to the catalogue to build your comparison.</p><button type="button" onClick={onClose}>Browse homes</button></div>}
+      <div className={`comparison-grid${properties.length === 1 ? ' comparison-grid-single' : ''}`}>{properties.map((property) => {
         const image = property.media.find((item) => item.kind === 'image')
         return <article key={property.id}><div className="comparison-image">{image ? <img src={image.url} alt="" /> : <img src="/media/placeholders/architectural-home.svg?v=3" alt="" />}<button type="button" aria-label={`Remove ${property.title} from comparison`} onClick={() => onRemove(property.id)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17" /></svg></button></div><p>{property.city} · Co. {property.county}</p><h3>{property.title}</h3><dl><div><dt>Asking price</dt><dd>{euros.format(property.priceCents / 100)}</dd></div><div><dt>Bedrooms</dt><dd>{property.bedrooms}</dd></div><div><dt>Home</dt><dd>{titleCase(property.propertyType)}</dd></div><div><dt>Media</dt><dd>{property.media.length} items</dd></div></dl><a href={`/properties/${property.id}`}>View property <span aria-hidden="true">→</span></a></article>
       })}</div>
@@ -982,6 +1049,12 @@ function PropertyNotesDialog({ property, value, error, busy, mode, onSave, onClo
   </Overlay>
 }
 
+function galleryThumbnail(url: string | undefined) {
+  // Only our public upload route supports derivatives. Preserve external URLs,
+  // signed query strings and static demo assets exactly as supplied.
+  return url && /^\/api\/v1\/property-images\/[A-Za-z0-9]+\.(png|jpg)$/.test(url) ? `${url}?size=thumbnail` : url
+}
+
 function PropertyGallery({ property, eager = false }: { property: Property; eager?: boolean }) {
   const [selectedIndex, setSelectedIndex] = useState(0)
   const thumbnailRail = useRef<HTMLDivElement>(null)
@@ -1036,6 +1109,7 @@ function PropertyGallery({ property, eager = false }: { property: Property; eage
             key={selected.url}
             className="gallery-image"
             src={selected.url}
+            decoding="async"
             alt={selected.altText}
             loading={eager && selectedIndex === 0 ? 'eager' : 'lazy'}
             fetchPriority={eager && selectedIndex === 0 ? 'high' : 'auto'}
@@ -1063,7 +1137,7 @@ function PropertyGallery({ property, eager = false }: { property: Property; eage
               aria-pressed={index === selectedIndex}
               onClick={() => setSelectedIndex(index)}
             >
-              <img src={item.kind === 'video' ? poster : item.url} alt="" loading="lazy" />
+              <img src={galleryThumbnail(item.kind === 'video' ? poster : item.url)} alt="" loading="lazy" decoding="async" />
               {item.kind === 'floor_plan' && <span>Plan</span>}
               {item.kind === 'video' && <span>Video</span>}
             </button>

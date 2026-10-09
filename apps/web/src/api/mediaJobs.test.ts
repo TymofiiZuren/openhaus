@@ -7,6 +7,62 @@ afterEach(() => {
 })
 
 describe('video processing status recovery', () => {
+
+  it('recovers from a dropped status connection without repeating the upload', async () => {
+    vi.useFakeTimers()
+    const ready = { id: 'job-1', status: 'ready' }
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockResolvedValueOnce(Response.json(ready))
+    const update = vi.fn()
+    const result = waitForMediaJob('job-1', update)
+    const assertion = expect(result).resolves.toEqual(ready)
+    await vi.advanceTimersByTimeAsync(999)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(1)
+    await assertion
+    expect(update).toHaveBeenCalledExactlyOnceWith(ready)
+    expect(fetchMock.mock.calls.every(([url, init]) => url === '/api/v1/manager/media-jobs/job-1' && !init?.method)).toBe(true)
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('bounds repeated network failures to three retries', async () => {
+    vi.useFakeTimers()
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new TypeError('Failed to fetch'))
+    const assertion = expect(waitForMediaJob('job-1', vi.fn())).rejects.toThrow('Media job connection failed')
+    await vi.runAllTimersAsync()
+    await assertion
+    expect(fetchMock).toHaveBeenCalledTimes(4)
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('does not retry an interrupted upload POST', async () => {
+    const error = new TypeError('Failed to fetch')
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockRejectedValue(error)
+    await expect(uploadPropertyVideo('home-1', new File(['video'], 'tour.mp4'))).rejects.toBe(error)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not classify a response decoding TypeError as a dropped request', async () => {
+    const response = Response.json({})
+    vi.spyOn(response, 'json').mockRejectedValue(new TypeError('Unreadable body'))
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(response)
+    await expect(waitForMediaJob('job-1', vi.fn())).rejects.toThrow('Unreadable body')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('preserves the validated processing attempt', async () => {
+    const job = { id: 'job-1', status: 'ready', attempts: 2 }
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json(job))
+    await expect(waitForMediaJob('job-1', vi.fn())).resolves.toEqual(job)
+  })
+
+  it.each([-1, 1.5, '2', null, 32768])('rejects an invalid attempt count %s', async attempts => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({ id: 'job-1', status: 'ready', attempts }))
+    const update = vi.fn()
+    await expect(waitForMediaJob('job-1', update)).rejects.toThrow('Invalid video job response')
+    expect(update).not.toHaveBeenCalled()
+  })
   it.each([
     [429, '5'], [503, '5'], [429, 'Tue, 08 Sep 2026 12:00:05 GMT'],
   ])('respects Retry-After on status %d (%s)', async (status, retryAfter) => {
@@ -82,7 +138,7 @@ describe('video processing status recovery', () => {
       id: 'job-1', propertyId: 'home-1', status: 'pending', attempts: 0,
       createdAt: '2026-09-07T12:00:00Z', outputPath: '',
     }, { status: 202 }))
-    await expect(uploadPropertyVideo('home-1', new File(['video'], 'tour.mp4'))).resolves.toEqual({ id: 'job-1', status: 'pending' })
+    await expect(uploadPropertyVideo('home-1', new File(['video'], 'tour.mp4'))).resolves.toEqual({ id: 'job-1', status: 'pending', attempts: 0 })
   })
 
   it.each(['headers', 'body'])('times out a stalled response %s after 15 seconds', async stage => {
@@ -190,10 +246,12 @@ describe('video processing status recovery', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
-  it('cancels a pending retry without another request', async () => {
+  it.each(['server', 'network'])('cancels a pending %s retry without another request', async failure => {
     vi.useFakeTimers()
     const controller = new AbortController()
-    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 503 }))
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+    if (failure === 'network') fetchMock.mockRejectedValue(new TypeError('Failed to fetch'))
+    else fetchMock.mockResolvedValue(new Response(null, { status: 503 }))
     const result = expect(waitForMediaJob('job-1', vi.fn(), controller.signal)).rejects.toMatchObject({ name: 'AbortError' })
     await vi.advanceTimersByTimeAsync(100)
     controller.abort()

@@ -61,6 +61,23 @@ Open `http://localhost:5173`. Copy `apps/web/.env.example` to
 starting Vite if the file is not configured yet. The migration and seed steps
 below are required only for a new or empty local database.
 
+## Built frontend preview check
+
+From `apps/web`, run `npm run test:preview` to build the frontend and check its
+local preview over HTTP. The test starts temporary loopback servers on isolated
+ports and closes them afterward; no database or running API is needed.
+
+It verifies SPA deep links, the built JavaScript entry asset, API query forwarding,
+JSON errors (rather than accidental SPA HTML), and forwarding of authentication
+error statuses, `no-store`, Origin and a synthetic cookie. It also interrupts an
+upstream connection and verifies a 502 response, subsequent API recovery and
+continued availability of the frontend. The API is a fixture:
+this does not validate real authentication, browser rendering or deployed routing.
+
+Vite preview inherits the configured development API proxy, including
+`OPENHAUS_API_PROXY_TARGET`. Preview is for local verification, not production
+hosting; the production host must configure API routing separately.
+
 ## Local database
 
 Copy `.env.example` to `.env` if you want to override the development defaults,
@@ -205,6 +222,15 @@ active session with `DELETE /api/v1/manager/sessions`. A password change revokes
 all sessions atomically. `GET /api/v1/manager/properties` requires the returned
 HttpOnly cookie and includes draft, published, and archived listings. Set
 `APP_ENV=production` in production so the cookie is also marked `Secure`.
+Use this value for hosted staging too. Startup rejects unknown `APP_ENV` values
+and accepts only `true`, `false`, or unset for `ENABLE_CLIENT_ACCOUNTS`, before
+connecting to the database. Unset `APP_ENV` retains the local-only default;
+it does not enable Secure cookies. Buyer accounts still require explicit
+`APP_ENV=development` and remain blocked in production.
+Responses under the manager and client API namespaces carry `Cache-Control:
+no-store`, including authentication failures and missing routes. Keep this
+protection in any hosting proxy; the public catalogue retains its separate
+conditional-cache policy.
 
 The web manager workspace is available at `http://localhost:5173/manager/login`.
 It restores an existing cookie-backed session and lets managers create drafts,
@@ -276,9 +302,59 @@ from `services/api`; it claims pending work with `FOR UPDATE SKIP LOCKED`, runs
 FFmpeg, publishes an MP4, and atomically adds it to the property gallery:
 
 ```sh
+go run ./cmd/media-worker --check
 go run ./cmd/media-worker
 curl -b /path/to/manager-cookie-jar.txt http://localhost:8080/api/v1/manager/media-jobs/JOB_ID
 ```
+
+`--check` verifies database connectivity and required columns, tests a temporary
+write in the output directory, and runs a short synthetic H.264/AAC encode. It
+does not claim jobs or process uploads. Normal worker startup runs these same
+checks before polling. Encoder diagnostics and database connection details are
+not printed on failure. A passing check does not prove database write privileges,
+shared-filesystem access across hosts, public media delivery, or backup recovery.
+
+`go run ./cmd/media-worker --status` prints a read-only JSON queue snapshot:
+`pending`, `processing`, `ready`, `failed`, `recoverable`, `exhausted`,
+`oldestPendingSeconds`, and `observedAt`. It requires database access but does
+not need FFmpeg, touch output storage, claim work, or settle expired attempts.
+`recoverable` is the subset of processing jobs eligible for stale-claim recovery;
+`exhausted` is the pending/stale subset at the retry limit. Do not add those
+subsets to the four status totals. A null oldest-pending age means no waiting
+jobs. This snapshot is not a worker heartbeat or a declaration of system health.
+Use `--status` and `--check` separately.
+
+For a bounded media-processing run, use `go run ./cmd/media-worker --once`.
+It runs startup checks, processes at most one eligible job, and exits. An empty
+queue is successful; encoding, queue, completion, and cancellation errors exit
+non-zero. Unlike `--check` and `--status`, this mode changes queue state and can
+publish a video and remove its source after successful completion. Normal stale
+claim cleanup also runs. Do not combine these three flags. An empty successful
+run does not prove an upload was processed; inspect the job status to verify it.
+
+The persistent worker processes available jobs sequentially without a polling
+pause between successful jobs. Empty queues poll once per second; failures use
+exponential backoff capped at 30 seconds. Shutdown is checked before claiming
+more work. This does not increase encoding concurrency or change retry limits.
+
+Each video encode caps decoder, filter and output codec thread pools at two
+threads apiece. This avoids automatic allocation across every available core on
+small hosts, at the cost of potentially slower encoding on larger machines.
+The pools are separate: this is not a two-thread limit for the entire process or
+a substitute for host/container CPU and memory quotas. Multiple worker processes
+multiply resource use; size deployment capacity accordingly.
+
+The manager analytics page also includes this snapshot with manual refresh,
+last-observed time, stale-data feedback, and a sign-in prompt on session expiry.
+It reads `GET /api/v1/manager/media-queue`, which requires a manager session,
+returns `Cache-Control: no-store`, and bounds the database lookup to two seconds.
+Counts cover the entire installation, matching the shared staff portfolio.
+
+Stopping a worker during encoding leaves its processing claim and source intact
+and removes partial output. An updated worker can reclaim it once the claim is
+25 minutes old, subject to the three-attempt limit; recovery is not immediate.
+Actual encoder failures still fail the job. An already encoded video may finish
+its bounded database completion during shutdown before its source is removed.
 
 Local defaults place source uploads in `services/api/.data/uploads` and public
 outputs in `apps/web/public/media/uploads`. Override them with
@@ -298,6 +374,20 @@ PostgreSQL integration tests against a migrated and seeded local database:
 go test ./...
 TEST_DATABASE_URL="$DATABASE_URL" go test -count=1 ./...
 ```
+
+To verify the video pipeline with real FFmpeg and PostgreSQL, run from
+`services/api` with the test database configured:
+
+```sh
+MEDIA_TEST_FFMPEG=1 go test -race ./internal/mediajob -run TestVideoUploadPipeline -count=1 -v
+```
+
+This requires `TEST_DATABASE_URL`, FFmpeg with H.264/AAC support, and a migrated
+database. It generates tiny synthetic uploads, uses session-local database
+tables and temporary media directories, and checks successful publication,
+decodability, source cleanup, completion replay, and rejection of audio-only
+MP4 files. It does not exercise browser uploads, HTTP authentication, or CDN
+delivery. Without the required environment flags, the integration test skips.
 
 ## Project documentation
 

@@ -32,6 +32,47 @@ type candidate struct {
 	Distance int    `json:"distance"`
 }
 
+type duplicateGroup struct {
+	SHA256       string   `json:"sha256"`
+	BytesPerFile int64    `json:"bytesPerFile"`
+	Names        []string `json:"names"`
+}
+type storageSummary struct {
+	TotalBytes           int64            `json:"totalBytes"`
+	RedundantBytes       int64            `json:"redundantBytes"`
+	DuplicateFiles       int              `json:"duplicateFiles"`
+	ExactDuplicateGroups []duplicateGroup `json:"exactDuplicateGroups"`
+}
+
+func summarizeStorage(assets []asset) storageSummary {
+	summary := storageSummary{ExactDuplicateGroups: []duplicateGroup{}}
+	// Keep input order (ReadDir is name-sorted), never map iteration order.
+	type identity struct {
+		digest string
+		bytes  int64
+	}
+	positions := make(map[identity]int)
+	var groups []duplicateGroup
+	for _, a := range assets {
+		summary.TotalBytes += a.Bytes
+		key := identity{a.SHA256, a.Bytes}
+		if index, found := positions[key]; found {
+			groups[index].Names = append(groups[index].Names, a.Name)
+			summary.DuplicateFiles++
+			summary.RedundantBytes += a.Bytes
+		} else {
+			positions[key] = len(groups)
+			groups = append(groups, duplicateGroup{SHA256: a.SHA256, BytesPerFile: a.Bytes, Names: []string{a.Name}})
+		}
+	}
+	for _, group := range groups {
+		if len(group.Names) > 1 {
+			summary.ExactDuplicateGroups = append(summary.ExactDuplicateGroups, group)
+		}
+	}
+	return summary
+}
+
 func main() {
 	input := flag.String("input", "", "local image directory")
 	output := flag.String("output", "", "new JSON manifest path (never overwrites)")
@@ -88,12 +129,13 @@ func run(input, output string) error {
 		}
 	}
 	report := struct {
-		Version     int     `json:"version"`
-		Algorithm   string  `json:"algorithm"`
-		Radius      int     `json:"radius"`
-		Limitations string  `json:"limitations"`
-		Assets      []asset `json:"assets"`
-	}{1, "dhash-box-v1 + BK-tree", 8, "Similarity candidates only, not proof of duplication. Crops, flat images and similar rooms can mislead. No automatic deletion.", assets}
+		Version     int            `json:"version"`
+		Algorithm   string         `json:"algorithm"`
+		Radius      int            `json:"radius"`
+		Limitations string         `json:"limitations"`
+		Assets      []asset        `json:"assets"`
+		Storage     storageSummary `json:"storage"`
+	}{1, "dhash-box-v1 + BK-tree", 8, "Similarity candidates only, not proof of duplication. Crops, flat images and similar rooms can mislead. Storage groups match SHA-256 and byte size; review before removing files. No automatic deletion.", assets, summarizeStorage(assets)}
 	data, err := json.MarshalIndent(report, "", "  ")
 	if err != nil {
 		return err

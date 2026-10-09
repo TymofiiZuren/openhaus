@@ -8,6 +8,38 @@ The Go adapter in `services/api/internal/panorama` now accepts JPEG/PNG input
 and returns JPEG faces through this executable. It is integration-tested but
 not yet called by the application's media queue or an upload endpoint.
 
+## Browser bundle inspection
+
+Media Lab (`/media-lab`) now includes a local native-bundle face inspector. After
+using the Go CLI to export a bundle, select or drop `manifest.json` and all six
+`.jpg` files together. The browser validates the manifest contract, exact filenames,
+file lengths, SHA-256 checksums and JPEG dimensions before showing any face.
+Decoded bitmaps are closed and preview URLs are released on clear or navigation.
+Files are not uploaded or persisted. Hashes detect corruption, not authenticity.
+
+Browser limits are deliberately tighter than the CLI: 16 KiB manifest, 10 MiB
+per face, and 2048 pixels per side. Secure-context Web Crypto and browser bitmap
+decoding are required. The default six-face inspector now has an experimental
+`Explore 360°` mode using CSS 3D planes. Keyboard arrows and labelled buttons
+control heading and tilt; zoom changes the perspective field of view, and reset
+returns to the front face. Mouse dragging controls both axes; horizontal touch
+dragging looks around while vertical swipes and pinch gestures remain available
+to the page. There is no autoplay, animation loop or new dependency.
+
+The viewer maps CSS coordinates onto the native face convention, waits for all
+six images before revealing the cube, and reports image load errors. A stalled
+load fails after 15 seconds with instructions to inspect the faces or reload the
+bundle; partial progress does not extend that deadline. The deadline is cancelled
+on success, failure or leaving the interactive view. It is not
+browser-side C++ execution or a replacement for existing Kuula tours. Unit tests
+cover control bounds, reset, loading/error/deadline states, Tab behaviour and cancellation
+of touch dragging. **Rendered 3D orientation, seams and device compatibility are
+not yet verified:** the test browser closed repeatedly during interactive checks.
+Keep the face inspector as the default until those acceptance checks pass.
+Local browser
+acceptance was checked with a real C++/Go-generated 256px test-pattern bundle;
+actual tour photography and interactive viewer compatibility remain future checks.
+
 ## Build and verify
 
 From the repository root:
@@ -50,8 +82,13 @@ JPEG or PNG bytes directly. Only use trusted local inputs for this prototype.
   resource policy: the eventual worker must enforce a smaller memory budget,
   process deadline and concurrency limit.
 
-Tests cover cardinal orientations, poles, seam wrapping, constant-channel
-preservation, dimensions and malformed image rejection. Multi-resolution tiles,
+Tests cover cardinal orientations, 24 off-centre corner rays, all 12 adjacent
+cube-edge joins (including reversed edge order), poles, seam wrapping,
+constant-channel preservation, dimensions and malformed image rejection. The
+off-centre tests use an independent spherical XYZ colour field and explicit
+expected rays; edge comparisons allow the finite separation between texel centres.
+These numerical checks do not replace a real viewer test or add texture gutters.
+Multi-resolution tiles,
 edge gutters, anti-aliasing for downsampling, cancellation, queue integration,
 object storage, visual viewer verification and performance measurement remain
 future work. Do not advertise progressive panorama streaming yet.

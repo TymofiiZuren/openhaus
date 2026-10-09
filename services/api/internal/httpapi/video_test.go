@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/TymofiiZuren/openhaus/services/api/internal/httpapi"
@@ -65,11 +67,82 @@ func (body *observedUploadBody) Read(p []byte) (int, error) {
 	return n, err
 }
 
-type uploadCreator struct{ called bool }
+type uploadCreator struct {
+	called bool
+	job    mediajob.Job
+}
 
-func (creator *uploadCreator) Create(context.Context, mediajob.Job) error {
+func (creator *uploadCreator) Create(_ context.Context, job mediajob.Job) error {
 	creator.called = true
+	creator.job = job
 	return nil
+}
+
+func TestMultipartVideoUploadUsesRealStorageWithoutExposingSource(t *testing.T) {
+	for _, signedIn := range []bool{false, true} {
+		name := "anonymous rejected"
+		if signedIn {
+			name = "authenticated accepted"
+		}
+		t.Run(name, func(t *testing.T) {
+			root := t.TempDir()
+			creator := &uploadCreator{}
+			router := authenticatedMediaRouter(mediajob.NewUploadService(root, creator), jobGetterStub{})
+			payload := append([]byte("\x00\x00\x00\x18ftypqt  "), bytes.Repeat([]byte("synthetic-video"), 80)...)
+			body := &bytes.Buffer{}
+			writer := multipart.NewWriter(body)
+			part, err := writer.CreateFormFile("video", "tour.mov")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := part.Write(payload); err != nil {
+				t.Fatal(err)
+			}
+			if err := writer.Close(); err != nil {
+				t.Fatal(err)
+			}
+			request := managerRequest(http.MethodPost, "/api/v1/manager/properties/property-1/videos", body)
+			if !signedIn {
+				request.Header.Del("Cookie")
+			}
+			request.Header.Set("Content-Type", writer.FormDataContentType())
+			response := httptest.NewRecorder()
+			router.ServeHTTP(response, request)
+			if response.Header().Get("Cache-Control") != "no-store" {
+				t.Fatal("private upload response is cacheable")
+			}
+			files, err := os.ReadDir(root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !signedIn {
+				if response.Code != http.StatusUnauthorized || creator.called || len(files) != 0 {
+					t.Fatal("anonymous upload reached storage or queue")
+				}
+				return
+			}
+			if response.Code != http.StatusAccepted || !creator.called {
+				t.Fatalf("upload status=%d, queued=%t", response.Code, creator.called)
+			}
+			if len(files) != 1 || filepath.Base(creator.job.SourcePath) != creator.job.ID+".mov" {
+				t.Fatal("upload not atomically stored under job identity")
+			}
+			stored, err := os.ReadFile(creator.job.SourcePath)
+			if err != nil || !bytes.Equal(stored, payload) {
+				t.Fatal("stored upload differs from multipart payload")
+			}
+			var returned mediajob.Job
+			if err := json.Unmarshal(response.Body.Bytes(), &returned); err != nil {
+				t.Fatal(err)
+			}
+			if returned.ID != creator.job.ID || returned.PropertyID != "property-1" || returned.Status != mediajob.StatusPending {
+				t.Fatal("response does not describe queued job")
+			}
+			if strings.Contains(response.Body.String(), "sourcePath") || strings.Contains(response.Body.String(), root) || returned.SourcePath != "" {
+				t.Fatal("private source path exposed")
+			}
+		})
+	}
 }
 
 func TestEmptyVideoUploadIsUnsupportedRatherThanServerFailure(t *testing.T) {
