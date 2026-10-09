@@ -112,7 +112,6 @@ export function PropertyMap({ properties, selectedCounty, selectedArea, property
     <section className="location-explorer" aria-label="Explore homes by location">
       <header className="location-heading">
         <div className="location-heading-copy">
-          <p className="eyebrow">Property for sale in Ireland</p>
           <h2>{activeArea ? `Homes in ${activeArea}` : selectedCounty ? `Homes in ${selectedCounty}` : 'Explore homes across Ireland'}</h2>
           <p className="location-introduction">Search by county or local area, then explore every available home on the map.</p>
           <p className="location-total" aria-live="polite">{homeCount(visibleProperties.length)} for sale</p>

@@ -30,6 +30,17 @@ function managerWorkspaceResponse(input: RequestInfo | URL, properties: unknown[
 afterEach(() => { vi.restoreAllMocks(); sessionStorage.clear(); localStorage.removeItem(clientSessionHintKey); localStorage.removeItem(managerSessionHintKey); window.history.replaceState({}, '', '/') })
 
 describe('manager application', () => {
+  it('mounts the private media queue only on authenticated analytics', async () => {
+    window.history.replaceState({}, '', '/manager/analytics')
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(input => {
+      if (String(input) === '/api/v1/manager/media-queue') return Promise.resolve(Response.json({ observedAt: '2026-09-18T12:00:00Z', pending: 0, processing: 0, ready: 0, failed: 0, recoverable: 0, exhausted: 0, oldestPendingSeconds: null }))
+      return managerWorkspaceResponse(input, [])
+    })
+    render(<ManagerApp />)
+    expect(await screen.findByRole('heading', { name: 'Video processing queue' })).toBeVisible()
+    expect(await screen.findByText('No waiting jobs')).toBeVisible()
+    expect(fetchMock).toHaveBeenCalledWith('/api/v1/manager/media-queue', expect.objectContaining({ credentials: 'same-origin' }))
+  })
   it('opens an unsaved draft form from the account-menu shortcut', async () => {
     window.history.replaceState({}, '', '/manager?action=new#manager-editor-title')
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(input => managerWorkspaceResponse(input, [managedProperty]))
@@ -298,6 +309,19 @@ describe('manager application', () => {
     expect(fetchMock.mock.calls.some(([input]) => String(input).includes('/media-jobs/'))).toBe(false)
     expect(screen.getByRole('button', { name: 'Upload video' })).toBeEnabled()
   })
+
+  it.each([1, 2, 3])('shows processing recovery for attempt %d', async attempts => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(input => {
+      if (String(input).endsWith('/videos')) return Promise.resolve(Response.json({ id: 'recovered-job', status: 'pending', attempts: 0 }))
+      if (String(input).includes('/media-jobs/')) return Promise.resolve(Response.json({ id: 'recovered-job', status: 'processing', attempts }))
+      return managerWorkspaceResponse(input, [managedProperty])
+    })
+    const user = userEvent.setup()
+    render(<ManagerApp />)
+    await user.upload(await screen.findByLabelText(`Choose video for ${managedProperty.title}`), new File(['video'], 'tour.mp4', { type: 'video/mp4' }))
+    await user.click(screen.getByRole('button', { name: 'Upload video' }))
+    expect(await screen.findByText(attempts > 1 ? `Recovering interrupted processing · attempt ${attempts}. No need to upload again.` : 'Preparing video…')).toBeVisible()
+  })
   it.each(['ready', 'failed'])('reconnects to an accepted video job ending in %s without uploading again', async status => {
     let checks = 0
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(input => {
@@ -312,10 +336,11 @@ describe('manager application', () => {
     render(<ManagerApp />)
     await user.upload(await screen.findByLabelText(`Choose video for ${managedProperty.title}`), new File(['video'], 'tour.mp4', { type: 'video/mp4' }))
     await user.click(screen.getByRole('button', { name: 'Upload video' }))
-    expect(await screen.findByRole('alert')).toHaveTextContent('Video uploaded. Processing status is unavailable.')
+    // The first connection failure retries automatically; the subsequent timeout
+    // still offers manual recovery without submitting the accepted video again.
+    expect(await screen.findByRole('alert', {}, { timeout: 2500 })).toHaveTextContent('Video uploaded. Processing status is unavailable.')
+    expect(checks).toBe(2)
     expect(screen.queryByRole('button', { name: 'Upload video' })).not.toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Check processing again' }))
-    expect(await screen.findByRole('alert')).toHaveTextContent('Video uploaded. Processing status is unavailable.')
     await user.click(screen.getByRole('button', { name: 'Check processing again' }))
     if (status === 'failed') {
       expect(await screen.findByRole('alert')).toHaveTextContent('Video encoding failed.')
@@ -331,7 +356,7 @@ describe('manager application', () => {
     let disconnected = true
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(input => {
       if (String(input).endsWith('/videos')) return Promise.resolve(Response.json({ id: 'saved-job', status: 'pending' }))
-      if (String(input).includes('/media-jobs/')) return disconnected ? Promise.reject(new TypeError('offline')) : Promise.resolve(Response.json({ id: 'saved-job', status: 'failed', errorMessage: 'Encoding failed.' }))
+      if (String(input).includes('/media-jobs/')) return disconnected ? Promise.reject(new DOMException('Status timed out', 'TimeoutError')) : Promise.resolve(Response.json({ id: 'saved-job', status: 'failed', errorMessage: 'Encoding failed.' }))
       return managerWorkspaceResponse(input, [managedProperty])
     })
     const user = userEvent.setup()

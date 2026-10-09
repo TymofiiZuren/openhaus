@@ -76,7 +76,7 @@
 
 /* Home */
 :root .home-hero {
-  min-height: min(760px, calc(100svh - 72px));
+  min-height: 620px;
   isolation: isolate;
   border-color: #2b2b28;
   background: #000;
@@ -85,27 +85,18 @@
 :root .home-hero::before { content: ''; position: absolute; z-index: -2; inset: 0; background: url('./assets/openhaus-architectural-night-v2.webp') center / cover no-repeat; opacity: .96; }
 :root .home-hero::after { content: ''; position: absolute; z-index: -1; inset: 0; background: linear-gradient(90deg, #000 0%, rgba(0,0,0,.97) 30%, rgba(0,0,0,.64) 55%, rgba(0,0,0,.18) 100%); pointer-events: none; }
 :root .home-hero-layout { position: relative; z-index: 1; border-color: rgba(255,255,255,.16); }
-:root .home-hero-copy .eyebrow { color: var(--accent); }
-:root .home-hero-copy h1 { max-width: 11ch; color: #fff; font-size: clamp(3.25rem, 5.4vw, 5.8rem); font-weight: 600; text-wrap: balance; }
+:root .home-hero-copy h1 { color: #fff; font-weight: 500; }
 :root .home-hero-copy > p:not(.eyebrow) { color: #c2c2bd; }
-:root .home-hero-search { border-color: rgba(255,255,255,.28); background: rgba(12,12,11,.72); color: #fff; backdrop-filter: blur(10px); }
-:root .home-hero-search input { color: #fff; }
-:root .home-hero-search input::placeholder { color: #aaa9a3; }
-:root .home-hero-search:focus-within { outline-color: var(--accent); }
-:root .home-hero-search button { border-color: var(--accent); background: var(--accent); color: var(--on-accent); }
-:root .home-hero-search button:hover { background: var(--yellow-dark); }
+:root .home-hero-search input { color: #171b19; caret-color: #716044; }
+:root .home-hero-search input::placeholder { color: #5f625b; }
 :root .home-hero-actions a { color: #fff; text-decoration-color: rgba(255,255,255,.38); }
 :root .home-hero-actions button { border: 0; border-radius: var(--radius-control); background: #30312b; color: #f4f1eb; padding-inline: 20px; transition: background-color 180ms ease; }
 :root .home-hero-actions button:hover { background: #42443b; }
-:root .home-hero-desk { position: relative; z-index: 1; border-left: 1px solid rgba(255,255,255,.14); background: rgba(7,7,6,.78); color: #fff; backdrop-filter: blur(14px); }
-:root .home-hero-desk > header,
+:root .home-hero-desk { position: relative; z-index: 1; background: #111612; color: #fff; }
 :root .home-hero-desk dl,
 :root .home-hero-desk dl div { border-color: rgba(255,255,255,.14); }
-:root .home-hero-desk > header span,
-:root .home-hero-desk-heading,
 :root .home-hero-desk dt { color: #aaa9a3; }
-:root .home-hero-desk > header strong,
-:root .home-hero-desk > a { color: var(--accent); }
+:root .home-hero-desk > a { color: #e8dfcf; }
 :root .home-hero-desk dd { color: #fff; }
 :root .home-hero-facts { position: relative; z-index: 1; border-color: rgba(255,255,255,.14); background: rgba(0,0,0,.82); color: #fff; }
 :root .home-hero-facts div { border-color: rgba(255,255,255,.14); }
@@ -275,15 +266,14 @@
 :root .auth-control > input:focus-visible { background: transparent; }
 
 :root .home-hero-search {
-  border: 0;
-  border-radius: 12px;
-  background: #262722;
-  box-shadow: 0 18px 46px rgba(0,0,0,.3);
+  border: 1px solid #e8dfcf;
+  border-radius: 6px;
+  background: #f4f1eb;
+  color: #171b19;
 }
 :root .home-hero-search:focus-within {
-  outline: 0;
-  background: #292927;
-  box-shadow: 0 18px 46px rgba(0,0,0,.3);
+  outline: 2px solid #e8dfcf;
+  outline-offset: 4px;
 }
 :root .home-hero-search input,
 :root .home-hero-search input:focus-visible { box-shadow: none !important; background: transparent !important; }
@@ -294,13 +284,13 @@
   min-height: 50px;
   margin: 6px;
   border: 0;
-  border-radius: 8px;
-  background: #e8dfcf;
-  color: #25251f;
-  padding-inline: 24px;
+  border-radius: 4px;
+  background: #716044;
+  color: #fff;
+  padding-inline: 16px;
   transition: background-color 180ms ease;
 }
-:root .home-hero-search button:hover { background: #f4edde; color: #25251f; }
+:root .home-hero-search button:hover { background: #55482f; color: #fff; }
 :root :is(.client-main, .manager-main) [id] { scroll-margin-top: calc(var(--public-header-height, 72px) + 32px); }
 @media (prefers-reduced-motion: reduce) { :root .home-hero-search button { transition: none; } }
 
@@ -380,6 +370,7 @@
 
 @media (max-width: 1100px) {
   :root { --public-header-height: 76px; }
+  :root .home-hero { min-height: auto; }
 }
 
 @media (max-width: 820px) {

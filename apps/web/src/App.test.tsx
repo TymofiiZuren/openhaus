@@ -575,6 +575,7 @@ describe('property catalogue', () => {
   })
 
   it('sorts the catalogue by price', async () => {
+    window.history.replaceState({ navigation: 'preserved' }, '', '/?view=catalogue#homes')
     mockResponse({ properties: [property, corkProperty] })
     const user = userEvent.setup()
 
@@ -585,6 +586,66 @@ describe('property catalogue', () => {
     const cards = document.querySelectorAll('.property-grid .property-card h3')
     expect(cards[0]).toHaveTextContent(corkProperty.title)
     expect(cards[1]).toHaveTextContent(property.title)
+    expect(new URLSearchParams(window.location.search).get('sort')).toBe('price-low')
+    expect(new URLSearchParams(window.location.search).get('view')).toBe('catalogue')
+    expect(window.location.hash).toBe('#homes')
+    expect(window.history.state).toEqual({ navigation: 'preserved' })
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Sort properties' }), 'recent')
+    expect(new URLSearchParams(window.location.search).has('sort')).toBe(false)
+  })
+
+  it('restores sorting from the URL and browser history', async () => {
+    window.history.replaceState({}, '', '/?sort=price-low#homes')
+    mockResponse({ properties: [property, corkProperty] })
+    render(<App />)
+    const sort = await screen.findByRole('combobox', { name: 'Sort properties' })
+    expect(sort).toHaveValue('price-low')
+    expect(document.querySelector('.property-grid .property-card h3')).toHaveTextContent(corkProperty.title)
+    act(() => {
+      window.history.replaceState({}, '', '/?sort=price-high#homes')
+      window.dispatchEvent(new PopStateEvent('popstate'))
+    })
+    expect(sort).toHaveValue('price-high')
+    expect(document.querySelector('.property-grid .property-card h3')).toHaveTextContent(property.title)
+    act(() => {
+      window.history.replaceState({}, '', '/?sort=unknown#homes')
+      window.dispatchEvent(new PopStateEvent('popstate'))
+    })
+    expect(sort).toHaveValue('recent')
+  })
+
+  it('persists filters and restores them together from browser history', async () => {
+    window.history.replaceState({ preserved: true }, '', '/?sort=price-low#explore')
+    mockResponse({ properties: [property, corkProperty] })
+    const user = userEvent.setup()
+    render(<App />)
+    await user.selectOptions(await screen.findByRole('combobox', { name: 'Minimum bedrooms' }), '4')
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Maximum price' }), '650000')
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Property type' }), 'detached')
+    await user.click(screen.getByRole('checkbox', { name: '360° tours only' }))
+    expect(new URLSearchParams(location.search).get('beds')).toBe('4')
+    expect(new URLSearchParams(location.search).get('maxPrice')).toBe('650000')
+    expect(new URLSearchParams(location.search).get('type')).toBe('detached')
+    expect(new URLSearchParams(location.search).get('tour')).toBe('true')
+    expect(new URLSearchParams(location.search).get('sort')).toBe('price-low')
+    expect(history.state).toEqual({ preserved: true })
+    act(() => {
+      history.replaceState({}, '', '/?query=Cork&beds=3&type=apartment&maxPrice=800000#explore')
+      window.dispatchEvent(new PopStateEvent('popstate'))
+    })
+    expect(screen.getByPlaceholderText('Search by address, town or property')).toHaveValue('Cork')
+    expect(screen.getByRole('combobox', { name: 'Minimum bedrooms' })).toHaveValue('3')
+    expect(screen.getByRole('combobox', { name: 'Maximum price' })).toHaveValue('800000')
+    expect(screen.getByRole('combobox', { name: 'Property type' })).toHaveValue('apartment')
+    expect(screen.getByRole('checkbox', { name: '360° tours only' })).not.toBeChecked()
+    act(() => {
+      history.replaceState({}, '', '/?beds=-1&type=invalid&maxPrice=NaN#explore')
+      window.dispatchEvent(new PopStateEvent('popstate'))
+    })
+    expect(screen.getByRole('combobox', { name: 'Minimum bedrooms' })).toHaveValue('0')
+    expect(screen.getByRole('combobox', { name: 'Maximum price' })).toHaveValue('0')
+    expect(screen.getByRole('combobox', { name: 'Property type' })).toHaveValue('all')
+    expect(location.search).toBe('')
   })
 
   it('prioritises only the first catalogue image and lazily loads later homes', async () => {
@@ -905,6 +966,7 @@ describe('property catalogue', () => {
     await user.click(within(tray).getByRole('button', { name: 'Compare homes' }))
 
     const dialog = screen.getByRole('dialog', { name: 'Compare selected homes' })
+    expect(dialog.parentElement).toHaveClass('overlay-layer-centered')
     expect(within(dialog).getByText(property.title)).toBeVisible()
     expect(within(dialog).getByText(corkProperty.title)).toBeVisible()
     expect(within(dialog).getAllByText('Asking price')).toHaveLength(2)
@@ -912,6 +974,102 @@ describe('property catalogue', () => {
     await user.click(within(dialog).getByRole('button', { name: `Remove ${property.title} from comparison` }))
     expect(within(dialog).queryByText(property.title)).not.toBeInTheDocument()
     expect(within(tray).getByText('1 home selected')).toBeVisible()
+  })
+
+  it('downloads selected public listing facts from the comparison dialog', async () => {
+    mockResponse({ properties: [property, corkProperty] })
+    const create = vi.fn(() => 'blob:comparison')
+    const revoke = vi.fn()
+    vi.stubGlobal('URL', class extends URL {
+      static createObjectURL = create
+      static revokeObjectURL = revoke
+    })
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    const user = userEvent.setup()
+    render(<App />)
+    await user.click(await screen.findByRole('button', { name: `Add ${property.title} to comparison` }))
+    await user.click(screen.getByRole('button', { name: `Add ${corkProperty.title} to comparison` }))
+    await user.click(screen.getByRole('button', { name: 'Compare homes' }))
+    const dialog = screen.getByRole('dialog', { name: 'Compare selected homes' })
+    await user.click(within(dialog).getByRole('button', { name: 'Download comparison CSV' }))
+    expect(create).toHaveBeenCalledWith(expect.any(Blob))
+    expect(click.mock.instances[0]).toHaveAttribute('download', 'openhaus-comparison.csv')
+    expect(click.mock.instances[0]).toHaveAttribute('href', 'blob:comparison')
+    expect(within(dialog).getByRole('status')).toHaveTextContent('Comparison download prepared')
+    await waitFor(() => expect(revoke).toHaveBeenCalledWith('blob:comparison'), { timeout: 2000 })
+  })
+
+  it('keeps a failed comparison download recoverable', async () => {
+    mockResponse({ properties: [property, corkProperty] })
+    const create = vi.fn().mockImplementationOnce(() => { throw new Error('unavailable') }).mockReturnValue('blob:retry')
+    vi.stubGlobal('URL', class extends URL {
+      static createObjectURL = create
+      static revokeObjectURL = vi.fn()
+    })
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    const user = userEvent.setup()
+    render(<App />)
+    await user.click(await screen.findByRole('button', { name: `Add ${property.title} to comparison` }))
+    await user.click(screen.getByRole('button', { name: `Add ${corkProperty.title} to comparison` }))
+    await user.click(screen.getByRole('button', { name: 'Compare homes' }))
+    const dialog = screen.getByRole('dialog', { name: 'Compare selected homes' })
+    const download = within(dialog).getByRole('button', { name: 'Download comparison CSV' })
+    await user.click(download)
+    expect(within(dialog).getByRole('status')).toHaveTextContent('The download could not be prepared. Please try again.')
+    await user.click(download)
+    expect(within(dialog).getByRole('status')).toHaveTextContent('Comparison download prepared')
+    await new Promise((resolve) => setTimeout(resolve, 1100))
+  })
+
+  it('provides a useful empty comparison instead of exporting an empty file', async () => {
+    mockResponse({ properties: [property, corkProperty] })
+    const user = userEvent.setup()
+    render(<App />)
+    await user.click(await screen.findByRole('button', { name: `Add ${property.title} to comparison` }))
+    await user.click(screen.getByRole('button', { name: `Add ${corkProperty.title} to comparison` }))
+    await user.click(screen.getByRole('button', { name: 'Compare homes' }))
+    const dialog = screen.getByRole('dialog', { name: 'Compare selected homes' })
+    await user.click(within(dialog).getByRole('button', { name: `Remove ${property.title} from comparison` }))
+    await user.click(within(dialog).getByRole('button', { name: `Remove ${corkProperty.title} from comparison` }))
+    expect(within(dialog).getByRole('button', { name: 'Download comparison CSV' })).toBeDisabled()
+    expect(within(dialog).getByText(/No homes selected/)).toBeVisible()
+    await user.click(within(dialog).getByRole('button', { name: 'Browse homes' }))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('keeps comparison keyboard focus inside and restores its opener', async () => {
+    mockResponse({ properties: [property, corkProperty] })
+    const user = userEvent.setup()
+    render(<App />)
+    await user.click(await screen.findByRole('button', { name: `Add ${property.title} to comparison` }))
+    await user.click(screen.getByRole('button', { name: `Add ${corkProperty.title} to comparison` }))
+    const opener = screen.getByRole('button', { name: 'Compare homes' })
+    await user.click(opener)
+    const dialog = screen.getByRole('dialog', { name: 'Compare selected homes' })
+    const close = within(dialog).getByRole('button', { name: 'Close comparison' })
+    expect(close).toHaveFocus()
+    await user.tab({ shift: true })
+    const links = within(dialog).getAllByRole('link', { name: 'View property' })
+    expect(links[links.length - 1]).toHaveFocus()
+    await user.tab()
+    expect(close).toHaveFocus()
+    act(() => opener.focus())
+    await user.tab()
+    expect(close).toHaveFocus()
+    await user.keyboard('{Escape}')
+    expect(opener).toHaveFocus()
+  })
+
+  it('restores the saved-search opener after its form autofocus', async () => {
+    mockResponse({ properties: [property] })
+    const user = userEvent.setup()
+    render(<App />)
+    const opener = await screen.findByRole('button', { name: 'Save search' })
+    await user.click(opener)
+    const dialog = screen.getByRole('dialog', { name: 'Save this search' })
+    expect(dialog.contains(document.activeElement)).toBe(true)
+    await user.keyboard('{Escape}')
+    expect(opener).toHaveFocus()
   })
 
   it('lets a buyer search available counties and towns from the map panel', async () => {
@@ -1014,6 +1172,34 @@ describe('property catalogue', () => {
     expect(await screen.findByText('Map is not available.')).toBeVisible()
     await user.click(screen.getByRole('button', { name: 'Choose location' }))
     expect(screen.getByRole('button', { name: 'Explore Dublin, 1 property' })).toBeVisible()
+  })
+
+  it('uses small uploaded-image thumbnails but keeps selected photos full resolution', async () => {
+    const uploaded = { ...property, media: property.media.map((item, index) => index < 2 ? { ...item, url: `/api/v1/property-images/photo${index}.jpg` } : item) }
+    mockResponse({ properties: [uploaded] })
+    const user = userEvent.setup()
+    render(<App />)
+    expect(await screen.findByRole('img', { name: 'Front exterior of the home' })).toHaveAttribute('src', '/api/v1/property-images/photo0.jpg')
+    const thumbnail = screen.getByRole('button', { name: 'View Bright open-plan living room' }).querySelector('img')
+    expect(thumbnail).toHaveAttribute('src', '/api/v1/property-images/photo1.jpg?size=thumbnail')
+    expect(thumbnail).toHaveAttribute('decoding', 'async')
+    const plan = screen.getByRole('button', { name: 'View Measured floor plan of the property' }).querySelector('img')
+    expect(plan).toHaveAttribute('src', property.media.find((item) => item.kind === 'floor_plan')!.url)
+    await user.click(screen.getByRole('button', { name: 'View Bright open-plan living room' }))
+    expect(screen.getByRole('img', { name: 'Bright open-plan living room' })).toHaveAttribute('src', '/api/v1/property-images/photo1.jpg')
+    expect(screen.getByRole('img', { name: 'Bright open-plan living room' })).toHaveAttribute('decoding', 'async')
+  })
+
+  it.each([
+    'https://images.example.test/home.jpg?token=demo',
+    '/api/v1/property-images/photo.jpg?version=2',
+    '/media/showcase/home.jpg',
+  ])('preserves non-derivative gallery image URL %s', async (url) => {
+    const media = property.media.map((item, index) => index === 1 ? { ...item, url } : item)
+    mockResponse({ properties: [{ ...property, media }] })
+    render(<App />)
+    const button = await screen.findByRole('button', { name: 'View Bright open-plan living room' })
+    expect(button.querySelector('img')).toHaveAttribute('src', url)
   })
 
   it('lets the buyer browse all media for a property', async () => {

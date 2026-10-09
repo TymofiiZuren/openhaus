@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect, useRef, useState, type ChangeEvent, type For
 import './App.css'
 import { PropertyDetailPage } from './App'
 import { ManagerImages } from './ManagerImages'
+import { ManagerMediaQueue } from './ManagerMediaQueue'
 import { AuthFields } from './AuthFields'
 import { clientSessionHintKey, managerSessionHintKey, SiteHeader, type HeaderClient } from './SiteHeader'
 import { displayAccountIdentifier } from './accountIdentifier'
@@ -256,6 +257,7 @@ function ManagerAnalytics({ properties }: { properties: ManagedProperty[] }) {
       <section aria-labelledby="pipeline-title"><p className="section-index">01 / Pipeline</p><h2 id="pipeline-title">Listing stages</h2><div className="manager-stage-chart">{stages.map(([label, value]) => <div key={label}><span>{label}</span><i><b style={{ width: `${total ? (value / total) * 100 : 0}%` }} /></i><strong>{value}</strong></div>)}</div></section>
       <section aria-labelledby="coverage-title"><p className="section-index">02 / Coverage</p><h2 id="coverage-title">Media readiness</h2><dl><div><dt>Photography</dt><dd>{photographed} / {total}</dd></div><div><dt>Immersive tour or video</dt><dd>{immersive} / {total}</dd></div><div><dt>Needs attention</dt><dd>{properties.filter((property) => completeness(property) < 88).length}</dd></div></dl></section>
     </div>
+    <ManagerMediaQueue />
   </section>
 }
 
@@ -452,7 +454,7 @@ function ManagerPanoramaForm({ property, onAttached, onRemoved }: { property: Ma
   </form>
 }
 
-type UploadState = { status: 'idle' } | { status: 'busy'; job?: Pick<MediaJob, 'id' | 'status'> } | { status: 'status-error'; jobID: string } | { status: 'ready' } | { status: 'refreshing' } | { status: 'refresh-error' } | { status: 'error'; message: string }
+type UploadState = { status: 'idle' } | { status: 'busy'; job?: Pick<MediaJob, 'id' | 'status' | 'attempts'> } | { status: 'status-error'; jobID: string } | { status: 'ready' } | { status: 'refreshing' } | { status: 'refresh-error' } | { status: 'error'; message: string }
 
 function ManagerVideoUpload({ property, managerID, onReady }: { property: ManagedProperty; managerID: string; onReady: (media: ManagedProperty['media']) => void }) {
   const [file, setFile] = useState<File>()
@@ -539,7 +541,7 @@ function ManagerVideoUpload({ property, managerID, onReady }: { property: Manage
   return <form className="manager-video-upload" onSubmit={upload}>
     <label className="manager-file-picker"><span>Video walkthrough</span><span className="manager-file-picker-control"><input aria-label={`Choose video for ${property.title}`} type="file" accept="video/mp4,video/quicktime,.mp4,.mov" onChange={chooseFile} disabled={state.status === 'busy'} /><span className="manager-file-picker-action" aria-hidden="true">{file ? 'Change video' : 'Select video'}</span><span className="manager-file-picker-name" aria-hidden="true">{file ? file.name : 'Browse your files'}</span></span><small>MP4 or MOV · up to 2 GiB. Select a file, then upload.</small></label>
     <button type="submit" disabled={!file || state.status === 'busy'}>{state.status === 'busy' ? 'Processing…' : 'Upload video'}</button>
-    {state.status === 'busy' && <span role="status">{state.job?.status === 'processing' ? 'Preparing video…' : 'Video queued…'}</span>}
+    {state.status === 'busy' && <span role="status">{!state.job ? 'Uploading video…' : state.job.status === 'processing' ? (state.job.attempts ?? 0) > 1 ? `Recovering interrupted processing · attempt ${state.job.attempts}. No need to upload again.` : 'Preparing video…' : 'Video queued…'}</span>}
     {state.status === 'ready' && <span role="status">Video tour ready.</span>}
     {state.status === 'error' && <span role="alert">{state.message}</span>}
   </form>
