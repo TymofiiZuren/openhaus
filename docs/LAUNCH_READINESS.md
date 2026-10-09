@@ -1,5 +1,167 @@
 # OpenHaus launch readiness
 
+## October 9 health and managed-hosting checkpoint
+
+Stage remains feature-rich portfolio demo / pre-beta, not deployment-ready. The
+owner selected preparation of Render + managed PostgreSQL + R2, not provisioning.
+The deployment worksheet now maps service commands, port configuration, public
+account gating, routing alternatives and acceptance requirements to current code.
+Domain, budget and capability profile still need confirmation.
+
+Primary signal **partially validated** for overall release readiness. The existing
+checks ran without persisting tool settings: 451 frontend tests, TypeScript,
+production build, built-preview fixture smoke test, Go tests/vet, native C++
+sanitizer/CLI checks and real FFmpeg stream/dimension checks passed. Frontend lint
+exited successfully with three map fast-refresh warnings. ShellCheck exited **1**:
+one intentional fixed-argument split (`SC2086`) and two unresolved `.env` source
+references (`SC1091`). No `.env` values were inspected or source fixes made during
+this report-only health run.
+
+The health skill's weighted available-tool score is **8.9/10**, not a production
+readiness percentage or security/coverage audit. Dead-code and GBrain checks were
+unavailable and excluded. Database pipeline tests were skipped: no
+`TEST_DATABASE_URL` was available. The large map bundle warning remains. Hosted
+cookie/proxy behaviour, separate-service media storage, backup restore, worker
+recovery and whole-product browser/accessibility/performance acceptance are still
+release gates. No commit, push, service provisioning or deployment occurred.
+
+## October 9 UI and comparison acceptance checkpoint
+
+Stage: feature-rich public portfolio demo / pre-beta. Not production-approved or
+deployed. The local app remains available on port 5177 and proxied `/readyz`
+reports ready; that is local readiness, not a public deployment check.
+
+Impeccable guided a quieter homepage and a more readable comparison workspace.
+The comparison now has a compact centered heading, 16px fact labels/values,
+consistent spacing, thin themed scrolling and a single-column mobile layout.
+CSV downloads contain explicit public listing fields only, exact EUR prices and
+property links. Quoting and formula-prefix protection cover spreadsheet imports;
+Irish characters, embedded quotes/newlines, retry and empty selection are tested.
+Nothing is uploaded and private notes are not exported.
+
+Primary signal **met for this increment**: the running browser showed both selected
+homes and correct prices at 1280px and 390px, with no horizontal overflow. A real
+CSV downloaded and its rows matched those homes. Escape closed the dialog and
+returned focus to the comparison opener. Fact text measured 16px; secondary text
+contrast against the light surface measured 6.05:1. Dark-theme/cross-browser
+acceptance and a whole-product accessibility audit were not performed.
+
+Fresh checks passed: 451 frontend tests across 56 files, `npm run build`,
+`npm run lint`, built-preview routing/proxy smoke test, `go test -count=1 ./...`,
+`go vet ./...`, real FFmpeg stream-policy and dimension-bound tests, native C++
+sanitizer tests and CLI checks, and `git diff --check`. Three existing map
+fast-refresh lint warnings and the 1,127.65 KB map chunk (752.29 KB gzip) remain.
+Database opt-in tests were skipped because `TEST_DATABASE_URL` was unavailable;
+this run does not establish PostgreSQL pipeline/recovery or deployed backup proof.
+
+The next release decision is the confirmed hosting/domain and public capability
+profile in `DEPLOYMENT_PLAN.md`. Full public accounts remain deliberately blocked
+in production; shared/object media storage, operational recovery and realistic
+browser/performance acceptance remain unresolved. No new dependency, deployment
+configuration, public service, commit or push was created in this checkpoint.
+
+## September 19 local acceptance checkpoint
+
+Stage: feature-rich portfolio demo / pre-beta, not production-approved.
+Docker/PostgreSQL, the local API and Vite have been restarted. Frontend and
+proxied catalogue requests return 200; API readiness reports ready. Local buyer
+accounts remain development-only. A persistent video worker was not started.
+
+New HTTP integration coverage uses the real upload service with a recording
+queue: authenticated multipart uploads preserve the submitted bytes, return the
+queued job identity, use non-cacheable responses and omit private storage paths.
+Anonymous uploads cannot reach storage or the queue. The separate real
+PostgreSQL/FFmpeg pipeline test passed in the preceding checkpoint, including
+decode validation, failed-source retention and completion replay.
+
+Fresh validation: 437 frontend tests across 55 files, production build,
+`go test ./...`, the targeted HTTP upload test with race detection, and
+`go vet ./internal/httpapi` passed. Database/FFmpeg opt-in integration suites
+were not rerun in this checkpoint. The build still warns about the approximately
+1.13 MB map JavaScript chunk (752 KB gzip). Automated checks do not replace
+browser/mobile upload acceptance or deployed operational testing.
+
+The next launch gates remain shared/object media storage and retention,
+backup/restore and deployed recovery checks, browser/accessibility/performance
+acceptance, and safe staff access. Public buyer accounts additionally require
+verification/recovery. A public portfolio can keep registration and simulated
+viewing/notification delivery clearly disabled or labelled as demonstrations.
+No hosting, public deployment, commit or push was performed in this checkpoint.
+
+## September 18 queue visibility
+
+`media-worker --status` now provides an aggregate, read-only database snapshot
+without requiring an encoder or output storage. It reports state totals,
+recoverable stale claims, exhausted claims, and oldest pending age. Recovery and
+status queries share timeout/attempt policy constants. It does not expose job
+paths or identities, retry work, or replace a worker heartbeat/production alerting.
+
+## September 18 worker startup checks
+
+The worker now validates database connectivity/schema, output-directory writes,
+and H.264/AAC encoding before claiming jobs. `go run ./cmd/media-worker --check`
+runs those checks and exits without processing uploads. Missing/broken encoders,
+cancelled or hung probes, output cleanup and existing-file preservation have
+regression coverage. The real local database/FFmpeg preflight passed. This does
+not certify deployment permissions, cross-host storage or production recovery.
+
+## September 18 media recovery increment
+
+Still pre-beta, not production-approved. The worker now reclaims processing jobs
+whose database `started_at` is older than 25 minutes (or absent), with a maximum
+of three attempts. The existing attempt counter fences completion and failure;
+a superseded worker cannot change the newer attempt. Each attempt writes a
+different output filename. The manager reports recovered processing attempts,
+and validates attempt metadata before rendering it.
+
+Deploy API and worker code together after draining old workers: old binaries do
+not enforce attempt fencing. No database migration is required. Recovery requires
+a running updated worker; it is not an external scheduler. The 25-minute window
+exceeds the existing 20-minute encoding deadline. Normal encoder failures remain
+terminal rather than repeatedly processing invalid input. Exhausted crash recovery
+becomes a visible failed job. Sources are retained unless completion succeeds;
+uncertain commits and superseded attempts can leave unreferenced output files.
+
+Storage separation, orphan reconciliation/retention, deployed multi-worker crash
+tests, account verification/recovery, backup restoration and browser acceptance
+remain launch gates. Historical notes below describe earlier code, not the current
+recovery implementation. This increment does not provision or deploy services.
+
+Validation: all 427 frontend tests across 54 files passed; build and lint passed
+with existing map-bundle and fast-refresh warnings. `go test ./...` and
+`go vet ./...` passed with the local test database configured. Media store tests
+use isolated temporary tables; they cover stale/live claims, attempt limits,
+stale transitions and completion replay. Targeted media/HTTP race checks and
+real FFmpeg stream/dimension tests passed. This is not a live multi-worker crash
+drill or a browser verification of the new status message.
+
+## September 14 local development checkpoint
+
+Stage remains advanced portfolio demo / pre-beta, not production-approved.
+The working tree now includes a local native-bundle inspector and an opt-in
+experimental CSS 3D panorama viewer. This previews already-processed output;
+it does not connect panorama uploads to the media queue or replace Kuula.
+The inspector accepts the complete seven-file bundle through either its accessible
+file picker or drag and drop; both paths use the same local verification boundary.
+Rendered orientation, seams and supported-browser acceptance remain unverified.
+
+This checkpoint strengthens regression coverage for late bundle success/failure,
+replacement cancellation and image-URL cleanup. No new runtime feature or
+production deployment was added in this checkpoint.
+
+Validation: 407 frontend tests across 54 files passed; production build and lint
+passed with the existing large-map-chunk warning and three fast-refresh warnings.
+`go test ./...` and `go vet ./...` passed (some Go results were cached).
+`TEST_DATABASE_URL` was not configured, so this run does not establish database
+integration coverage. Local proxied `/readyz` returned ready. Browser visual
+acceptance and production operations were not verified by these checks.
+
+Code-backed gates remain the development-only buyer-account guard, media claims
+without expiring worker leases, and local filesystem media storage. Keep public
+registration gated until verification/recovery is complete. A portfolio launch
+can omit registration, but still needs supported-browser checks, safe staff
+access, deployment configuration and recovery validation for enabled services.
+
 ## September 13 pull-request checkpoint
 
 Stage: advanced portfolio demonstration / pre-beta, not production-approved.
