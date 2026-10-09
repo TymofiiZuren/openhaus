@@ -22,6 +22,12 @@ import (
 const shutdownPeriod = 10 * time.Second
 
 func main() {
+	appEnvironment := os.Getenv("APP_ENV")
+	clientAccounts := os.Getenv("ENABLE_CLIENT_ACCOUNTS")
+	clientOrigin := os.Getenv("CLIENT_ORIGIN")
+	if err := validateStartupConfiguration(appEnvironment, clientAccounts, clientOrigin); err != nil {
+		log.Fatal(err)
+	}
 	databaseURL := os.Getenv("DATABASE_URL")
 	if databaseURL == "" {
 		log.Fatal("DATABASE_URL is required")
@@ -39,15 +45,7 @@ func main() {
 	mediaJobStore := mediajob.NewStore(databasePool)
 	managerAuth := managerauth.NewService(managerauth.NewStore(databasePool))
 	var buyerAuth httpapi.ClientAuthenticator
-	clientOrigin := os.Getenv("CLIENT_ORIGIN")
-	if os.Getenv("ENABLE_CLIENT_ACCOUNTS") == "true" {
-		if os.Getenv("APP_ENV") != "development" {
-			log.Fatal("client accounts are development-only pending email verification and recovery")
-		}
-		parsed, err := url.Parse(clientOrigin)
-		if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Path != "" || parsed.RawQuery != "" || parsed.Fragment != "" || parsed.User != nil {
-			log.Fatal("CLIENT_ORIGIN must be an exact HTTP(S) origin without a path")
-		}
+	if clientAccounts == "true" {
 		buyerAuth = clientauth.NewService(clientauth.NewStore(databasePool))
 	}
 	uploadRoot := os.Getenv("MEDIA_SOURCE_DIR")
@@ -73,11 +71,12 @@ func main() {
 			Properties:            propertyStore,
 			Videos:                mediajob.NewUploadService(uploadRoot, mediaJobStore),
 			Jobs:                  mediaJobStore,
+			QueueStatus:           mediaJobStore,
 			ManagerAuth:           managerAuth,
 			ManagerProperties:     propertyStore,
 			ManagerPropertyWriter: propertyStore,
 			SpatialTours:          propertyStore,
-			SecureCookies:         os.Getenv("APP_ENV") == "production",
+			SecureCookies:         appEnvironment == "production",
 		}),
 		ReadHeaderTimeout: 5 * time.Second,
 		IdleTimeout:       60 * time.Second,
@@ -118,6 +117,30 @@ func main() {
 	}
 
 	log.Print("API stopped")
+}
+
+func validateStartupConfiguration(environment, accounts, origin string) error {
+	switch environment {
+	case "", "development", "production":
+	default:
+		return errors.New("APP_ENV must be development or production (unset is local-only)")
+	}
+	switch accounts {
+	case "", "false", "true":
+	default:
+		return errors.New("ENABLE_CLIENT_ACCOUNTS must be true or false (unset disables accounts)")
+	}
+	if accounts != "true" {
+		return nil
+	}
+	if environment != "development" {
+		return errors.New("client accounts are development-only pending email verification and recovery")
+	}
+	parsed, err := url.Parse(origin)
+	if err != nil || parsed.Hostname() == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Path != "" || parsed.RawQuery != "" || parsed.ForceQuery || parsed.Fragment != "" || parsed.User != nil {
+		return errors.New("CLIENT_ORIGIN must be an exact HTTP(S) origin without a path")
+	}
+	return nil
 }
 
 func connectDatabase(ctx context.Context, databaseURL string) (*pgxpool.Pool, error) {

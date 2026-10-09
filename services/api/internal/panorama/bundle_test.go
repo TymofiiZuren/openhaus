@@ -9,6 +9,7 @@ import (
 	"image/jpeg"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -83,5 +84,62 @@ func TestBundleFailureDoesNotPublish(t *testing.T) {
 	}
 	if _, err := os.Stat(output); !os.IsNotExist(err) {
 		t.Fatal("failed bundle left behind", err)
+	}
+}
+
+func TestBundleReportsCleanupFailureWithoutRemovingUnexpectedFiles(t *testing.T) {
+	output := filepath.Join(t.TempDir(), "tour")
+	failure := errors.New("conversion failed")
+	err := writeBundle(context.Background(), "native", nil, output, 16, func(context.Context, string, []byte, string, int) ([]byte, error) {
+		// Simulate another actor placing a file in the reserved directory.
+		if err := os.WriteFile(filepath.Join(output, "keep.txt"), []byte("keep"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		return nil, failure
+	})
+	if !errors.Is(err, failure) || !strings.Contains(err.Error(), "clean up output directory") {
+		t.Fatalf("expected conversion and cleanup failures, got %v", err)
+	}
+	data, readErr := os.ReadFile(filepath.Join(output, "keep.txt"))
+	if readErr != nil || string(data) != "keep" {
+		t.Fatal("unexpected file was removed", readErr)
+	}
+	entries, readErr := os.ReadDir(output)
+	if readErr != nil || len(entries) != 1 {
+		t.Fatal("private staging directory was not removed", readErr)
+	}
+}
+
+func TestBundleCancellationCleansUpAndAllowsRetry(t *testing.T) {
+	var pixels bytes.Buffer
+	if err := jpeg.Encode(&pixels, image.NewRGBA(image.Rect(0, 0, 16, 16)), nil); err != nil {
+		t.Fatal(err)
+	}
+	for stop := 1; stop <= 6; stop++ {
+		t.Run(fmt.Sprint(stop), func(t *testing.T) {
+			output := filepath.Join(t.TempDir(), "tour")
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			calls := 0
+			err := writeBundle(ctx, "native", nil, output, 16, func(context.Context, string, []byte, string, int) ([]byte, error) {
+				calls++
+				if calls == stop {
+					cancel()
+				}
+				return pixels.Bytes(), nil
+			})
+			if !errors.Is(err, context.Canceled) || calls != stop {
+				t.Fatalf("cancellation: calls=%d, error=%v", calls, err)
+			}
+			if _, err := os.Stat(output); !os.IsNotExist(err) {
+				t.Fatal("cancelled output remains", err)
+			}
+			if err := writeBundle(context.Background(), "native", nil, output, 16, func(context.Context, string, []byte, string, int) ([]byte, error) { return pixels.Bytes(), nil }); err != nil {
+				t.Fatal("retry failed", err)
+			}
+			if err := VerifyBundle(filepath.Join(output, "bundle")); err != nil {
+				t.Fatal("retry did not publish a valid bundle", err)
+			}
+		})
 	}
 }

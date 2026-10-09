@@ -14,13 +14,15 @@ import (
 )
 
 type queueStub struct {
-	job            mediajob.Job
-	claimErr       error
-	completedJobID string
-	completedURL   string
-	failedJobID    string
-	failureMessage string
-	completeErr    error
+	job              mediajob.Job
+	claimErr         error
+	completedJobID   string
+	completedURL     string
+	failedJobID      string
+	failureMessage   string
+	completeErr      error
+	completedAttempt int16
+	failedAttempt    int16
 }
 
 // Opt in with a local fixture; copies it before the worker consumes the upload.
@@ -48,11 +50,11 @@ func TestProcessorRealFFmpeg(t *testing.T) {
 	if err := mediajob.NewProcessor(queue, ffmpeg, root, "/media").ProcessNext(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if queue.completedURL != "/media/real.mp4" {
+	if queue.completedURL != "/media/real-0.mp4" {
 		t.Fatalf("completion = %q", queue.completedURL)
 	}
 	// Decode the whole published output, not merely its container header.
-	if output, err := exec.CommandContext(ctx, ffmpeg, "-v", "error", "-xerror", "-i", filepath.Join(root, "real.mp4"), "-f", "null", "-").CombinedOutput(); err != nil || len(output) != 0 {
+	if output, err := exec.CommandContext(ctx, ffmpeg, "-v", "error", "-xerror", "-i", filepath.Join(root, "real-0.mp4"), "-f", "null", "-").CombinedOutput(); err != nil || len(output) != 0 {
 		t.Fatalf("decode failed: %v (diagnostic bytes: %d)", err, len(output))
 	}
 }
@@ -60,14 +62,16 @@ func TestProcessorRealFFmpeg(t *testing.T) {
 func (stub *queueStub) ClaimNext(context.Context) (mediajob.Job, error) {
 	return stub.job, stub.claimErr
 }
-func (stub *queueStub) Complete(_ context.Context, jobID, outputURL, _ string) error {
+func (stub *queueStub) Complete(_ context.Context, jobID string, attempt int16, outputURL, _ string) error {
+	stub.completedAttempt = attempt
 	if stub.completeErr != nil {
 		return stub.completeErr
 	}
 	stub.completedJobID, stub.completedURL = jobID, outputURL
 	return nil
 }
-func (stub *queueStub) Fail(ctx context.Context, jobID, message string) error {
+func (stub *queueStub) Fail(ctx context.Context, jobID string, attempt int16, message string) error {
+	stub.failedAttempt = attempt
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -75,15 +79,48 @@ func (stub *queueStub) Fail(ctx context.Context, jobID, message string) error {
 	return nil
 }
 
+func TestProcessorRecoveredAttemptCannotOverwriteAnotherOutput(t *testing.T) {
+	root := t.TempDir()
+	source := filepath.Join(root, "source.mov")
+	if err := os.WriteFile(source, []byte("source"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ffmpeg := writeExecutable(t, root, "encode", "#!/bin/sh\nfor last; do :; done\nprintf recovered > \"$last\"\n")
+	newerOutput := filepath.Join(root, "job-2.mp4")
+	if err := os.WriteFile(newerOutput, []byte("newer"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	queue := &queueStub{job: mediajob.Job{ID: "job", Attempts: 1, SourcePath: source}, completeErr: mediajob.ErrInvalidTransition}
+	err := mediajob.NewProcessor(queue, ffmpeg, root, "/media").ProcessNext(context.Background())
+	if !errors.Is(err, mediajob.ErrInvalidTransition) || queue.completedAttempt != 1 {
+		t.Fatalf("stale completion = %v, attempt = %d", err, queue.completedAttempt)
+	}
+	if data, err := os.ReadFile(newerOutput); err != nil || string(data) != "newer" {
+		t.Fatal("stale worker overwrote newer output")
+	}
+	if _, err := os.Stat(source); err != nil {
+		t.Fatal("stale worker removed source")
+	}
+	if queue.failedJobID != "" {
+		t.Fatal("stale worker attempted failure transition")
+	}
+
+	failingEncoder := writeExecutable(t, root, "fail", "#!/bin/sh\nexit 1\n")
+	queue.job.Attempts = 2
+	if err := mediajob.NewProcessor(queue, failingEncoder, root, "/media").ProcessNext(context.Background()); err == nil || queue.failedAttempt != 2 {
+		t.Fatal("failure did not carry current attempt")
+	}
+}
+
 func TestProcessorDoesNotExposePartialVideo(t *testing.T) {
 	root := t.TempDir()
 	output := filepath.Join(root, "output")
-	ffmpeg := writeExecutable(t, root, "atomic", "#!/bin/sh\nfor last; do :; done\nprintf partial > \"$last\"\nif [ -e \""+filepath.Join(output, "job.mp4")+"\" ]; then exit 1; fi\nprintf complete > \"$last\"\n")
+	ffmpeg := writeExecutable(t, root, "atomic", "#!/bin/sh\nfor last; do :; done\nprintf partial > \"$last\"\nif [ -e \""+filepath.Join(output, "job-0.mp4")+"\" ]; then exit 1; fi\nprintf complete > \"$last\"\n")
 	queue := &queueStub{job: mediajob.Job{ID: "job"}}
 	if err := mediajob.NewProcessor(queue, ffmpeg, output, "/media").ProcessNext(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	data, err := os.ReadFile(filepath.Join(output, "job.mp4"))
+	data, err := os.ReadFile(filepath.Join(output, "job-0.mp4"))
 	if err != nil || string(data) != "complete" {
 		t.Fatalf("published = %q, %v", data, err)
 	}
@@ -101,23 +138,87 @@ func TestProcessorRejectsEmptyEncoderOutput(t *testing.T) {
 	}
 }
 
-func TestProcessorRecordsCancellationAndCleansPartialOutput(t *testing.T) {
+func TestProcessorBoundsEncoderThreads(t *testing.T) {
 	root := t.TempDir()
-	ffmpeg := writeExecutable(t, root, "wait", "#!/bin/sh\nfor last; do :; done\nprintf partial > \"$last\"\nexec sleep 30\n")
-	queue := &queueStub{job: mediajob.Job{ID: "job"}}
-	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
-	defer cancel()
-	output := filepath.Join(root, "output")
-	err := mediajob.NewProcessor(queue, ffmpeg, output, "/media").ProcessNext(ctx)
-	if !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf("error = %v", err)
+	arguments := filepath.Join(root, "arguments")
+	encoder := writeExecutable(t, root, "capture-encoder", "#!/bin/sh\nprintf '%s\\n' \"$@\" > \""+arguments+"\"\nfor last; do :; done\nprintf video > \"$last\"\n")
+	queue := &queueStub{job: mediajob.Job{ID: "bounded-threads"}}
+	if err := mediajob.NewProcessor(queue, encoder, root, "/media").ProcessNext(context.Background()); err != nil {
+		t.Fatal(err)
 	}
-	if queue.failedJobID != "job" || queue.completedJobID != "" {
-		t.Fatalf("queue = %+v", queue)
+	data, err := os.ReadFile(arguments)
+	if err != nil {
+		t.Fatal(err)
 	}
-	entries, err := os.ReadDir(output)
-	if err != nil || len(entries) != 0 {
-		t.Fatalf("partial artifacts = %v, %v", entries, err)
+	args := strings.Split(strings.TrimSpace(string(data)), "\n")
+	input := -1
+	var threadOptions []int
+	filterOptions := 0
+	for index, arg := range args {
+		if arg == "-i" {
+			input = index
+		}
+		if arg == "-threads" || arg == "-filter_threads" {
+			if index+1 >= len(args) || args[index+1] != "2" {
+				t.Fatalf("unbounded %s", arg)
+			}
+			if arg == "-threads" {
+				threadOptions = append(threadOptions, index)
+			} else {
+				filterOptions++
+			}
+		}
+	}
+	// FFmpeg scopes codec options to the next input/output: both sides need a cap.
+	if input < 0 || len(threadOptions) != 2 || threadOptions[0] >= input || threadOptions[1] <= input || filterOptions != 1 {
+		t.Fatal("decoder, encoder and filter thread limits are required")
+	}
+	if queue.completedJobID != "bounded-threads" {
+		t.Fatal("bounded encoding did not complete")
+	}
+}
+
+func TestProcessorPreservesInterruptedClaimAndCleansPartialOutput(t *testing.T) {
+	for _, explicitCancel := range []bool{false, true} {
+		name := "deadline"
+		if explicitCancel {
+			name = "shutdown"
+		}
+		t.Run(name, func(t *testing.T) {
+			root := t.TempDir()
+			source := filepath.Join(root, "source.mov")
+			if err := os.WriteFile(source, []byte("original"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			ffmpeg := writeExecutable(t, root, "wait", "#!/bin/sh\nfor last; do :; done\nprintf partial > \"$last\"\nexec sleep 30\n")
+			queue := &queueStub{job: mediajob.Job{ID: "job", Attempts: 1, SourcePath: source}}
+			ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+			defer cancel()
+			wantErr := context.DeadlineExceeded
+			if explicitCancel {
+				cancel()
+				ctx, cancel = context.WithCancel(context.Background())
+				defer cancel()
+				timer := time.AfterFunc(100*time.Millisecond, cancel)
+				defer timer.Stop()
+				wantErr = context.Canceled
+			}
+			output := filepath.Join(root, "output")
+			err := mediajob.NewProcessor(queue, ffmpeg, output, "/media").ProcessNext(ctx)
+			if !errors.Is(err, wantErr) {
+				t.Fatalf("error = %v", err)
+			}
+			if queue.failedJobID != "" || queue.completedJobID != "" {
+				t.Fatalf("queue = %+v", queue)
+			}
+			entries, err := os.ReadDir(output)
+			if err != nil || len(entries) != 0 {
+				t.Fatalf("partial artifacts = %v, %v", entries, err)
+			}
+			if contents, err := os.ReadFile(source); err != nil || string(contents) != "original" {
+				t.Fatalf("recovery source changed: %q, %v", contents, err)
+			}
+		})
 	}
 }
 
@@ -134,7 +235,7 @@ func TestProcessorPublishesCompletedVideoAndRemovesSource(t *testing.T) {
 	if err := processor.ProcessNext(context.Background()); err != nil {
 		t.Fatalf("process next: %v", err)
 	}
-	if queue.completedJobID != "job-1" || queue.completedURL != "/media/uploads/job-1.mp4" {
+	if queue.completedJobID != "job-1" || queue.completedURL != "/media/uploads/job-1-0.mp4" {
 		t.Fatalf("completion = %q %q", queue.completedJobID, queue.completedURL)
 	}
 	if _, err := os.Stat(source); !errors.Is(err, os.ErrNotExist) {
@@ -173,7 +274,7 @@ func TestProcessorRetainsArtifactsWhenCompletionIsUncertain(t *testing.T) {
 	if !errors.Is(err, databaseErr) || queue.failedJobID != "" {
 		t.Fatalf("uncertain commit overwritten: %v", err)
 	}
-	for _, path := range []string{source, filepath.Join(root, "job.mp4")} {
+	for _, path := range []string{source, filepath.Join(root, "job-0.mp4")} {
 		if _, err := os.Stat(path); err != nil {
 			t.Fatalf("recovery artifact missing: %v", err)
 		}

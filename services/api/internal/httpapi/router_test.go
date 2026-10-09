@@ -190,6 +190,84 @@ func TestManagerPropertiesRequireAuthentication(t *testing.T) {
 	}
 }
 
+func TestPrivateAPICachePolicy(t *testing.T) {
+	router := httpapi.NewRouter(httpapi.Dependencies{ManagerAuth: managerAuthStub{validToken: "session-token"}, ManagerProperties: managerPropertyListerStub{}})
+	for _, test := range []struct {
+		name, method, path, body string
+		authenticated            bool
+		status                   int
+	}{
+		{"drafts", "GET", "/api/v1/manager/properties", "", true, 200},
+		{"unauthenticated", "GET", "/api/v1/manager/properties", "", false, 401},
+		{"login error", "POST", "/api/v1/manager/session", `{}`, false, 400},
+		{"logout", "DELETE", "/api/v1/manager/session", "", true, 204},
+		{"unknown private route", "GET", "/api/v1/manager/missing", "", false, 404},
+		{"disabled buyer route", "GET", "/api/v1/client/session", "", false, 404},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			request := httptest.NewRequest(test.method, test.path, strings.NewReader(test.body))
+			if test.authenticated {
+				request.AddCookie(&http.Cookie{Name: "openhaus_manager_session", Value: "session-token"})
+			}
+			response := httptest.NewRecorder()
+			router.ServeHTTP(response, request)
+			if response.Code != test.status {
+				t.Fatalf("status = %d, want %d", response.Code, test.status)
+			}
+			if response.Header().Get("Cache-Control") != "no-store" {
+				t.Fatal("private API response must not be stored")
+			}
+		})
+	}
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest("GET", "/healthz", nil))
+	if response.Header().Get("Cache-Control") == "no-store" {
+		t.Fatal("private cache policy leaked into public routes")
+	}
+}
+
+func TestManagerSessionCookieLifecycle(t *testing.T) {
+	for _, secure := range []bool{false, true} {
+		auth := &managerSecurityStub{managerAuthStub: managerAuthStub{validToken: "session-token"}}
+		router := httpapi.NewRouter(httpapi.Dependencies{ManagerAuth: auth, SecureCookies: secure})
+		for _, test := range []struct {
+			method, path, body string
+			clear              bool
+		}{
+			{"POST", "/api/v1/manager/session", `{"email":"manager@example.com","password":"valid-password"}`, false},
+			{"DELETE", "/api/v1/manager/session", "", true},
+			{"PUT", "/api/v1/manager/password", `{"currentPassword":"valid-password","newPassword":"a different secure password"}`, true},
+			{"DELETE", "/api/v1/manager/sessions", "", true},
+		} {
+			request := httptest.NewRequest(test.method, test.path, strings.NewReader(test.body))
+			request.Header.Set("Content-Type", "application/json")
+			request.AddCookie(&http.Cookie{Name: "openhaus_manager_session", Value: "session-token"})
+			response := httptest.NewRecorder()
+			router.ServeHTTP(response, request)
+			if response.Code != 200 && response.Code != 204 {
+				t.Fatalf("%s: status = %d", test.path, response.Code)
+			}
+			if response.Header().Get("Cache-Control") != "no-store" {
+				t.Fatalf("%s: authentication response must not be stored", test.path)
+			}
+			cookies := response.Result().Cookies()
+			if len(cookies) != 1 {
+				t.Fatalf("%s: expected one session cookie", test.path)
+			}
+			cookie := cookies[0]
+			if cookie.Name != "openhaus_manager_session" || cookie.Path != "/api/v1/manager" || cookie.Domain != "" || !cookie.HttpOnly || cookie.Secure != secure || cookie.SameSite != http.SameSiteLaxMode {
+				t.Fatalf("%s: incorrect session cookie protections", test.path)
+			}
+			if test.clear && (cookie.Value != "" || cookie.MaxAge != -1 || !cookie.Expires.Before(time.Now())) {
+				t.Fatalf("%s: session cookie was not expired", test.path)
+			}
+			if !test.clear && (cookie.Value == "" || cookie.MaxAge <= 0 || !cookie.Expires.After(time.Now())) {
+				t.Fatalf("%s: login did not issue a valid session cookie", test.path)
+			}
+		}
+	}
+}
+
 func TestManagerCanLoginAndListDrafts(t *testing.T) {
 	authenticator := managerAuthStub{validToken: "session-token"}
 	router := httpapi.NewRouter(httpapi.Dependencies{ManagerAuth: authenticator, ManagerProperties: managerPropertyListerStub{properties: []property.ManagedProperty{{Property: property.Property{ID: "draft-1", Title: "Draft home"}, Status: "draft"}}}})
